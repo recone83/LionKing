@@ -77,6 +77,13 @@ następnie integracja X nową prędkością. Stan Y pozostaje bez zmian.
 [check_acceleration.c](../../tools/check_acceleration.c) obejmuje wszystkie
 ułamki oraz granice limitu i przepełnienia.
 
+`engine_motion_brake_x` odtwarza `0x1a844` i `abs` z `0x1a60a`: zeruje
+prędkość tylko przy ściśle mniejszej wartości bezwzględnej; w pozostałych
+przypadkach odejmuje przekazany argument ze znakiem i zawijaniem 32-bitowym.
+Nie dobiera sam kierunku hamowania. Zachowuje też x86 `abs(INT_MIN)`,
+które pozostaje ujemne. [check_braking.c](../../tools/check_braking.c) sprawdza
+te progi, oba znaki i niezmienione ułamki pozycji.
+
 [render_object_bounds](render.c) i `render_point_hit` przenoszą test punktu
 `0x168a4`: granice z deskryptora +2/+4/+6/+8, odbicia H/V, 16-bitowe
 dodawanie pozycji i porównania ze znakiem z włączonymi krawędziami.

@@ -65,6 +65,23 @@ int engine_motion_accelerate_x(ENGINE_MOTION *motion, RENDER_OWNER *owner,
     integrate(&owner->x, &motion->fraction_x, velocity);
     return 0;
 }
+
+int engine_motion_brake_x(ENGINE_MOTION *motion, uint32_t decrement)
+{
+    if (!motion) {
+        return -1;
+    }
+    uint32_t velocity = motion->velocity_x;
+    uint32_t absolute_velocity = velocity & UINT32_C(0x80000000) ? 0U - velocity : velocity;
+    uint32_t absolute_decrement = decrement & UINT32_C(0x80000000) ? 0U - decrement : decrement;
+    /* x86 abs(INT_MIN) remains negative, including in the signed comparison. */
+    int64_t a = absolute_velocity < UINT32_C(0x80000000) ? (int64_t)absolute_velocity :
+        (int64_t)absolute_velocity - INT64_C(0x100000000);
+    int64_t b = absolute_decrement < UINT32_C(0x80000000) ? (int64_t)absolute_decrement :
+        (int64_t)absolute_decrement - INT64_C(0x100000000);
+    motion->velocity_x = a < b ? 0 : velocity - decrement;
+    return 0;
+}
 #else
 /* Original helpers remain in recovered/block_08000.c. */
 #endif
