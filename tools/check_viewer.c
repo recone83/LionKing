@@ -6,6 +6,7 @@
 #include "engine/sprites.h"
 #include "engine/tiles.h"
 #include "engine/assets.h"
+#include "engine/animation_data.h"
 #include "libs/vga.h"
 
 int __attribute__((ms_abi)) start(const DOS64_API *api);
@@ -26,6 +27,38 @@ static int fade_active, fade_black;
 static unsigned long long serviced_ticks;
 static unsigned int bank_index = ASSETS_YOUNG_IDLE_INDEX;
 static unsigned int seen_banks = 1U << ASSETS_YOUNG_IDLE_INDEX;
+static unsigned char idle_banks[3][32768];
+static unsigned int idle_sizes[3];
+static unsigned char original_idle[ANIMATION_IDLE_SIZE];
+static unsigned int idle_position, idle_descriptor, idle_remaining, idle_events;
+static unsigned int logged_events;
+static int idle_enabled;
+static unsigned long long idle_begin, previous_time, expected_updates;
+
+static unsigned int idle_u32(const unsigned char *p)
+{
+    return (unsigned int)p[0] | (unsigned int)p[1] << 8 |
+        (unsigned int)p[2] << 16 | (unsigned int)p[3] << 24;
+}
+
+static void reference_idle_next(void)
+{
+    for (;;) {
+        const unsigned char *p = original_idle + idle_position - ANIMATION_IDLE_BASE;
+        if (p[0] == 0xfa) {
+            ++idle_events;
+            idle_position += 5;
+        } else if (p[0] == 0xff) {
+            idle_position = idle_u32(p + 2);
+        } else {
+            assert(p[0] < 128);
+            idle_remaining = p[0];
+            idle_descriptor = idle_u32(p + 1);
+            idle_position += 5;
+            return;
+        }
+    }
+}
 
 static void load_reference_bank(unsigned int index)
 {
@@ -44,6 +77,9 @@ static void load_reference_bank(unsigned int index)
 
 static void __attribute__((ms_abi)) write_text(const char *text)
 {
+    if (strstr(text, "Idle script event recorded;")) {
+        ++logged_events;
+    }
     if (strstr(text, "invalid") || strstr(text, "cannot")) {
         ++failures;
     }
@@ -67,6 +103,9 @@ static unsigned long long __attribute__((ms_abi)) read_file(
 static void __attribute__((ms_abi)) sleep_ms(unsigned int milliseconds)
 {
     now += milliseconds * 1000000ULL;
+    if (iteration >= 172) {
+        now += milliseconds * 1000000ULL;
+    }
 }
 static unsigned long long __attribute__((ms_abi)) time_ns(void) { return now; }
 static int __attribute__((ms_abi)) select_layer(int layer) { assert(layer == 0); return 0; }
@@ -91,7 +130,9 @@ static void __attribute__((ms_abi)) poll_input(void)
     case 168: case 169: key = 0x52; break;
     case 170: key = 0x4f; break;
     case 171: key = 0xe2; break;
-    case 172: key = 0x29; break;
+    case 172: case 4380: key = 0x04; break;
+    case 4382: key = 0x2c; break;
+    case 4384: key = 0x29; break;
     default: break;
     }
     if (iteration >= 112 && iteration <= 166 && !(iteration & 1)) {
@@ -101,7 +142,7 @@ static void __attribute__((ms_abi)) poll_input(void)
         api.Input.KeyDown[key] = 1;
         api.Input.KeyPressed[key] = (iteration != 3 && iteration != 8 && iteration != 169);
     }
-    assert(iteration <= 172);
+    assert(iteration <= 4384);
 }
 static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
     unsigned int width, unsigned int height, unsigned int stride,
@@ -109,6 +150,37 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
 {
     assert(width == 320 && height == 200 && stride == 320);
     assert(x == 0 && y == 40 && dest_width == 640 && dest_height == 400);
+    if (iteration == 172) {
+        for (unsigned int i = 0; i < 3; ++i) {
+            unsigned int slot;
+            assert(assets_load_named_bank(&api, "LIONKING.EPF", assets_young_bank_list,
+                sizeof(assets_young_bank_list), ASSETS_YOUNG_IDLE_INDEX + i,
+                packed, sizeof(packed), idle_banks[i], sizeof(idle_banks[i]),
+                &dictionary, &slot, &idle_sizes[i]) == 0);
+            assert(slot == 14 + i);
+        }
+        idle_enabled = 1;
+        idle_begin = now;
+        idle_position = ANIMATION_IDLE_START;
+        reference_idle_next();
+    }
+    if (idle_enabled && iteration > 172) {
+        unsigned long long updates = (previous_time - idle_begin) * 1193182ULL /
+            (11830ULL * 1000000000ULL) / 2;
+        while (expected_updates < updates) {
+            if (idle_remaining) {
+                --idle_remaining;
+            } else {
+                reference_idle_next();
+            }
+            ++expected_updates;
+        }
+    }
+    if (iteration == 4380) {
+        idle_enabled = 0;
+        assert(idle_events >= 12 && logged_events == idle_events);
+        load_reference_bank(bank_index);
+    }
     unsigned long long ticks = now * 1193182ULL / (11830ULL * 1000000000ULL);
     for (unsigned long long t = serviced_ticks; t < ticks && fade_active; ++t) {
         int complete = 1;
@@ -154,11 +226,11 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
     assert(render_map_tile_pass(map, map_size, 0, 0, 0, 0, expected) == 0);
     assert(render_map_tile_pass(map, map_size, 0, 0, 0, 1, expected) == 0);
     unsigned int frame = (iteration == 2 || iteration == 3) ? 1 :
-        iteration == 10 ? frames - 1 : iteration >= 170 ? 1 : 0;
+        iteration == 10 ? frames - 1 : (iteration == 170 || iteration == 171) ? 1 : 0;
     unsigned short flags = (unsigned short)frame;
     int px = 140, py = 80;
     const unsigned char *entry = sprite + 2 + frame * 8;
-    if ((iteration >= 5 && iteration <= 8) || iteration == 171) {
+    if ((iteration >= 5 && iteration <= 8) || (iteration >= 171 && iteration < 4382)) {
         flags |= 0x8000;
         px -= (int)((unsigned int)entry[0] | (unsigned int)entry[1] << 8);
     }
@@ -166,12 +238,25 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
         flags |= 0x2000;
         py -= (int)((unsigned int)entry[2] | (unsigned int)entry[3] << 8);
     }
-    if (iteration != 7 && iteration != 8) {
+    if (idle_enabled) {
+        const unsigned char *part = original_idle + idle_descriptor - ANIMATION_IDLE_BASE;
+        assert(part[0] == 1 && part[1] == 0);
+        unsigned int bank = part[19] - 14, index = part[18];
+        assert(bank < 3);
+        const unsigned char *idle_entry = idle_banks[bank] + 2 + index * 8;
+        int anchor_x = (int)((unsigned int)part[14] | (unsigned int)part[15] << 8);
+        int anchor_y = (int)((unsigned int)part[16] | (unsigned int)part[17] << 8);
+        int width = (int)((unsigned int)idle_entry[0] | (unsigned int)idle_entry[1] << 8);
+        assert(render_draw_sprite(idle_banks[bank], idle_sizes[bank],
+            (unsigned short)(index | 0x8000), 140 - width + anchor_x,
+            80 - anchor_y, expected) == 0);
+    } else if (iteration != 7 && iteration != 8) {
         assert(render_draw_sprite(sprite, sprite_size, flags, px, py, expected) == 0);
     }
     for (unsigned int i = 0; i < 64000; ++i) {
         assert(image[i] == (palette[expected[i]] | 0xff000000U));
     }
+    previous_time = now;
 }
 
 int main(void)
@@ -189,6 +274,10 @@ int main(void)
     api.DrawImage = draw_image;
     api.Fs.Open = open_file; api.Fs.Close = close_file;
     api.Fs.Read = read_file; api.Fs.Seek = seek_file; api.Fs.Tell = tell_file;
+    FILE *dump = fopen("bin/obj2_data.bin", "rb");
+    assert(dump && fseek(dump, ANIMATION_IDLE_BASE, SEEK_SET) == 0);
+    assert(fread(original_idle, 1, sizeof(original_idle), dump) == sizeof(original_idle));
+    assert(fclose(dump) == 0);
     assert(resources_load_entry(&api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
         map, sizeof(map), &dictionary, &map_size) == 0);
     assert(vga_load_palette(map, map_size, palette) == 0);
@@ -203,9 +292,10 @@ int main(void)
     assert(failures == 1 && invalid_slot == 999 && invalid_loaded == 999);
     failures = 0;
     assert(start(&api) == 0);
-    assert(iteration == 172 && shown == 171 && failures == 0);
+    assert(iteration == 4384 && shown == 4383 && failures == 0);
     assert(seen_banks == (1U << ASSETS_YOUNG_BANK_COUNT) - 1);
-    puts("PASS: DOS64 start, all 28 real banks, all 10944000 ARGB pixels, "
-        "bank/frame wrap, held keys, flips, hide/reset, timed fades/interruption and Escape");
+    assert(expected_updates > 4070 && logged_events >= 12);
+    puts("PASS: DOS64 start, 28 banks, 280512000 exact ARGB pixels, 2 original idle loops, "
+        "diagnostic events, manual-mode return, controls, fades and Escape");
     return 0;
 }

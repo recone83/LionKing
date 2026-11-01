@@ -6,6 +6,8 @@
 #include "engine/input.h"
 #include "engine/render.h"
 #include "engine/assets.h"
+#include "engine/animation.h"
+#include "engine/animation_data.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
@@ -18,6 +20,68 @@ static RENDER_POOL render_pool;
 static VGA_FADE fade;
 static unsigned char level_rgb[768];
 static const unsigned char black_rgb[768];
+static unsigned char idle_sprites[3][32768];
+
+typedef struct {
+    ANIMATION_STREAM stream;
+    RENDER_NODE *node;
+    RENDER_OWNER *owner;
+    int enabled;
+    int failed;
+    unsigned int events;
+} PREVIEW_ANIMATION;
+
+static int record_preview_event(void *context, unsigned int target)
+{
+    PREVIEW_ANIMATION *animation = context;
+    if (target != 0x20bec && target != 0x20c70 &&
+        target != 0x20d55 && target != 0x20cf4) {
+        lk_platform_log("Lion King: unknown idle animation event.\n");
+        return -1;
+    }
+    ++animation->events;
+    lk_platform_log("Idle script event recorded; game object side effects not executed in preview.\n");
+    return 0;
+}
+
+static void update_preview(void *context)
+{
+    PREVIEW_ANIMATION *animation = context;
+    if (animation->enabled && !animation->failed &&
+        animation_step(&animation->stream, animation->node, animation->owner,
+            record_preview_event, animation) < 0) {
+        animation->failed = 1;
+    }
+}
+
+static int start_idle_preview(const DOS64_API *api, RENDER_SPRITE_BANK banks[34],
+    PREVIEW_ANIMATION *animation)
+{
+    for (unsigned int i = 0; i < 34; ++i) {
+        banks[i] = (RENDER_SPRITE_BANK){0};
+    }
+    for (unsigned int i = 0; i < 3; ++i) {
+        unsigned int slot, loaded;
+        if (assets_load_named_bank(api, "LIONKING.EPF", assets_young_bank_list,
+            sizeof(assets_young_bank_list), ASSETS_YOUNG_IDLE_INDEX + i,
+            packed, sizeof(packed), idle_sprites[i], sizeof(idle_sprites[i]),
+            &dictionary, &slot, &loaded) != 0) {
+            return -1;
+        }
+        banks[slot] = (RENDER_SPRITE_BANK){idle_sprites[i], loaded};
+    }
+    if (animation_initialize(&animation->stream, animation_idle_data,
+        ANIMATION_IDLE_SIZE, ANIMATION_IDLE_BASE, ANIMATION_IDLE_START) != 0 ||
+        animation_step(&animation->stream, animation->node, animation->owner,
+            record_preview_event, animation) < 0) {
+        lk_platform_log("Lion King: invalid original idle animation stream.\n");
+        return -1;
+    }
+    animation->enabled = 1;
+    animation->failed = 0;
+    lk_platform_log("Original idle visual sequence running; game events are diagnostic only.\n");
+    return 0;
+}
 
 static int load_preview_bank(const DOS64_API *api, unsigned int index,
     RENDER_SPRITE_BANK banks[34], unsigned char part[20], unsigned int *frames)
@@ -62,11 +126,6 @@ static int present_frame(void *context, const unsigned char *source,
     (void)context;
     lk_platform_present(source, colors);
     return 0;
-}
-
-static void count_updates(void *context)
-{
-    ++*(unsigned long long *)context;
 }
 
 static int selftest_requested(const char *arguments)
@@ -125,14 +184,16 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     ENGINE_INPUT input;
     input_initialize(&input);
     VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
+    PREVIEW_ANIMATION animation = {0};
+    animation.node = node;
+    animation.owner = &owner;
     lk_platform_log("Lion King DOS64 interactive asset test; not gameplay.\n"
         "Up/Down: bank. Left/Right: frame. Alt/Ctrl: flip X/Y. Shift: hide.\n"
-        "F: fade to black/back. Space: reset. Escape: exit.\n");
+        "A: original idle sequence/manual. F: fade to black/back. Space: reset. Escape: exit.\n");
     int selftest = selftest_requested(api->Arguments);
     unsigned long long begin = lk_platform_time_ns();
     ENGINE_CLOCK clock;
     ENGINE_CLOCK palette_clock;
-    unsigned long long updates = 0;
     engine_clock_reset(&clock, begin);
     engine_clock_reset(&palette_clock, begin);
     int fade_black = 0;
@@ -156,11 +217,27 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
             lk_platform_log("Lion King: cannot read preview controls.\n");
             return 1;
         }
+        if (api->Input.KeyPressed[0x04]) {
+            if (!animation.enabled) {
+                if (start_idle_preview(api, banks, &animation) != 0) {
+                    return 1;
+                }
+            } else {
+                animation.enabled = 0;
+                if (load_preview_bank(api, bank_index, banks, part, &frames) != 0) {
+                    return 1;
+                }
+                node->parts = part;
+                node->parts_size = sizeof(part);
+                lk_platform_log("Manual bank/frame browsing restored.\n");
+            }
+            engine_clock_reset(&clock, lk_platform_time_ns());
+        }
         unsigned int selected_bank = bank_index;
-        if (input.pressed & 1) {
+        if (!animation.enabled && (input.pressed & 1)) {
             selected_bank = (selected_bank + ASSETS_YOUNG_BANK_COUNT - 1) % ASSETS_YOUNG_BANK_COUNT;
         }
-        if (input.pressed & 2) {
+        if (!animation.enabled && (input.pressed & 2)) {
             selected_bank = (selected_bank + 1) % ASSETS_YOUNG_BANK_COUNT;
         }
         if (selected_bank != bank_index) {
@@ -169,10 +246,10 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
             }
             bank_index = selected_bank;
         }
-        if (input.pressed & 4) {
+        if (!animation.enabled && (input.pressed & 4)) {
             part[18] = (unsigned char)((part[18] + frames - 1) % frames);
         }
-        if (input.pressed & 8) {
+        if (!animation.enabled && (input.pressed & 8)) {
             part[18] = (unsigned char)((part[18] + 1) % frames);
         }
         if (input.pressed & 0x10) {
@@ -185,6 +262,14 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
             node->flags ^= 0x80;
         }
         if (input.pressed & 0x20) {
+            if (animation.enabled) {
+                animation.enabled = 0;
+                if (load_preview_bank(api, bank_index, banks, part, &frames) != 0) {
+                    return 1;
+                }
+                node->parts = part;
+                node->parts_size = sizeof(part);
+            }
             part[18] = node->pass_flags = node->flags = 0;
             fade_black = 0;
             if (vga_fade_initialize(&fade, level_rgb) != 0) {
@@ -220,9 +305,12 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
             return 1;
         }
         unsigned long long now = lk_platform_time_ns();
-        /* Keep the original render-before-update ordering; no gameplay callback yet. */
-        if (engine_dispatch_ticks(&clock, now, count_updates, &updates) < 0) {
+        if (engine_dispatch_ticks(&clock, now, update_preview, &animation) < 0) {
             lk_platform_log("Lion King: invalid monotonic clock state.\n");
+            return 1;
+        }
+        if (animation.failed) {
+            lk_platform_log("Lion King: original idle animation update failed.\n");
             return 1;
         }
         if (selftest && now - begin >= 1000000000ULL) {

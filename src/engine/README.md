@@ -19,6 +19,14 @@ Pełny loader zestawów poziomów i próbek audio pozostaje w
 [assets_legacy.inc](assets_legacy.inc). Liczby definicji w tabeli poniżej
 opisują zachowany eksport, nie liczbę natywnych funkcji.
 
+[animation.c](animation.c) odtwarza wizualny podstrumień interpretera
+`0x162c0` na podstawie handlera `0x1630b`, brakującego jako osobna funkcja
+w eksporcie. Oryginalny eksport pozostaje w neutralnym bloku. Sekwencja idle
+i deskryptory są wyciągane bez zmian z dumpu danych podczas budowania.
+Klawisz A w próbce uruchamia tę sekwencję; zdarzenia tworzące obiekty gry
+są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
+Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
+
 Podział na podstawie potwierdzonego przepływu instrukcji, bez odtwarzania brakujących ciał C:
 
 | Moduł | Definicje | Zakres |

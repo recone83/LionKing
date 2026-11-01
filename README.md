@@ -324,6 +324,7 @@ the native input masks, render-node pool, multipart sprite pass and migrated
 | Left Alt | Toggle horizontal flip |
 | Left Ctrl | Toggle vertical flip |
 | Left Shift | Hide / show the sprite using its original visibility flag |
+| A | Run original idle visual sequence / return to manual browsing |
 | F | Original integer palette fade to black / back; can interrupt a fade |
 | Space | Reset frame, flips, visibility and palette |
 | Escape | Exit |
@@ -337,6 +338,21 @@ the frame, and preserves flips/visibility. Only the selected bank is resident,
 in a checked caller buffer; no allocator or original DOS resource pointers
 are reused. Bank names are printed when selected. Selecting banks/frames is
 diagnostic browsing, not replacement movement or animation logic.
+
+A loads the three original idle banks simultaneously and runs the original
+307-record visual sequence, using its real durations, descriptor anchors and
+bank changes, at the existing gameplay update rate. It is not a synthetic
+frame-number loop. Bank/frame arrow browsing is disabled in this mode;
+A again returns to the previously selected manual bank, and Space stops the
+sequence and resets the preview. Flips, hide/show and palette fades remain
+available in either mode.
+
+This is explicitly a **visual-substream test**, not full gameplay animation.
+The six original callback commands include game-object spawning and a game
+flag update (verified at code `0x30bec`, `0x30c70`, `0x30d55`, `0x30cf4`).
+The diagnostic mode records and reports these known events instead of
+executing their unported game side effects; unknown targets are errors.
+Their original pointer values are not called as native function pointers.
 F is a diagnostic command, not a new gameplay binding. It calls the migrated
 palette transition at the original PIT rate, about 101 ticks per second,
 independent of gameplay updates. A full transition takes at most 65 serviced
@@ -353,11 +369,13 @@ The sample renders into the appropriate shifted buffer window.
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     tools/check_vga_present.c src/libs/vga.c -o build/check_vga_present
 build/check_vga_present
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_viewer.c src/dos64/start.c src/dos64/platform.c \
+perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
+cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_viewer.c build/animation_data.c src/dos64/start.c src/dos64/platform.c \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
     src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \
-    src/engine/input.c src/engine/render.c src/engine/assets.c src/libs/vga.c \
+    src/engine/input.c src/engine/render.c src/engine/assets.c \
+    src/engine/animation.c src/libs/vga.c \
     -o build/check_viewer
 build/check_viewer
 ```
@@ -365,8 +383,10 @@ build/check_viewer
 The end-to-end host test runs the actual DOS64 entry with the real EPF and mocked
 runtime services. It verifies every output pixel through frame changes, held
 keys, flips, hiding, reset, timed fades and interrupted fades, and Escape. The presentation test checks all 65536
-It now loads all 28 original banks through the actual entry, checking bank
-wrap and held keys and comparing 10944000 ARGB pixels. The presentation test checks all 65536
+It loads all 28 original banks through the actual entry, checks bank wrap
+and held keys, then runs more than two original idle loops against an independent
+trace of the original data. In total it compares 280512000 ARGB pixels,
+including manual-mode return and the reported diagnostic event counts. The presentation test checks all 65536
 camera words. The real PE sample was also booted in headless QEMU: Right
 changed 3150 viewport pixels, Shift removed the sprite (5787 changed pixels),
 and Escape returned to the DOS64 shell with exit code zero. Host tests verify
@@ -377,6 +397,10 @@ including all 5967 previously nonblack pixels. Escape again exited cleanly.
 Bank selection was verified in QEMU too: Down loaded `SYIDLE2.MCH`, changing
 4797 viewport pixels; Up reloaded `SYIDLE1.MCH` and restored the original
 viewport exactly. The sample exited with code zero.
+The original idle visual sequence was also verified in real QEMU: A started
+automatic timed changes (828 changed viewport pixels across three captures),
+reported an original script event, A returned to manual browsing, and Escape
+returned to the shell with exit code zero.
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.
