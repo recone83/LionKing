@@ -34,6 +34,8 @@ static unsigned int idle_position, idle_descriptor, idle_remaining, idle_events;
 static unsigned int logged_events;
 static int idle_enabled;
 static unsigned long long idle_begin, previous_time, expected_updates;
+static int automatic_test;
+static unsigned int default_frame_changes, default_descriptor;
 
 static unsigned int idle_u32(const unsigned char *p)
 {
@@ -115,6 +117,13 @@ static void __attribute__((ms_abi)) poll_input(void)
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
+    if (automatic_test) {
+        if (iteration == 202) {
+            api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
+        }
+        assert(iteration <= 202);
+        return;
+    }
     unsigned int key = 0;
     switch (iteration) {
     case 2: case 3: key = 0x4f; break;
@@ -150,6 +159,49 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
 {
     assert(width == 320 && height == 200 && stride == 320);
     assert(x == 0 && y == 40 && dest_width == 640 && dest_height == 400);
+    if (automatic_test) {
+        if (iteration == 1) {
+            for (unsigned int i = 0; i < 3; ++i) {
+                unsigned int slot;
+                assert(assets_load_named_bank(&api, "LIONKING.EPF", assets_young_bank_list,
+                    sizeof(assets_young_bank_list), ASSETS_YOUNG_IDLE_INDEX + i,
+                    packed, sizeof(packed), idle_banks[i], sizeof(idle_banks[i]),
+                    &dictionary, &slot, &idle_sizes[i]) == 0);
+            }
+            idle_position = ANIMATION_IDLE_START;
+            reference_idle_next();
+        } else {
+            unsigned long long updates = previous_time * 1193182ULL /
+                (11830ULL * 1000000000ULL) / 2;
+            while (expected_updates < updates) {
+                if (idle_remaining) {
+                    --idle_remaining;
+                } else {
+                    reference_idle_next();
+                }
+                ++expected_updates;
+            }
+        }
+        memset(expected, 0, sizeof(expected));
+        assert(render_map_tile_pass(map, map_size, 0, 0, 0, 0, expected) == 0);
+        assert(render_map_tile_pass(map, map_size, 0, 0, 0, 1, expected) == 0);
+        const unsigned char *part = original_idle + idle_descriptor - ANIMATION_IDLE_BASE;
+        unsigned int bank = part[19] - 14, index = part[18];
+        assert(bank < 3);
+        int anchor_x = (int)((unsigned int)part[14] | (unsigned int)part[15] << 8);
+        int anchor_y = (int)((unsigned int)part[16] | (unsigned int)part[17] << 8);
+        assert(render_draw_sprite(idle_banks[bank], idle_sizes[bank], (unsigned short)index,
+            140 - anchor_x, 80 - anchor_y, expected) == 0);
+        for (unsigned int i = 0; i < 64000; ++i) {
+            assert(image[i] == (palette[expected[i]] | 0xff000000U));
+        }
+        if (default_descriptor != idle_descriptor) {
+            ++default_frame_changes;
+            default_descriptor = idle_descriptor;
+        }
+        previous_time = now;
+        return;
+    }
     if (iteration == 172) {
         for (unsigned int i = 0; i < 3; ++i) {
             unsigned int slot;
@@ -259,11 +311,12 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
     previous_time = now;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    automatic_test = argc == 2 && strcmp(argv[1], "--automatic") == 0;
     api.Size = sizeof(api);
     api.Version = DOS64_API_VERSION;
-    api.Arguments = "";
+    api.Arguments = automatic_test ? "" : "--manual";
     api.Write = write_text;
     api.Sleep = sleep_ms;
     api.Time.Nanoseconds = time_ns;
@@ -292,6 +345,14 @@ int main(void)
     assert(failures == 1 && invalid_slot == 999 && invalid_loaded == 999);
     failures = 0;
     assert(start(&api) == 0);
+    if (automatic_test) {
+        assert(iteration == 202 && shown == 201 && failures == 0);
+        assert(default_frame_changes >= 15 && expected_updates >= 100);
+        printf("PASS: default entry animates without any keypress, %u descriptor changes, "
+            "%llu original-rate updates, all 12864000 pixels verified\n",
+            default_frame_changes, expected_updates);
+        return 0;
+    }
     assert(iteration == 4384 && shown == 4383 && failures == 0);
     assert(seen_banks == (1U << ASSETS_YOUNG_BANK_COUNT) - 1);
     assert(expected_updates > 4070 && logged_events >= 12);

@@ -128,9 +128,8 @@ static int present_frame(void *context, const unsigned char *source,
     return 0;
 }
 
-static int selftest_requested(const char *arguments)
+static int argument_requested(const char *arguments, const char *expected)
 {
-    const char *expected = "--selftest";
     while (*arguments == ' ') {
         ++arguments;
     }
@@ -187,10 +186,14 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     PREVIEW_ANIMATION animation = {0};
     animation.node = node;
     animation.owner = &owner;
+    if (!argument_requested(api->Arguments, "--manual") &&
+        start_idle_preview(api, banks, &animation) != 0) {
+        return 1;
+    }
     lk_platform_log("Lion King DOS64 interactive asset test; not gameplay.\n"
         "Up/Down: bank. Left/Right: frame. Alt/Ctrl: flip X/Y. Shift: hide.\n"
         "A: original idle sequence/manual. F: fade to black/back. Space: reset. Escape: exit.\n");
-    int selftest = selftest_requested(api->Arguments);
+    int selftest = argument_requested(api->Arguments, "--selftest");
     unsigned long long begin = lk_platform_time_ns();
     ENGINE_CLOCK clock;
     ENGINE_CLOCK palette_clock;

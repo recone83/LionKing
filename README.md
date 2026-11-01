@@ -324,7 +324,7 @@ the native input masks, render-node pool, multipart sprite pass and migrated
 | Left Alt | Toggle horizontal flip |
 | Left Ctrl | Toggle vertical flip |
 | Left Shift | Hide / show the sprite using its original visibility flag |
-| A | Run original idle visual sequence / return to manual browsing |
+| A | Switch between the running original idle sequence and manual browsing |
 | F | Original integer palette fade to black / back; can interrupt a fade |
 | Space | Reset frame, flips, visibility and palette |
 | Escape | Exit |
@@ -339,7 +339,11 @@ in a checked caller buffer; no allocator or original DOS resource pointers
 are reused. Bank names are printed when selected. Selecting banks/frames is
 diagnostic browsing, not replacement movement or animation logic.
 
-A loads the three original idle banks simultaneously and runs the original
+The sample starts the original idle sequence automatically, without a key
+press. Run `LIONKING.EXE --manual` from the DOS64 shell to start with static
+bank/frame browsing instead. A switches between the two modes.
+
+Animation mode loads the three original idle banks simultaneously and runs the original
 307-record visual sequence, using its real durations, descriptor anchors and
 bank changes, at the existing gameplay update rate. It is not a synthetic
 frame-number loop. Bank/frame arrow browsing is disabled in this mode;
@@ -378,6 +382,7 @@ cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     src/engine/animation.c src/libs/vga.c \
     -o build/check_viewer
 build/check_viewer
+build/check_viewer --automatic
 ```
 
 The end-to-end host test runs the actual DOS64 entry with the real EPF and mocked
@@ -387,6 +392,10 @@ It loads all 28 original banks through the actual entry, checks bank wrap
 and held keys, then runs more than two original idle loops against an independent
 trace of the original data. In total it compares 280512000 ARGB pixels,
 including manual-mode return and the reported diagnostic event counts. The presentation test checks all 65536
+The `--automatic` host check tests the default entry without pressing A or
+any frame key: 20 descriptor changes and 12864000 verified pixels. Real QEMU
+was also tested without animation-key input; successive one-second captures
+changed 4356, 990 and 747 viewport pixels, and Escape exited with code zero. The presentation test checks all 65536
 camera words. The real PE sample was also booted in headless QEMU: Right
 changed 3150 viewport pixels, Shift removed the sprite (5787 changed pixels),
 and Escape returned to the DOS64 shell with exit code zero. Host tests verify

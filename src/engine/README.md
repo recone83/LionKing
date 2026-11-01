@@ -23,7 +23,8 @@ opisują zachowany eksport, nie liczbę natywnych funkcji.
 `0x162c0` na podstawie handlera `0x1630b`, brakującego jako osobna funkcja
 w eksporcie. Oryginalny eksport pozostaje w neutralnym bloku. Sekwencja idle
 i deskryptory są wyciągane bez zmian z dumpu danych podczas budowania.
-Klawisz A w próbce uruchamia tę sekwencję; zdarzenia tworzące obiekty gry
+Próbka uruchamia tę sekwencję automatycznie; A przełącza ją z ręcznym
+przeglądaniem (`--manual` wybiera ręczny start). Zdarzenia tworzące obiekty gry
 są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
 Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
 
