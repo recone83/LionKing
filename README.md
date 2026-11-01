@@ -262,6 +262,23 @@ cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
 build/check_animation
 ```
 
+The original idle visual sequence starts at DS `0x6531`, referenced by script
+DS `0x5f84` through handler `0x162fc`. It contains 307 timed descriptors,
+six callback commands and an absolute loop at `0x6b4e`. Its descriptors use
+original MCH slots 14, 15 and 16 (`SYIDLE1`, `SYIDLE2`, `SYIDLE3`).
+Build-time extraction embeds the untouched DS range `0x6531..0x8048`,
+including descriptor anchors and metadata, with no pointer relocation casts.
+The generator verifies the complete original dump SHA-256 before extracting.
+The original dump remains required at build time, not at DOS64 runtime.
+
+```bash
+perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_idle.c build/animation_data.c src/engine/animation.c \
+    src/engine/render.c src/engine/sprites.c -o build/check_idle
+build/check_idle
+```
+
 The native asset-list reader follows binary `0x11400`: a starting slot word,
 a count word, then eight-byte space-padded names with `.MCH` appended.
 The original young Simba list at DS `0x744c` is retained byte-for-byte: 28

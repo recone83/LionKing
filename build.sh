@@ -30,13 +30,14 @@ fi
 mkdir -p build
 Temporary=$(mktemp -d "$ScriptDir/build/.lionking.XXXXXX")
 cleanup() {
-    rm -f -- "$Temporary/lionking.exe" "$Temporary/dos64.img"
+    rm -f -- "$Temporary/lionking.exe" "$Temporary/dos64.img" "$Temporary/animation_data.c"
     rmdir -- "$Temporary"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+perl tools/extract_animation.pl bin/obj2_data.bin > "$Temporary/animation_data.c"
 "$Compiler" -m64 -O2 -Wall -Wextra -Werror -ffreestanding -nostdlib -nostartfiles \
     -fno-stack-protector -mno-red-zone -Iinclude -Isrc -DLK_DOS64_NATIVE \
     -Wl,-e,dos64_entry -Wl,--subsystem,windows -Wl,--dynamicbase \
@@ -51,6 +52,7 @@ trap 'exit 143' TERM
     src/engine/render.c \
     src/engine/assets.c \
     src/engine/animation.c \
+    "$Temporary/animation_data.c" \
     lib/dos64_startup.o -Llib -lbmetal \
     -o "$Temporary/lionking.exe"
 mv -- "$Temporary/lionking.exe" build/lionking.exe

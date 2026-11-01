@@ -34,9 +34,6 @@ int animation_initialize(ANIMATION_STREAM *stream, const unsigned char *data,
         position < base || position - base >= size) {
         return -1;
     }
-    #else
-    /* The exported FUN_000062c0 remains in recovered/block_04000.c. */
-    #endif
     *stream = (ANIMATION_STREAM){data, size, base, position, 0, 0};
     return 0;
 }
@@ -114,3 +111,6 @@ int animation_step(ANIMATION_STREAM *stream, RENDER_NODE *node,
     }
     return -1;
 }
+#else
+/* The exported FUN_000062c0 remains in recovered/block_04000.c. */
+#endif
