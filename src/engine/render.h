@@ -38,6 +38,16 @@ void render_disable_animation(RENDER_NODE *node);
 void render_set_animation_period(RENDER_NODE *node, unsigned char period);
 
 typedef struct {
+    short left;
+    short top;
+    short right;
+    short bottom;
+} RENDER_BOUNDS;
+
+int render_object_bounds(const RENDER_NODE *node, RENDER_BOUNDS *bounds);
+int render_point_hit(const RENDER_NODE *node, short x, short y, short *hit);
+
+typedef struct {
     const unsigned char *data;
     unsigned int size;
 } RENDER_SPRITE_BANK;

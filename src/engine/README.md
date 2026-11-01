@@ -53,6 +53,13 @@ ze znakiem. Grawitacja dodaje `0x4e00` przed zmianą pozycji i zawsze stosuje
 limit, niezależnie od flagi wyłączającej go w drugim helperze.
 [check_physics.c](../../tools/check_physics.c) sprawdza wszystkie ułamki 16-bitowe.
 
+[render_object_bounds](render.c) i `render_point_hit` przenoszą test punktu
+`0x168a4`: granice z deskryptora +2/+4/+6/+8, odbicia H/V, 16-bitowe
+dodawanie pozycji i porównania ze znakiem z włączonymi krawędziami.
+Trafienie zwraca oryginalne -1 przez parametr wyjściowy, brak trafienia 0;
+błąd bufora jest osobnym statusem. Nie normalizujemy granic po zawinięciu,
+bo oryginał też tego nie robi. Nie jest to jeszcze kolizja z mapą poziomu.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

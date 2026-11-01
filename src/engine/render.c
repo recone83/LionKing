@@ -109,6 +109,52 @@ static unsigned int render_u16(const unsigned char *p)
     return (unsigned int)p[0] | (unsigned int)p[1] << 8;
 }
 
+static short bounds_word(unsigned int value)
+{
+    value &= 0xffff;
+    return (short)(value < 0x8000 ? (int)value : (int)value - 65536);
+}
+
+int render_object_bounds(const RENDER_NODE *node, RENDER_BOUNDS *bounds)
+{
+    if (!node || !node->active || !node->owner || !node->parts ||
+        node->parts_size < 14 || !bounds) {
+        return -1;
+    }
+    unsigned int left = render_u16(node->parts + 2);
+    unsigned int top = render_u16(node->parts + 4);
+    unsigned int right = render_u16(node->parts + 6);
+    unsigned int bottom = render_u16(node->parts + 8);
+    if (node->pass_flags & 8) {
+        unsigned int previous_left = left;
+        left = 0U - right;
+        right = 0U - previous_left;
+    }
+    if (node->pass_flags & 0x10) {
+        unsigned int previous_top = top;
+        top = 0U - bottom;
+        bottom = 0U - previous_top;
+    }
+    *bounds = (RENDER_BOUNDS){
+        bounds_word(left + (unsigned int)node->owner->x),
+        bounds_word(top + (unsigned int)node->owner->y),
+        bounds_word(right + (unsigned int)node->owner->x),
+        bounds_word(bottom + (unsigned int)node->owner->y)
+    };
+    return 0;
+}
+
+int render_point_hit(const RENDER_NODE *node, short x, short y, short *hit)
+{
+    RENDER_BOUNDS bounds;
+    if (!hit || render_object_bounds(node, &bounds) != 0) {
+        return -1;
+    }
+    *hit = bounds.right >= x && bounds.bottom >= y &&
+        bounds.left <= x && bounds.top <= y ? -1 : 0;
+    return 0;
+}
+
 static int render_signed_word(int value)
 {
     unsigned int word = (unsigned int)value & 0xffff;
