@@ -28,6 +28,13 @@ przeglądaniem (`--manual` wybiera ręczny start). Zdarzenia tworzące obiekty g
 są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
 Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
 
+Ścieżka idle używa teraz również oryginalnego nadrzędnego skryptu DS `0x5f84`:
+inicjalizacja podstrumienia, wykonanie, powrót z zapisaniem adresu wznowienia
+i względny skok pętli. Obsługiwane są też inicjalizacja oraz wykonanie
+podstrumienia ruchu. Nierozpoznane identyfikatory handlerów zgłaszają błąd;
+nie zostały zastąpione pustymi funkcjami. Próbka wywołuje ten executor zamiast
+bezpośrednio wywoływać samą animację wizualną. Zachowano obraz i tempo.
+
 Podział na podstawie potwierdzonego przepływu instrukcji, bez odtwarzania brakujących ciał C:
 
 | Moduł | Definicje | Zakres |

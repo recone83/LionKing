@@ -23,7 +23,7 @@ static const unsigned char black_rgb[768];
 static unsigned char idle_sprites[3][32768];
 
 typedef struct {
-    ANIMATION_STREAM stream;
+    ANIMATION_PROGRAM program;
     RENDER_NODE *node;
     RENDER_OWNER *owner;
     int enabled;
@@ -48,7 +48,7 @@ static void update_preview(void *context)
 {
     PREVIEW_ANIMATION *animation = context;
     if (animation->enabled && !animation->failed &&
-        animation_step(&animation->stream, animation->node, animation->owner,
+        animation_program_step(&animation->program, animation->node, animation->owner,
             record_preview_event, animation) < 0) {
         animation->failed = 1;
     }
@@ -70,9 +70,10 @@ static int start_idle_preview(const DOS64_API *api, RENDER_SPRITE_BANK banks[34]
         }
         banks[slot] = (RENDER_SPRITE_BANK){idle_sprites[i], loaded};
     }
-    if (animation_initialize(&animation->stream, animation_idle_data,
-        ANIMATION_IDLE_SIZE, ANIMATION_IDLE_BASE, ANIMATION_IDLE_START) != 0 ||
-        animation_step(&animation->stream, animation->node, animation->owner,
+    if (animation_program_initialize(&animation->program, animation_idle_script,
+        ANIMATION_IDLE_SCRIPT_SIZE, ANIMATION_IDLE_SCRIPT_BASE, ANIMATION_IDLE_SCRIPT_BASE,
+        animation_idle_data, ANIMATION_IDLE_SIZE, ANIMATION_IDLE_BASE) != 0 ||
+        animation_program_step(&animation->program, animation->node, animation->owner,
             record_preview_event, animation) < 0) {
         lk_platform_log("Lion King: invalid original idle animation stream.\n");
         return -1;

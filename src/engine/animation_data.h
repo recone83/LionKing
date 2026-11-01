@@ -5,7 +5,10 @@
 #define ANIMATION_IDLE_SIZE (0x8048U - ANIMATION_IDLE_BASE)
 #define ANIMATION_IDLE_START 0x6531U
 #define ANIMATION_IDLE_LOOP 0x6b4eU
+#define ANIMATION_IDLE_SCRIPT_BASE 0x5f84U
+#define ANIMATION_IDLE_SCRIPT_SIZE 22U
 
 extern const unsigned char animation_idle_data[ANIMATION_IDLE_SIZE];
+extern const unsigned char animation_idle_script[ANIMATION_IDLE_SCRIPT_SIZE];
 
 #endif

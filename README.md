@@ -255,6 +255,25 @@ supplied event callbacks or follow checked DS-address jumps. Invalid pointers,
 missing event handlers and control-only cycles return errors. This is the
 visual substream, not the entire behavior/script interpreter.
 
+The native outer script executor now preserves the original idle path from
+DS `0x5f84`, rather than having the preview call the visual substream directly.
+It dispatches original handler IDs for visual/motion initialization and stepping,
+yield and signed relative jumps. Yield stores the next script address exactly
+as `0x162df` does; `0x64d4` branches from its operand address, not after it.
+The supported commands can interleave visual and motion streams. Unknown
+handlers are explicit errors and retain the handler ID for inspection;
+no original 32-bit code address is invoked as a native pointer.
+This is the complete idle outer loop, not all opcodes of the game's interpreter.
+Game-event side effects still remain diagnostic in the preview.
+
+```bash
+perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_program.c build/animation_data.c src/engine/animation.c \
+    src/engine/render.c src/engine/sprites.c -o build/check_program
+build/check_program
+```
+
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     tools/check_animation.c src/engine/animation.c src/engine/render.c \

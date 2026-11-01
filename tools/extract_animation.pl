@@ -21,3 +21,6 @@ while (@bytes) {
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";
+print "const unsigned char animation_idle_script[ANIMATION_IDLE_SCRIPT_SIZE] = {\n";
+print '    ', join(', ', map { sprintf '0x%02x', $_ }
+    unpack('C*', substr($data, 0x5f84, 22))), "\n};\n";
