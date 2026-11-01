@@ -34,7 +34,7 @@ Oryginalne nazwy, linie i znormalizowane adresy są w
 [FUNCTIONS.tsv](../libs/FUNCTIONS.tsv). Nie poprawiono ciał, błędnych stałych,
 sygnatur ani globali. Te pliki nie są samodzielnymi jednostkami kompilacji.
 Znaczące komentarze pozostają też w niezmienionym
-[pseiudo.c.backup](../pseiudo.c.backup).
+[pseiudo.c.backup](../../pseiudo.c.backup).
 
 Walidacja z katalogu projektu: `perl tools/split_pseudocode.pl --check`.
 Sprawdza zachowanie wszystkich definicji i deklaracji, nie działanie gry.

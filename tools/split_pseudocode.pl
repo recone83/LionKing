@@ -4,7 +4,7 @@ use FindBin;
 use File::Spec;
 use File::Path qw(make_path);
 
-chdir File::Spec->catdir($FindBin::Bin, '..') or die "Cannot enter workspace: $!";
+chdir File::Spec->catdir($FindBin::Bin, '..', 'src') or die "Cannot enter source directory: $!";
 my $check_only = @ARGV == 1 && $ARGV[0] eq '--check';
 my $complete = @ARGV == 1 && $ARGV[0] eq '--complete';
 die "Usage: perl tools/split_pseudocode.pl [--check|--complete]\n"
@@ -68,7 +68,7 @@ sub definitions {
     return \%result;
 }
 
-my $backup = read_text('pseiudo.c.backup');
+my $backup = read_text('../pseiudo.c.backup');
 my $source = definitions($backup);
 die "Expected 753 backup definitions, got " . scalar(keys %$source) . "\n"
     unless keys(%$source) == 753;

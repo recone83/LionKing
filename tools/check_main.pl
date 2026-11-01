@@ -32,7 +32,7 @@ for my $literal (
 my $dir = tempdir(CLEANUP => 1);
 my $harness = File::Spec->catfile($dir, 'check_main.c');
 my $executable = File::Spec->catfile($dir, 'check_main');
-my $main = File::Spec->rel2abs('engine/main.c');
+my $main = File::Spec->rel2abs('src/engine/main.c');
 open my $file, '>', $harness or die "Cannot write $harness: $!";
 print {$file} <<"C" or die "Cannot write $harness: $!";
 #include <assert.h>

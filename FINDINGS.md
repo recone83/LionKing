@@ -45,9 +45,9 @@ Wykryto 184 odwołania do portów. Część wyrażeń jest ucięta przez dekompi
 
 ## Wyodrębnione grupy bibliotek
 
-Wstępny podział funkcji znajduje się w katalogu [`libs/`](./libs/). Zawiera osobne pliki dla DOS-owego I/O, usług systemowych, VGA, audio oraz runtime Watcoma/libc/conio. Podział jest heurystyczny; szczegóły i ograniczenia opisuje [`libs/README.md`](./libs/README.md).
+Wstępny podział funkcji znajduje się w katalogu [`libs/`](./src/libs/). Zawiera osobne pliki dla DOS-owego I/O, usług systemowych, VGA, audio oraz runtime Watcoma/libc/conio. Podział jest heurystyczny; szczegóły i ograniczenia opisuje [`libs/README.md`](./src/libs/README.md).
 
-Aktualny [`libs/FUNCTIONS.tsv`](./libs/FUNCTIONS.tsv) zawiera wszystkie 753 wydzielone definicje wraz z oryginalnymi i aktualnymi nazwami oraz modułami. Każda trafia dokładnie do jednego miejsca: 228 do [`libs/`](./libs/), 47 do [`engine/`](./engine/), 478 do [`recovered/`](./recovered/). Główny [`pseiudo.c`](./pseiudo.c) zawiera tylko dołączenia i zachowane komentarze. Deklaracje globalne są w [`recovered/globals.inc`](./recovered/globals.inc). Poprzedni licznik 750 pomijał trzy sygnatury z wielowierszowymi parametrami; typ zwrotny `FUN_000070ae` również znajduje się w poprzednim wierszu. Oryginał jest zachowany jako [`pseiudo.c.backup`](./pseiudo.c.backup). Liczniki w poniższych historycznych etapach dotyczą wcześniejszego parsera.
+Aktualny [`libs/FUNCTIONS.tsv`](./src/libs/FUNCTIONS.tsv) zawiera wszystkie 753 wydzielone definicje wraz z oryginalnymi i aktualnymi nazwami oraz modułami. Każda trafia dokładnie do jednego miejsca: 228 do [`libs/`](./src/libs/), 47 do [`engine/`](./src/engine/), 478 do [`recovered/`](./src/recovered/). Główny [`pseiudo.c`](./src/pseiudo.c) zawiera tylko dołączenia i zachowane komentarze. Deklaracje globalne są w [`recovered/globals.inc`](./src/recovered/globals.inc). Poprzedni licznik 750 pomijał trzy sygnatury z wielowierszowymi parametrami; typ zwrotny `FUN_000070ae` również znajduje się w poprzednim wierszu. Oryginał jest zachowany jako [`pseiudo.c.backup`](./pseiudo.c.backup). Liczniki w poniższych historycznych etapach dotyczą wcześniejszego parsera.
 
 ## Następny krok analizy
 
@@ -184,7 +184,7 @@ Odzyskano źródło czasu, kolejność renderowania, znaczenie Esc oraz blok pau
 
 ## Pierwsze moduły silnika i czytelne nazwy
 
-Wydzielono dziewięć istniejących definicji do [`engine/`](./engine/) i prezentację VGA do [`libs/vga.c`](./libs/vga.c). Wszystkie odwołania w aktywnym pseudokodzie używają nowych nazw; adresowe etykiety i globale pozostają bez zmian.
+Wydzielono dziewięć istniejących definicji do [`engine/`](./src/engine/) i prezentację VGA do [`libs/vga.c`](./src/libs/vga.c). Wszystkie odwołania w aktywnym pseudokodzie używają nowych nazw; adresowe etykiety i globale pozostają bez zmian.
 
 | Oryginalny symbol | Aktualna nazwa | Moduł |
 |---|---|---|
@@ -229,12 +229,12 @@ Po tym etapie pozostał do wydzielenia dekoder `FUN_0000248f` i wrappery zasobó
 
 ## Wydzielenie dekodera EPF
 
-Do [`engine/resource_decoder.c`](./engine/resource_decoder.c) przeniesiono:
+Do [`engine/resource_decoder.c`](./src/engine/resource_decoder.c) przeniesiono:
 
 - `FUN_0000248f` → `resources_decode_dictionary_stream` (kod `0x1248f`);
 - `FUN_00002704` → `resources_set_code_width` (kod `0x12704`).
 
-Do [`engine/resources.c`](./engine/resources.c) przeniesiono wrappery `FUN_0000221a` i `FUN_00002236` jako `resources_load_entry_wrapper` i `resources_get_entry_info_wrapper`. Są to opisy ról wrapperów, nie odtworzone kontrakty C; eksport nie zachował argumentów i wyników przekazywanych w rejestrach.
+Do [`engine/resources.c`](./src/engine/resources.c) przeniesiono wrappery `FUN_0000221a` i `FUN_00002236` jako `resources_load_entry_wrapper` i `resources_get_entry_info_wrapper`. Są to opisy ról wrapperów, nie odtworzone kontrakty C; eksport nie zachował argumentów i wyników przekazywanych w rejestrach.
 
 Dowody zapisano w [`bin/resource_decoder.asm`](./bin/resource_decoder.asm):
 
@@ -274,7 +274,7 @@ Aktualny wynik: 34 definicje silnika, 190 bibliotecznych i 526 w pliku głównym
 
 ## Wydzielenie kopiowania pikseli kafelków
 
-Do [`engine/tile_blitters.c`](./engine/tile_blitters.c) przeniesiono sześć definicji; dowody instrukcyjne są w [`bin/tile_blitters.asm`](./bin/tile_blitters.asm). Wszystkie wywołania w aktywnym pseudokodzie zostały przemianowane.
+Do [`engine/tile_blitters.c`](./src/engine/tile_blitters.c) przeniesiono sześć definicji; dowody instrukcyjne są w [`bin/tile_blitters.asm`](./bin/tile_blitters.asm). Wszystkie wywołania w aktywnym pseudokodzie zostały przemianowane.
 
 | Adres kodu | Aktualna nazwa | Oryginał |
 |---|---|---|
@@ -313,7 +313,7 @@ Zachowano uszkodzone sygnatury i granice eksportu; nie dodano nowych implementac
 
 ## Duży blok loaderów muzyki
 
-Do [`libs/music_loaders.c`](./libs/music_loaders.c) przeniesiono 40 definicji: 38 z głównego pliku i dwie z `libs/system.c`. Wcześniej opisany obszar `0x26000`–`0x2bfff` obejmował 36 definicji pozostających w monobloku. Uzupełniono go o końcowy dispatcher `0x2c2b8`, jego etap rozwiązania wskaźników `0x2c260` oraz dwa helpery wcześniej błędnie sklasyfikowane jako systemowe.
+Do [`libs/music_loaders.c`](./src/libs/music_loaders.c) przeniesiono 40 definicji: 38 z głównego pliku i dwie z `libs/system.c`. Wcześniej opisany obszar `0x26000`–`0x2bfff` obejmował 36 definicji pozostających w monobloku. Uzupełniono go o końcowy dispatcher `0x2c2b8`, jego etap rozwiązania wskaźników `0x2c260` oraz dwa helpery wcześniej błędnie sklasyfikowane jako systemowe.
 
 Podstawą podziału są powiązane wywołania, a nie tylko zakres adresów:
 
@@ -336,7 +336,7 @@ Nie przeniesiono wspólnych wrapperów alokacji ani `FUN_00030a70`, którego kon
 
 ## Zakończenie strukturalnego podziału monobloku
 
-Wszystkie pozostałe funkcje przeniesiono do 13 neutralnych bloków [`recovered/`](./recovered/README.md), według przedziałów adresów eksportu o szerokości `0x4000`. To organizacja materiału, nie rozpoznanie pierwotnych granic modułów ani nazw bibliotek. Funkcje bez potwierdzonej roli zachowują nazwy adresowe.
+Wszystkie pozostałe funkcje przeniesiono do 13 neutralnych bloków [`recovered/`](./src/recovered/README.md), według przedziałów adresów eksportu o szerokości `0x4000`. To organizacja materiału, nie rozpoznanie pierwotnych granic modułów ani nazw bibliotek. Funkcje bez potwierdzonej roli zachowują nazwy adresowe.
 
 Przy sprawdzaniu braku kodu poza modułami wykryto lukę poprzedniego parsera: pomijał sygnatury `FUN_000119e0`, `FUN_00036b7a` i `FUN_00036c98`, których parametry zajmują kilka wierszy. Po poprawce rzeczywisty eksport liczy 753 definicje, nie 750. Przeniesiono również cały typ zwrotny wielowierszowej sygnatury `FUN_000070ae`. Wszystkie te funkcje były obecne w materiale; nie dopisano nowych implementacji.
 
@@ -346,8 +346,8 @@ Nie jest to jeszcze działający program. Zachowano błędy eksportu, zależnoś
 
 ## Odtworzony punkt wejścia gry
 
-Dodano [`engine/main.c`](./engine/main.c) i dołączono go do
-[`pseiudo.c`](./pseiudo.c). `game_main` odtwarza logiczną sekwencję
+Dodano [`engine/main.c`](./src/engine/main.c) i dołączono go do
+[`pseiudo.c`](./src/pseiudo.c). `game_main` odtwarza logiczną sekwencję
 `0x10010–0x10061`: zapis stanu wideo, tryb 13h, timer, klawiatura, otwarcie EPF
 z offsetem danych `4`, konfiguracja audio, backend audio, flaga joysticka
 `DS:0x17396 = 0xff`, kalibracja, inicjalizacja zegara, sterowanie grą `0x146b0`
