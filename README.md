@@ -138,6 +138,23 @@ This is a map preview: parallax, opaque background stage, interleaved object
 passes and the gameplay camera are still unported, so it is not a complete
 reconstruction of `render_game_scene`.
 
+The existing [timing module](src/engine/timing.c) now derives IRQ-equivalent ticks
+from DOS64 monotonic nanoseconds using the nominal PIT ratio `1193182 / 11830`.
+It preserves the original byte counter wrap and
+`updates = (ticks * 5 + remainder) / 10`, retaining the remainder modulo 10.
+Reset clears both clock phases, suitable for the original pause/reset behavior.
+Backward time and arithmetic overflow return an error, reported by the caller.
+The viewer dispatches after presentation, as in the original gameplay path,
+but the callback only counts updates: object simulation is not wired yet.
+The PIT frequency is the nominal model, not a measured guarantee of the original hardware.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_timing.c src/engine/timing.c -o build/check_timing
+build/check_timing
+```
+
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots. No implementation
 `.inc` files are included by the native build. The old pseudocode aggregator

@@ -2,6 +2,7 @@
 #include "engine/resources.h"
 #include "engine/sprites.h"
 #include "engine/tiles.h"
+#include "engine/timing.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * LK_HEIGHT];
@@ -10,6 +11,11 @@ static unsigned char packed[65536];
 static unsigned char map[347816];
 static unsigned char sprite[20419];
 static RESOURCE_DICTIONARY dictionary;
+
+static void count_updates(void *context)
+{
+    ++*(unsigned long long *)context;
+}
 
 static int selftest_requested(const char *arguments)
 {
@@ -63,13 +69,22 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     lk_platform_log("Lion King DOS64 asset viewer; not gameplay. Escape exits.\n");
     int selftest = selftest_requested(api->Arguments);
     unsigned long long begin = lk_platform_time_ns();
+    ENGINE_CLOCK clock;
+    unsigned long long updates = 0;
+    engine_clock_reset(&clock, begin);
     for (;;) {
         lk_platform_poll();
         if (lk_platform_exit_requested()) {
             break;
         }
         lk_platform_present(pixels, palette);
-        if (selftest && lk_platform_time_ns() - begin >= 1000000000ULL) {
+        unsigned long long now = lk_platform_time_ns();
+        /* Keep the original render-before-update ordering; no gameplay callback yet. */
+        if (engine_dispatch_ticks(&clock, now, count_updates, &updates) < 0) {
+            lk_platform_log("Lion King: invalid monotonic clock state.\n");
+            return 1;
+        }
+        if (selftest && now - begin >= 1000000000ULL) {
             break;
         }
         lk_platform_sleep(10);
