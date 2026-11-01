@@ -35,6 +35,15 @@ podstrumienia ruchu. Nierozpoznane identyfikatory handlerów zgłaszają błąd;
 nie zostały zastąpione pustymi funkcjami. Próbka wywołuje ten executor zamiast
 bezpośrednio wywoływać samą animację wizualną. Zachowano obraz i tempo.
 
+Natywny silnik może również uruchomić oryginalną połączoną ścieżkę DS `0x3615`
+przez `animation_movement_initialize` z [animation_data.h](animation_data.h).
+Skrypt wybiera strumienie wizualny `0x362b` i ruchu `0x367a`, następnie przechodzi
+do wspólnej pętli DS `0x325a`. Generator zachowuje oryginalne bajty skryptu,
+strumieni i deskryptorów. [check_movement_program.c](../../tools/check_movement_program.c)
+sprawdza 4000 aktualizacji, dokładne klatki, czas, zmianę stanu i pozycji,
+odbicia oraz zawijanie współrzędnych. Nie przeniesiono jeszcze logiki wyboru
+tego stanu ani kolizji; podgląd nadal pokazuje idle, bez nowego przypisania klawiszy.
+
 Podział na podstawie potwierdzonego przepływu instrukcji, bez odtwarzania brakujących ciał C:
 
 | Moduł | Definicje | Zakres |

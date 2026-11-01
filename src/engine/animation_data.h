@@ -1,6 +1,8 @@
 #ifndef LIONKING_ANIMATION_DATA_H
 #define LIONKING_ANIMATION_DATA_H
 
+#include "animation.h"
+
 #define ANIMATION_IDLE_BASE 0x6531U
 #define ANIMATION_IDLE_SIZE (0x8048U - ANIMATION_IDLE_BASE)
 #define ANIMATION_IDLE_START 0x6531U
@@ -10,5 +12,12 @@
 
 extern const unsigned char animation_idle_data[ANIMATION_IDLE_SIZE];
 extern const unsigned char animation_idle_script[ANIMATION_IDLE_SCRIPT_SIZE];
+
+#define ANIMATION_MOVEMENT_BASE 0x3252U
+#define ANIMATION_MOVEMENT_SIZE (0xfc44U - ANIMATION_MOVEMENT_BASE)
+#define ANIMATION_MOVEMENT_START 0x3615U
+
+extern const unsigned char animation_movement_data[ANIMATION_MOVEMENT_SIZE];
+int animation_movement_initialize(ANIMATION_PROGRAM *program);
 
 #endif
