@@ -316,7 +316,7 @@ int main(int argc, char **argv)
     automatic_test = argc == 2 && strcmp(argv[1], "--automatic") == 0;
     api.Size = sizeof(api);
     api.Version = DOS64_API_VERSION;
-    api.Arguments = automatic_test ? "" : "--manual";
+    api.Arguments = automatic_test ? "--idle" : "--manual";
     api.Write = write_text;
     api.Sleep = sleep_ms;
     api.Time.Nanoseconds = time_ns;
@@ -348,7 +348,7 @@ int main(int argc, char **argv)
     if (automatic_test) {
         assert(iteration == 202 && shown == 201 && failures == 0);
         assert(default_frame_changes >= 15 && expected_updates >= 100);
-        printf("PASS: default entry animates without any keypress, %u descriptor changes, "
+        printf("PASS: --idle entry animates without any keypress, %u descriptor changes, "
             "%llu original-rate updates, all 12864000 pixels verified\n",
             default_frame_changes, expected_updates);
         return 0;

@@ -8,12 +8,13 @@
 #include "engine/assets.h"
 #include "engine/animation.h"
 #include "engine/animation_data.h"
+#include "engine/behaviors.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
 static DOS64_COLOR palette[256];
-static unsigned char packed[65536];
-static unsigned char map[347816];
+static unsigned char packed[79311];
+static unsigned char map[580488];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -21,6 +22,18 @@ static VGA_FADE fade;
 static unsigned char level_rgb[768];
 static const unsigned char black_rgb[768];
 static unsigned char idle_sprites[3][32768];
+static ENGINE_OBJECT_POOL scene_objects;
+static ENGINE_EMITTER_GROUP scene_emitters;
+static int scene_failed;
+
+static void update_scene(void *context)
+{
+    const DOS64_API *const *runtime = context;
+    const DOS64_API *api = *runtime;
+    if (!scene_failed && engine_update_objects(&scene_objects, &api->Input) != 0) {
+        scene_failed = 1;
+    }
+}
 
 typedef struct {
     ANIMATION_PROGRAM program;
@@ -141,6 +154,90 @@ static int argument_requested(const char *arguments, const char *expected)
     return !*expected && (!*arguments || *arguments == ' ');
 }
 
+static int run_emitter_scene(const DOS64_API *api)
+{
+    unsigned int map_size, loaded, slot;
+    if (resources_load_entry(api, "LIONKING.EPF", "LEVEL6.MAP", packed, sizeof(packed),
+        map, sizeof(map), &dictionary, &map_size) != 0 ||
+        vga_load_palette(map, map_size, palette) != 0 ||
+        assets_load_named_bank(api, "LIONKING.EPF", animation_level6_bank_list,
+            sizeof(animation_level6_bank_list), 0, packed, sizeof(packed),
+            sprite, sizeof(sprite), &dictionary, &slot, &loaded) != 0) {
+        lk_platform_log("Lion King: cannot load original emitter scene assets.\n");
+        return 1;
+    }
+    if (slot != 160) {
+        lk_platform_log("Lion King: invalid original CRUMBLIN slot.\n");
+        return 1;
+    }
+    RENDER_SPRITE_BANK banks[161] = {0};
+    banks[slot] = (RENDER_SPRITE_BANK){sprite, loaded};
+    RENDER_OWNER camera = {3400, 380};
+    RENDER_BOUNDS visibility = {3272, 252, 3848, 580};
+    engine_initialize_objects(&scene_objects);
+    render_initialize_nodes(&render_pool);
+    scene_failed = 0;
+    if (engine_setup_emitter_group(&scene_objects, &render_pool, &scene_emitters,
+        &camera, &visibility, 0, 0, 0) != 0) {
+        lk_platform_log("Lion King: cannot initialize original emitter group.\n");
+        return 1;
+    }
+    lk_platform_log("Original level 6 CRUMBLIN scene: emitter -> parent -> falling child.\n"
+        "Migration test, not full gameplay. Activation after one second is a test fixture.\n"
+        "Escape: exit. --idle: previous Simba preview. --manual: asset browser.\n");
+    VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
+    unsigned long long begin = lk_platform_time_ns();
+    ENGINE_CLOCK clock;
+    engine_clock_reset(&clock, begin);
+    for (;;) {
+        lk_platform_poll();
+        if (lk_platform_exit_requested()) {
+            break;
+        }
+        unsigned long long now = lk_platform_time_ns();
+        if (!scene_objects.head) {
+            if (engine_setup_emitter_group(&scene_objects, &render_pool, &scene_emitters,
+                &camera, &visibility, 0, 0, 0) != 0) {
+                lk_platform_log("Lion King: cannot restart emitter scene fixture.\n");
+                return 1;
+            }
+            begin = now;
+            lk_platform_log("Emitter scene fixture restarting original setup.\n");
+        }
+        if (!scene_emitters.trigger && now - begin >= 1000000000ULL) {
+            scene_emitters.trigger = 1;
+            lk_platform_log("Emitter scene test activation enabled.\n");
+        }
+        unsigned char *view = pixels + ((frame.camera_y + 1U) & 7) * LK_WIDTH;
+        for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) {
+            view[i] = 0;
+        }
+        /* Test-scene world-to-camera mapping; original behavior state is unchanged. */
+        for (RENDER_NODE *node = render_pool.head; node; node = node->next) {
+            node->flags |= 0x40;
+        }
+        if (render_map_tile_pass(map, map_size, 0, camera.x, camera.y, 0, view) != 0 ||
+            render_map_tile_pass(map, map_size, 0, camera.x, camera.y, 1, view) != 0 ||
+            render_object_pass(&render_pool, 0, (short)-camera.x, (short)-camera.y,
+                banks, 161, view) != 0 ||
+            vga_present_frame(&frame) != 0) {
+            lk_platform_log("Lion King: invalid original emitter scene rendering.\n");
+            return 1;
+        }
+        for (RENDER_NODE *node = render_pool.head; node; node = node->next) {
+            node->flags &= 0xbf;
+        }
+        if (engine_dispatch_ticks(&clock, now, update_scene, &api) < 0 ||
+            scene_failed) {
+            lk_platform_log("Lion King: original emitter scene update failed.\n");
+            return 1;
+        }
+        lk_platform_sleep(10);
+    }
+    lk_platform_log("Original emitter scene finished.\n");
+    return 0;
+}
+
 int __attribute__((ms_abi)) start(const DOS64_API *api)
 {
     if (lk_platform_init(api) != 0) {
@@ -149,6 +246,11 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     if (!api->Arguments) {
         lk_platform_log("Lion King: missing runtime argument string.\n");
         return 1;
+    }
+    if (!argument_requested(api->Arguments, "--idle") &&
+        !argument_requested(api->Arguments, "--manual") &&
+        !argument_requested(api->Arguments, "--selftest")) {
+        return run_emitter_scene(api);
     }
     LK_EPF_INFO archive;
     if (resources_open_archive(api, "LIONKING.EPF", &archive) != 0) {

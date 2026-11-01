@@ -23,7 +23,7 @@ opisują zachowany eksport, nie liczbę natywnych funkcji.
 `0x162c0` na podstawie handlera `0x1630b`, brakującego jako osobna funkcja
 w eksporcie. Oryginalny eksport pozostaje w neutralnym bloku. Sekwencja idle
 i deskryptory są wyciągane bez zmian z dumpu danych podczas budowania.
-Próbka uruchamia tę sekwencję automatycznie; A przełącza ją z ręcznym
+Próbka `--idle` uruchamia tę sekwencję automatycznie; A przełącza ją z ręcznym
 przeglądaniem (`--manual` wybiera ręczny start). Zdarzenia tworzące obiekty gry
 są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
 Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
@@ -278,3 +278,13 @@ Eksport `audio_config_parse_settings` zaczyna się pod `0x18a84`, wewnątrz rzec
 Dowody blitterów: [tile_blitters.asm](../../bin/tile_blitters.asm). Dane kafelka zajmują 64 bajty (8×8), indeks jest mnożony przez 64, a krok docelowego wiersza wynosi 320 bajtów. Bit `0x8000` odwraca kolejność kolumn, `0x4000` kolejność wierszy. Wariant przezroczysty pomija piksel o wartości zero; nie używa kanału alfa. Warianty nieprzezroczyste korzystają też z parametrów pionowego wycinka, dlatego `opaque_full_width` nie oznacza zawsze pełnej wysokości. Pseudokod nadal ma uszkodzone adresy i liczniki; nie zastąpiono tych funkcji przez `memcpy`, które nie zachowuje odbić, przezroczystości i kroku wierszy.
 
 Dowody sprite'ów i zestawów zasobów: [asset_loading_blocks.asm](../../bin/asset_loading_blocks.asm). `assets_reload_level_samples` zwalnia poprzednie próbki i ładuje listy zależne od stanu; nie jest wyłącznie funkcją zwalniającą. Listy nazw zawierają pola o szerokości 8 bajtów z usuwaniem końcowych spacji. Rozdzielono warstwę zestawów od czytnika EPF i od sterownika audio, ale zależności do niewydzielonych helperów nadal istnieją.
+
+Domyślne wejście DOS64 pokazuje teraz oryginalną scenę `CRUMBLIN` na
+`LEVEL6.MAP`: grupa czterech emiterów, rodzice z licznikiem i spadające dzieci
+działają przez dispatcher z oryginalnymi skryptami, grawitacją i usuwaniem.
+Lista zasobów DS `0xe3d0` wskazuje `CRUMBLIN` w slocie 160.
+Stała kamera, aktywacja po sekundzie i ponowne uruchomienie grupy po usunięciu
+wszystkich obiektów są jawnie testowe; nie przeniesiono aktywacji przez bossa.
+Test [check_scene.c](../../tools/check_scene.c) sprawdza 20 sekund rzeczywistego
+wejścia i każdy piksel, a nie tylko powodzenie ładowania.
+`--idle` i `--manual` zachowują wcześniejszy podgląd Simby i przeglądarkę banków.

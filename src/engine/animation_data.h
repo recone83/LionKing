@@ -38,5 +38,6 @@ int animation_timed_initialize(ANIMATION_PROGRAM *program);
 #define ANIMATION_EMITTER_SECOND 0x1670fU
 #define ANIMATION_SHAKE_DEFINITION 0x162d4U
 extern const unsigned char animation_emitter_data[ANIMATION_EMITTER_SIZE];
+extern const unsigned char animation_level6_bank_list[188];
 
 #endif

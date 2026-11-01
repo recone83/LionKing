@@ -14,6 +14,13 @@ die "Original data dump checksum mismatch\n"
 my $bytes = substr($data, 0x6531, 0x8048 - 0x6531);
 print "/* Generated from checksum-verified original DS data; do not edit. */\n";
 print "#include \"engine/animation_data.h\"\n";
+print "const unsigned char animation_level6_bank_list[188] = {\n";
+my @banks = unpack 'C*', substr($data, 0xe3d0, 188);
+while (@banks) {
+    my @row = splice @banks, 0, 16;
+    print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+}
+print "};\n";
 print "const unsigned char animation_emitter_data[ANIMATION_EMITTER_SIZE] = {\n";
 my @emitter = unpack 'C*', substr($data, 0xe48c, 0x16728 - 0xe48c);
 while (@emitter) {

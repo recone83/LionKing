@@ -379,7 +379,7 @@ in a checked caller buffer; no allocator or original DOS resource pointers
 are reused. Bank names are printed when selected. Selecting banks/frames is
 diagnostic browsing, not replacement movement or animation logic.
 
-The sample starts the original idle sequence automatically, without a key
+Run `LIONKING.EXE --idle` to start the original idle sequence automatically, without a key
 press. Run `LIONKING.EXE --manual` from the DOS64 shell to start with static
 bank/frame browsing instead. A switches between the two modes.
 
@@ -419,7 +419,8 @@ cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
     src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \
     src/engine/input.c src/engine/render.c src/engine/assets.c \
-    src/engine/animation.c src/libs/vga.c \
+    src/engine/animation.c src/engine/objects.c src/engine/physics.c \
+    src/engine/behaviors.c src/libs/vga.c \
     -o build/check_viewer
 build/check_viewer
 build/check_viewer --automatic
@@ -432,7 +433,7 @@ It loads all 28 original banks through the actual entry, checks bank wrap
 and held keys, then runs more than two original idle loops against an independent
 trace of the original data. In total it compares 280512000 ARGB pixels,
 including manual-mode return and the reported diagnostic event counts. The presentation test checks all 65536
-The `--automatic` host check tests the default entry without pressing A or
+The `--automatic` host check tests the `--idle` entry without pressing A or
 any frame key: 20 descriptor changes and 12864000 verified pixels. Real QEMU
 was also tested without animation-key input; successive one-second captures
 changed 4356, 990 and 747 viewport pixels, and Escape exited with code zero. The presentation test checks all 65536
@@ -810,3 +811,28 @@ Image creation requires mtools, dosfstools and util-linux. Running requires
 QEMU and OVMF; default firmware is `/usr/share/OVMF/OVMF_CODE.fd`.
 Set `OVMF_PATH` or `QEMU_DISPLAY=none` as needed. The bundled launcher uses TCG
 and silent audio, so it is not an audio-playback validation environment.
+
+### Visible original emitter scene
+
+The default `LIONKING.EXE` entry now displays the original `LEVEL6.MAP` palette
+and tiles with `CRUMBLIN.MCH`, loaded from the original level-six list at
+DS `0xe3d0`, slot 160. It runs the migrated four-emitter setup `0x287bb`,
+emitter `0x2865d`, timed parent `0x2881d` and falling child `0x288a1`
+through the real object dispatcher. Original descriptors, scripts, counters,
+positions, gravity and culling drive the visible crumbling platforms and
+falling fragments; frames do not depend on keyboard presses.
+
+This is a migration demonstration, not a playable level. Its fixed camera,
+activation after one second and restart after all objects are removed are
+explicit test fixtures. The original boss activation writer is not migrated.
+Camera mapping is enabled only during rendering, leaving behavior flags
+unchanged. Escape exits; `--idle` retains the previous automatic Simba preview
+and `--manual` retains the bank/frame browser.
+
+`tools/check_scene.c` runs the actual default entry for 20 simulated seconds
+and checks 128064000 exact ARGB pixels, repeated activation and Escape.
+It requires more than 1500 frames with visible object pixels and at least
+100000 object pixels overall. Compile it with the same source list as
+`tools/check_viewer.c` above, substituting the test source and output name.
+The verified run produced 1911 visible-object frames and 7571730 object pixels.
+Real DOS64/QEMU captures also changed over time and Escape returned exit code 0.
