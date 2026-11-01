@@ -255,6 +255,12 @@ component matches. Interrupting a fade starts from the current palette.
 No old timer interrupt or VGA port access is retained. Nondefault range/speed
 settings are not yet exposed by this native interface.
 
+The shared monotonic clock now also exposes the full elapsed PIT tick count.
+Palette service uses those ticks, as verified by IRQ handler `0x108b4`;
+it must not use the gameplay dispatcher's half-rate updates or byte-wrapped
+accumulator. Both paths retain the same fractional PIT phase calculation,
+using separate clock instances when serviced independently.
+
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     tools/check_fade.c src/libs/vga.c -o build/check_fade

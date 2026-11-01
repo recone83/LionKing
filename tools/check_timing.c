@@ -26,6 +26,26 @@ int main(void)
     /* 302 IRQ ticks wrap to 46; the original dispatcher then runs 23 updates. */
     assert(batch == 23);
     assert(engine_dispatch_ticks(&clock, ~0ULL, update, &batch) == -1);
+    engine_clock_reset(&clock, 0);
+    clock.logic_remainder = 5;
+    unsigned long long irq = 0, total_irq = 0;
+    for (unsigned int ms = 1; ms <= 10000; ++ms) {
+        assert(engine_clock_elapsed_ticks(&clock, ms * 1000000ULL, &irq) == 0);
+        total_irq += irq;
+    }
+    assert(total_irq == ticks && clock.logic_remainder == 5);
+    engine_clock_reset(&clock, 0);
+    assert(engine_clock_elapsed_ticks(&clock, 3000000000ULL, &irq) == 0 && irq == 302);
+    ENGINE_CLOCK before = clock;
+    irq = 999;
+    assert(engine_clock_elapsed_ticks(&clock, 0, &irq) == -1);
+    assert(irq == 999 && clock.last_ns == before.last_ns &&
+        clock.pit_remainder == before.pit_remainder);
+    assert(engine_clock_elapsed_ticks(&clock, ~0ULL, &irq) == -1 && irq == 999);
+    assert(engine_clock_elapsed_ticks(&clock, 3000000000ULL, 0) == -1);
+    clock.pit_remainder = 11830ULL * 1000000000ULL;
+    assert(engine_clock_elapsed_ticks(&clock, 3000000000ULL, &irq) == -1 && irq == 999);
     puts("PASS: exact PIT ratio, logic remainder, byte overflow, reset and clock errors");
+    puts("PASS: full IRQ tick sampling independent of gameplay byte wrap and update remainder");
     return 0;
 }

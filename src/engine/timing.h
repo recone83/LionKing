@@ -8,6 +8,8 @@ typedef struct {
 } ENGINE_CLOCK;
 
 void engine_clock_reset(ENGINE_CLOCK *clock, unsigned long long now_ns);
+int engine_clock_elapsed_ticks(ENGINE_CLOCK *clock, unsigned long long now_ns,
+    unsigned long long *ticks);
 int engine_dispatch_ticks(ENGINE_CLOCK *clock, unsigned long long now_ns,
     void (*update)(void *), void *context);
 
