@@ -60,6 +60,26 @@ Trafienie zwraca oryginalne -1 przez parametr wyjściowy, brak trafienia 0;
 błąd bufora jest osobnym statusem. Nie normalizujemy granic po zawinięciu,
 bo oryginał też tego nie robi. Nie jest to jeszcze kolizja z mapą poziomu.
 
+[behaviors.c](behaviors.c) przenosi konkretny handler `0x288a1`:
+jednorazowe ustawienie skryptu DS `0x16741` i wyzerowanie typu przestrzennego,
+sprawdzenie widoczności `0x1a743/0x1583d`, grawitacja, następnie interpreter.
+Typowany [ENGINE_FALLING_OBJECT](behaviors.h) jest kontekstem natywnego obiektu,
+bez zapisywania starych 32-bitowych wskaźników w bajtowym payloadzie.
+Oryginalna sekwencja i deskryptor są wyciągane z dumpu bez zmian.
+Usunięcie poza oknem zwalnia węzeł renderowania i zeruje bieżący obiekt;
+istniejący dispatcher zwalnia obiekt i aktualizuje wskaźnik śledzony.
+Flaga 1 omija sprawdzenie widoczności; flagi 2+4 wybierają stałe granice.
+Okno musi całkowicie zawierać sprawdzane granice, jak w oryginale.
+
+Callback z błędem ustawia `pool->update_status`; dispatcher zwraca go i nie
+wykonuje następnych obiektów. Brak wymaganego okna, kontekstu, handlera skryptu
+lub callbacku usuwania nie jest traktowany jako sukces.
+Oryginalny handler zeruje typ przestrzenny. Jeśli inna logika później ustawi go
+na niezerowy, wymagany jest `unlink_spatial`, wywołany przed zwolnieniem rendera.
+Pełny indeks przestrzenny poziomu nadal wymaga migracji.
+[check_falling.c](../../tools/check_falling.c) uruchamia rzeczywisty dispatcher,
+nie osobną pętlę zastępującą zachowanie. Podgląd idle nie został zmieniony.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

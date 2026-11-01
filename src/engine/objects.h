@@ -16,6 +16,7 @@ struct ENGINE_OBJECT {
     const ENGINE_OBJECT_BEHAVIOR *behavior;
     unsigned char data[116];
     unsigned int active;
+    void *context;
 };
 
 struct ENGINE_OBJECT_POOL {
@@ -28,6 +29,7 @@ struct ENGINE_OBJECT_POOL {
     unsigned short update_count;
     unsigned short controls;
     ENGINE_INPUT input;
+    int update_status;
 };
 
 void engine_initialize_objects(ENGINE_OBJECT_POOL *pool);

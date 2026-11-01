@@ -7,6 +7,7 @@ void engine_initialize_objects(ENGINE_OBJECT_POOL *pool)
     pool->head = pool->tail = 0;
     pool->current = pool->tracked = 0;
     pool->update_count = pool->controls = 0;
+    pool->update_status = 0;
     input_initialize(&pool->input);
     pool->free_head = &pool->objects[0];
     for (unsigned int i = 0; i < ENGINE_OBJECT_CAPACITY; ++i) {
@@ -15,6 +16,7 @@ void engine_initialize_objects(ENGINE_OBJECT_POOL *pool)
         object->next = i + 1 < ENGINE_OBJECT_CAPACITY ? &pool->objects[i + 1] : 0;
         object->behavior = 0;
         object->active = 0;
+        object->context = 0;
     }
 }
 
@@ -36,6 +38,7 @@ ENGINE_OBJECT *engine_acquire_object(ENGINE_OBJECT_POOL *pool,
     pool->tail = object;
     object->behavior = behavior;
     object->active = 1;
+    object->context = 0;
     for (unsigned int i = 0; i < sizeof(object->data); ++i) {
         object->data[i] = 0;
     }
@@ -71,6 +74,7 @@ int engine_release_object(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
     }
     pool->free_head = object;
     object->active = 0;
+    object->context = 0;
     return 0;
 }
 
@@ -80,6 +84,7 @@ int engine_update_objects(ENGINE_OBJECT_POOL *pool, const DOS64_INPUT *keys)
         return -1;
     }
     ++pool->update_count;
+    pool->update_status = 0;
     if (input_poll_controls(&pool->input, keys) != 0) {
         return -1;
     }
@@ -92,6 +97,9 @@ int engine_update_objects(ENGINE_OBJECT_POOL *pool, const DOS64_INPUT *keys)
         }
         pool->current = object;
         object->behavior->update(pool, object);
+        if (pool->update_status != 0) {
+            return pool->update_status;
+        }
         if (object == pool->tracked) {
             pool->tracked = pool->current;
         }

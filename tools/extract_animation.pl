@@ -21,6 +21,21 @@ while (@bytes) {
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";
+print "const unsigned char animation_falling_data[ANIMATION_FALLING_SIZE] = {\n";
+my @falling = unpack 'C*', substr($data, 0xe4b4, 0x1675a - 0xe4b4);
+while (@falling) {
+    my @row = splice @falling, 0, 16;
+    print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+}
+print "};\n";
+print <<'FALLING';
+int animation_falling_initialize(ANIMATION_PROGRAM *program)
+{
+    return animation_program_initialize(program, animation_falling_data,
+        ANIMATION_FALLING_SIZE, ANIMATION_FALLING_BASE, ANIMATION_FALLING_START,
+        animation_falling_data, ANIMATION_FALLING_SIZE, ANIMATION_FALLING_BASE);
+}
+FALLING
 print <<'NATIVE';
 int animation_movement_initialize(ANIMATION_PROGRAM *program)
 {
