@@ -199,6 +199,14 @@ Grupy nie można zainicjalizować ponownie, dopóki którykolwiek jej obiekt
 lub potomek jest aktywny w tej samej puli. Grupa musi pozostać żywa.
 To setup emiterów, nie pełny setup ani działająca rozgrywka poziomu.
 
+`engine_shake_behavior` przenosi `0x283cd`: licznik od 30, użycie wartości
+sprzed dekrementacji, dokładna sekwencja wstrząsu 8/0/7/0/.../1/0 i usunięcie
+przy ujemnym starym liczniku. W stanie 15, przy zerowej odporności,
+niezerowym X obiektu i zerowej pionowej prędkości gracza wywołuje jawny
+callback oryginalnego efektu `0x22315`. Brak callbacku w tej ścieżce jest błędem.
+Nie wykonuje skryptu ani grawitacji. [check_shake.c](../../tools/check_shake.c)
+sprawdza wszystkie bramki efektu i 32 aktualizacje do zwolnienia obiektu.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

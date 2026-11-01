@@ -55,9 +55,21 @@ typedef struct {
     ENGINE_OBJECT *objects[ENGINE_EMITTER_GROUP_COUNT];
 } ENGINE_EMITTER_GROUP;
 
+typedef int (*ENGINE_PLAYER_IMPACT)(void *context);
+
+typedef struct {
+    ENGINE_FALLING_OBJECT body;
+    unsigned short *camera_shake;
+    const unsigned short *immunity;
+    const ENGINE_MOTION *player_motion;
+    ENGINE_PLAYER_IMPACT impact;
+    void *impact_context;
+} ENGINE_SHAKE_OBJECT;
+
 extern const ENGINE_OBJECT_BEHAVIOR engine_falling_behavior;
 extern const ENGINE_OBJECT_BEHAVIOR engine_timed_behavior;
 extern const ENGINE_OBJECT_BEHAVIOR engine_emitter_behavior;
+extern const ENGINE_OBJECT_BEHAVIOR engine_shake_behavior;
 /* 0: created, 1: culled by original initialization, -1: error. */
 int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,

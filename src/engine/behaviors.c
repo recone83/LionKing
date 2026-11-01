@@ -218,6 +218,43 @@ static void update_emitter(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
 
 const ENGINE_OBJECT_BEHAVIOR engine_emitter_behavior = {update_emitter};
 
+static void update_shake(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_SHAKE_OBJECT *shake = object->context;
+    ENGINE_FALLING_OBJECT *state = shake ? &shake->body : 0;
+    if (!valid_state(state) || !shake->camera_shake || !shake->immunity ||
+        !shake->player_motion) {
+        pool->update_status = -1;
+        return;
+    }
+    if (!state->initialized) {
+        state->initialized = 1;
+        state->animation.counter = 30;
+    }
+    unsigned short counter = state->animation.counter;
+    --state->animation.counter;
+    if (!*shake->immunity && counter == 15 && state->owner.x &&
+        !shake->player_motion->velocity_y) {
+        if (!shake->impact || shake->impact(shake->impact_context) != 0) {
+            pool->update_status = -1;
+            return;
+        }
+    }
+    if (counter <= 30 && !(counter & 1)) {
+        *shake->camera_shake = counter % 4 == 2 ? (unsigned short)((counter + 2) / 4) : 0;
+    } else if (counter & 0x8000) {
+        *shake->camera_shake = 0;
+        if (render_release_node(state->render_pool, state->node) != 0) {
+            pool->update_status = -1;
+            return;
+        }
+        state->node = 0;
+        pool->current = 0;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_shake_behavior = {update_shake};
+
 static unsigned int definition_word(const unsigned char *data)
 {
     return (unsigned int)data[0] | (unsigned int)data[1] << 8;
