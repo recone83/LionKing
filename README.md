@@ -155,6 +155,23 @@ cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
 build/check_timing
 ```
 
+The existing [object module](src/engine/objects.c) now implements the pool
+confirmed at `0x18350`, `0x183b5` and `0x183ee`: 96 entries, append-to-tail
+acquisition and push-to-front recycling. Each object retains 116 bytes of game
+data; list pointers and behavior pointers are native, so the old 128-byte binary
+stride is deliberately not used in memory. Pool exhaustion still returns null.
+Invalid releases return failure; future gameplay callers must report that error.
+The original update dispatcher stays in [objects_legacy.inc](src/engine/objects_legacy.inc)
+until input and gameplay callbacks have been migrated. The viewer does not yet
+use this pool; this step does not change its image.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_objects.c src/engine/objects.c -o build/check_objects
+build/check_objects
+```
+
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.
 Original pseudocode bodies are kept in adjacent `*_legacy.inc` files,

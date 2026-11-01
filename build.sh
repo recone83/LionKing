@@ -46,6 +46,7 @@ trap 'exit 143' TERM
     src/engine/tile_blitters.c \
     src/engine/tiles.c \
     src/engine/timing.c \
+    src/engine/objects.c \
     lib/dos64_startup.o -Llib -lbmetal \
     -o "$Temporary/lionking.exe"
 mv -- "$Temporary/lionking.exe" build/lionking.exe
