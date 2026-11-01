@@ -209,6 +209,20 @@ cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
 build/check_render
 ```
 
+Native render nodes preserve the pool of 80 entries established by binary
+`0x188c1` (`0x1c398` to `0x1ca78`, stride 22). Acquisition inserts by signed
+16-bit order, preserving insertion order for ties; release recycles at the free
+head. The four control bytes retain countdown, period, pass and flags. Animation
+enable/disable preserves unrelated bits and does not reset the countdown.
+Native pointers deliberately replace the original packed 32-bit pointer layout.
+Pool exhaustion and invalid release are explicit failures, not substitute nodes.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_render_nodes.c src/engine/render.c -o build/check_render_nodes
+build/check_render_nodes
+```
+
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.
 Original pseudocode bodies are kept in adjacent `*_legacy.inc` files,

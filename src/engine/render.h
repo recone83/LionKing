@@ -1,6 +1,42 @@
 #ifndef LIONKING_RENDER_H
 #define LIONKING_RENDER_H
 
+#define RENDER_NODE_COUNT 80U
+
+typedef struct RENDER_NODE RENDER_NODE;
+typedef struct {
+    short x;
+    short y;
+} RENDER_OWNER;
+
+struct RENDER_NODE {
+    RENDER_NODE *prev;
+    RENDER_NODE *next;
+    const RENDER_OWNER *owner;
+    unsigned char remaining;
+    unsigned char period;
+    unsigned char pass_flags;
+    unsigned char flags;
+    short order;
+    const unsigned char *parts;
+    unsigned int parts_size;
+    int active;
+};
+
+typedef struct {
+    RENDER_NODE nodes[RENDER_NODE_COUNT];
+    RENDER_NODE *free_head;
+    RENDER_NODE *head;
+} RENDER_POOL;
+
+void render_initialize_nodes(RENDER_POOL *pool);
+RENDER_NODE *render_acquire_node(RENDER_POOL *pool, const RENDER_OWNER *owner,
+    unsigned int control, short order, const unsigned char *parts,
+    unsigned int parts_size);
+int render_release_node(RENDER_POOL *pool, RENDER_NODE *node);
+void render_disable_animation(RENDER_NODE *node);
+void render_set_animation_period(RENDER_NODE *node, unsigned char period);
+
 typedef struct RENDER_SCENE RENDER_SCENE;
 typedef int (*RENDER_STEP)(RENDER_SCENE *scene);
 
