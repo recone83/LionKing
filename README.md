@@ -100,7 +100,7 @@ return failure and the resource layer reports diagnostics.
 The existing sprite module now has a native branch for MCH frame tables and
 run packets, clipped to the 320x200 framebuffer. Bits `0x8000` and `0x2000`
 retain the original horizontal/vertical flip coordinates, including the original
-width/height anchor convention. The viewer loads frame zero of `SYIDLE1.MCH`
+width/height anchor convention. The viewer initially shows frame zero of `SYIDLE1.MCH`
 and the palette of `LEVEL1.MAP`. This is an asset inspection stage, not a
 replacement game loop or a reconstruction of the original opening screen.
 
@@ -201,7 +201,7 @@ These interfaces are not empty replacement implementations: the original
 viewport/parallax, object draw callbacks and overlays still need migration.
 The asset viewer continues its explicitly limited preview instead of supplying
 fake stages to pretend it is the full game renderer. Test callbacks exist only
-in the host test. All other original renderer helpers are in `render_legacy.inc`.
+in the host test. Unported original renderer helpers remain in `render_legacy.inc`.
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
@@ -233,9 +233,10 @@ coordinate wrap. Banks and descriptor bounds are checked.
 Binary verification corrected the decompiler's damaged register reconstruction:
 owner offsets 0/2 are X/Y, not depth; flag `0x40` adds the viewport's X/Y words,
 not a depth increment. This implementation uses the verified instructions.
-The preview does not yet load the game's multipart descriptors or bind them to
-gameplay objects; this pass is compiled and tested, not claimed as a working
-character animation controller.
+The preview uses a clearly identified one-part diagnostic descriptor to exercise
+this pass with the real `SYIDLE1.MCH` bank. It does not yet load the game's
+multipart descriptors or bind them to gameplay objects; this is not claimed as
+a working character animation controller.
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
@@ -243,6 +244,51 @@ cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     -o build/check_render_pass
 build/check_render_pass
 ```
+
+### Interactive DOS64 test
+
+Run `./build.sh` to build and launch the updated sample in QEMU. It now uses
+the native input masks, render-node pool, multipart sprite pass and migrated
+`vga_present_frame`, rather than drawing the sprite directly once.
+
+| Key | Diagnostic action |
+|-----|-------------------|
+| Left / Right | Previous / next of the 24 real `SYIDLE1.MCH` frames, wrapping |
+| Left Alt | Toggle horizontal flip |
+| Left Ctrl | Toggle vertical flip |
+| Left Shift | Hide / show the sprite using its original visibility flag |
+| Space | Reset frame, flips and visibility |
+| Escape | Exit |
+
+Actions trigger on presses, not repeatedly while a key is held. This is an
+interactive **asset test**, not invented gameplay or a replacement animation
+script. The background remains the limited layer-zero preview.
+
+The VGA wrapper preserves the original source row `((camera_y + 1) & 7) * 320`,
+64000-byte visible area and reset of the low camera word after presentation.
+It sends indexed pixels to the DOS64 adapter instead of VGA memory and rejects
+short buffers or a failed presentation sink without resetting camera state.
+The sample renders into the appropriate shifted buffer window.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_vga_present.c src/libs/vga.c -o build/check_vga_present
+build/check_vga_present
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_viewer.c src/dos64/start.c src/dos64/platform.c \
+    src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
+    src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \
+    src/engine/input.c src/engine/render.c src/libs/vga.c -o build/check_viewer
+build/check_viewer
+```
+
+The end-to-end host test runs the actual DOS64 entry with the real EPF and mocked
+runtime services. It verifies every output pixel through frame changes, held
+keys, flips, hiding, reset and Escape. The presentation test checks all 65536
+camera words. The real PE sample was also booted in headless QEMU: Right
+changed 3150 viewport pixels, Shift removed the sprite (5787 changed pixels),
+and Escape returned to the DOS64 shell with exit code zero. Host tests verify
+the other controls pixel-for-pixel; manual QEMU testing remains useful.
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.

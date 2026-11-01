@@ -4,6 +4,22 @@
 #ifdef LK_DOS64_NATIVE
 #include "vga.h"
 
+int vga_present_frame(VGA_FRAME *frame)
+{
+    if (!frame || !frame->buffer || !frame->palette || !frame->present) {
+        return -1;
+    }
+    unsigned int offset = ((frame->camera_y + 1U) & 7) * 320;
+    if (offset > frame->size || frame->size - offset < 64000) {
+        return -1;
+    }
+    if (frame->present(frame->context, frame->buffer + offset, frame->palette) != 0) {
+        return -1;
+    }
+    frame->camera_y = 0;
+    return 0;
+}
+
 int vga_load_palette(const unsigned char *map, unsigned int size, DOS64_COLOR *palette)
 {
     if (!map || !palette || size < 4) {
