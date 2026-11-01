@@ -207,6 +207,17 @@ callback oryginalnego efektu `0x22315`. Brak callbacku w tej ścieżce jest bł�
 Nie wykonuje skryptu ani grawitacji. [check_shake.c](../../tools/check_shake.c)
 sprawdza wszystkie bramki efektu i 32 aktualizacje do zwolnienia obiektu.
 
+`engine_spawn_shake` przenosi `0x2853e` i rekord DS `0x162d4`:
+handler/inicjalizator `0x183cd`, zerowe flagi, deskryptor `0xe48c`, X jako
+znacznik efektu i Y=0. Konstruktor natychmiast ustawia wstrząs na 8 i licznik
+na 29, potem ORuje flagę gracza +0x52 z 0x40. Zachowuje bieżący obiekt.
+[check_spawn_shake.c](../../tools/check_spawn_shake.c) sprawdza oba znaczniki,
+efekt w piętnastej późniejszej aktualizacji, zwolnienie i ponowne użycie.
+Wstrząs i odporność są żywymi wskaźnikami; nie jest to zastępcza animacja.
+Rzeczywisty handler obrażeń `0x22315` oraz podłączenie wstrząsu do pełnego
+renderera poziomu pozostają nieprzeniesione. Wywołujący musi dostarczyć jawny
+callback efektu przy niezerowym znaczniku, nie pusty sukces.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

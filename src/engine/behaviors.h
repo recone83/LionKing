@@ -86,5 +86,10 @@ int engine_spawn_emitter(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
 int engine_setup_emitter_group(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_EMITTER_GROUP *group, const RENDER_OWNER *camera,
     const RENDER_BOUNDS *visibility, short order, short parent_order, short child_order);
+int engine_spawn_shake(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_SHAKE_OBJECT *state, short impact_marker, unsigned short *camera_shake,
+    const unsigned short *immunity, const ENGINE_MOTION *player_motion,
+    unsigned short *player_flags, ENGINE_PLAYER_IMPACT impact, void *impact_context,
+    short order, ENGINE_OBJECT **created);
 
 #endif

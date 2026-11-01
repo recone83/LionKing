@@ -36,6 +36,7 @@ int animation_timed_initialize(ANIMATION_PROGRAM *program);
 #define ANIMATION_EMITTER_DEFINITION 0x162e2U
 #define ANIMATION_EMITTER_FIRST 0x166f6U
 #define ANIMATION_EMITTER_SECOND 0x1670fU
+#define ANIMATION_SHAKE_DEFINITION 0x162d4U
 extern const unsigned char animation_emitter_data[ANIMATION_EMITTER_SIZE];
 
 #endif

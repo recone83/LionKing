@@ -265,11 +265,18 @@ static unsigned int definition_dword(const unsigned char *data)
     return definition_word(data) | definition_word(data + 2) << 16;
 }
 
+typedef enum {
+    SPAWN_FALLING,
+    SPAWN_TIMED,
+    SPAWN_EMITTER,
+    SPAWN_SHAKE
+} SPAWN_KIND;
+
 static int spawn_definition(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
-    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created, int timed)
+    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created, SPAWN_KIND kind)
 {
-    if (!pool || !renders || !state || !visibility || !created ||
+    if (!pool || !renders || !state || (!visibility && kind != SPAWN_SHAKE) || !created ||
         !pool->free_head || !renders->free_head) {
         return -1;
     }
@@ -278,13 +285,16 @@ static int spawn_definition(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
             return -1;
         }
     }
-    const unsigned char *data = timed == 2 ? animation_emitter_data : animation_falling_data;
-    unsigned int base = timed == 2 ? ANIMATION_EMITTER_BASE : ANIMATION_FALLING_BASE;
-    unsigned int size = timed == 2 ? ANIMATION_EMITTER_SIZE : ANIMATION_FALLING_SIZE;
-    unsigned int definition_address = timed == 2 ? ANIMATION_EMITTER_DEFINITION :
-        timed ? ANIMATION_TIMED_DEFINITION : ANIMATION_FALLING_DEFINITION;
+    int emitter_data = kind == SPAWN_EMITTER || kind == SPAWN_SHAKE;
+    const unsigned char *data = emitter_data ? animation_emitter_data : animation_falling_data;
+    unsigned int base = emitter_data ? ANIMATION_EMITTER_BASE : ANIMATION_FALLING_BASE;
+    unsigned int size = emitter_data ? ANIMATION_EMITTER_SIZE : ANIMATION_FALLING_SIZE;
+    unsigned int definition_address = kind == SPAWN_SHAKE ? ANIMATION_SHAKE_DEFINITION :
+        kind == SPAWN_EMITTER ? ANIMATION_EMITTER_DEFINITION :
+        kind == SPAWN_TIMED ? ANIMATION_TIMED_DEFINITION : ANIMATION_FALLING_DEFINITION;
     const unsigned char *definition = data + definition_address - base;
-    unsigned int handler = timed == 2 ? 0x1865d : timed ? 0x1881d : 0x188a1;
+    unsigned int handler = kind == SPAWN_SHAKE ? 0x183cd :
+        kind == SPAWN_EMITTER ? 0x1865d : kind == SPAWN_TIMED ? 0x1881d : 0x188a1;
     unsigned int flags = definition_word(definition + 4);
     unsigned int address = definition_dword(definition + 6);
     if (definition_dword(definition) != handler ||
@@ -297,8 +307,9 @@ static int spawn_definition(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     if (bytes > size - (address - base)) {
         return -1;
     }
-    const ENGINE_OBJECT_BEHAVIOR *behavior = timed == 2 ? &engine_emitter_behavior :
-        timed ? &engine_timed_behavior : &engine_falling_behavior;
+    const ENGINE_OBJECT_BEHAVIOR *behavior = kind == SPAWN_SHAKE ? &engine_shake_behavior :
+        kind == SPAWN_EMITTER ? &engine_emitter_behavior :
+        kind == SPAWN_TIMED ? &engine_timed_behavior : &engine_falling_behavior;
     ENGINE_OBJECT *object = engine_acquire_object(pool, behavior);
     if (!object) {
         return -1;
@@ -346,7 +357,7 @@ int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
     const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created)
 {
-    return spawn_definition(pool, renders, state, position, visibility, order, created, 0);
+    return spawn_definition(pool, renders, state, position, visibility, order, created, SPAWN_FALLING);
 }
 
 int engine_spawn_timed(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
@@ -363,7 +374,7 @@ int engine_spawn_timed(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
         }
     }
     int status = spawn_definition(pool, renders, &state->body, position, visibility,
-        order, created, 1);
+        order, created, SPAWN_TIMED);
     if (status == 0) {
         /* The immediate initializer changes 10 to 9; it cannot spawn yet. */
         state->child = child;
@@ -389,7 +400,7 @@ int engine_spawn_emitter(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
         return -1;
     }
     int status = spawn_definition(pool, renders, &state->body, position, visibility,
-        order, created, 2);
+        order, created, SPAWN_EMITTER);
     if (status == 0) {
         /* 0x28773/0x28797 assign script and counter after the initial callback returns. */
         state->body.animation = animation;
@@ -450,6 +461,35 @@ int engine_setup_emitter_group(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
         }
     }
     return 0;
+}
+
+int engine_spawn_shake(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_SHAKE_OBJECT *state, short impact_marker, unsigned short *camera_shake,
+    const unsigned short *immunity, const ENGINE_MOTION *player_motion,
+    unsigned short *player_flags, ENGINE_PLAYER_IMPACT impact, void *impact_context,
+    short order, ENGINE_OBJECT **created)
+{
+    if (!pool || !renders || !state || !camera_shake || !immunity ||
+        !player_motion || !player_flags || !created || (impact_marker && !impact) ||
+        !pool->free_head || !renders->free_head) {
+        return -1;
+    }
+    for (ENGINE_OBJECT *object = pool->head; object; object = object->next) {
+        if (object->context == state) {
+            return -1;
+        }
+    }
+    state->camera_shake = camera_shake;
+    state->immunity = immunity;
+    state->player_motion = player_motion;
+    state->impact = impact;
+    state->impact_context = impact_context;
+    int status = spawn_definition(pool, renders, &state->body,
+        (RENDER_OWNER){impact_marker, 0}, 0, order, created, SPAWN_SHAKE);
+    if (status == 0) {
+        *player_flags |= 0x40;
+    }
+    return status;
 }
 #else
 /* Original behavior 0x288a1 and visibility helpers remain in recovered blocks. */
