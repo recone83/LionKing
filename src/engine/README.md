@@ -93,6 +93,25 @@ Pełny indeks przestrzenny poziomu nadal wymaga migracji.
 [check_falling.c](../../tools/check_falling.c) uruchamia rzeczywisty dispatcher,
 nie osobną pętlę zastępującą zachowanie. Podgląd idle nie został zmieniony.
 
+`engine_spawn_falling` przenosi ścieżkę `0x1508e -> 0x14fbd` dla dokładnego
+rekordu DS `0x162fe`: handler `0x188a1`, zerowe flagi, początkowy deskryptor
+`0xe540` i inicjalizator `0x188a1`. Rekord jest odczytywany z oryginalnych
+danych, a identyfikatory sprawdzane zamiast rzutowania adresów na funkcje.
+Tworzy obiekt i render, ustawia pozycję i porządek, następnie natychmiast
+wykonuje oryginalny inicjalizator z zachowaniem wcześniejszego bieżącego obiektu.
+Dispatcher odwiedza nowo dopisany obiekt jeszcze w tym samym przebiegu.
+[check_spawn.c](../../tools/check_spawn.c) weryfikuje ten efekt, limity obu pul
+i usuwanie podczas inicjalizacji.
+
+To celowo tylko potwierdzony rekord, nie ogólny loader wszystkich definicji
+obiektów. Stan i okno widoczności są dostarczane przez wywołującego i muszą
+pozostać żywe. Nie można ponownie użyć stanu aktywnego obiektu w tej samej puli.
+Natywna różnica bezpieczeństwa: brak zasobów lub błąd inicjalizacji nie
+pozostawia częściowego obiektu z pustym renderem; zwracany jest błąd,
+a przydzielone elementy są zwalniane. Usunięcie przez widoczność zwraca osobny
+status 1; sukces z aktywnym obiektem 0, błąd -1.
+Nie przeniesiono jeszcze wyboru obiektów przez pełną pętlę poziomu.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

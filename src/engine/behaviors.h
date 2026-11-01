@@ -25,5 +25,9 @@ typedef struct {
 } ENGINE_FALLING_OBJECT;
 
 extern const ENGINE_OBJECT_BEHAVIOR engine_falling_behavior;
+/* 0: created, 1: culled by original initialization, -1: error. */
+int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
+    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created);
 
 #endif

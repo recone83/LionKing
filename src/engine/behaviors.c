@@ -73,6 +73,87 @@ static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
 }
 
 const ENGINE_OBJECT_BEHAVIOR engine_falling_behavior = {update_falling};
+
+static unsigned int definition_word(const unsigned char *data)
+{
+    return (unsigned int)data[0] | (unsigned int)data[1] << 8;
+}
+
+static unsigned int definition_dword(const unsigned char *data)
+{
+    return definition_word(data) | definition_word(data + 2) << 16;
+}
+
+int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
+    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created)
+{
+    if (!pool || !renders || !state || !visibility || !created ||
+        !pool->free_head || !renders->free_head) {
+        return -1;
+    }
+    for (ENGINE_OBJECT *object = pool->head; object; object = object->next) {
+        if (object->context == state) {
+            return -1;
+        }
+    }
+    const unsigned char *definition = animation_falling_data +
+        ANIMATION_FALLING_DEFINITION - ANIMATION_FALLING_BASE;
+    unsigned int flags = definition_word(definition + 4);
+    unsigned int address = definition_dword(definition + 6);
+    if (definition_dword(definition) != 0x188a1 ||
+        definition_dword(definition + 10) != 0x188a1 || flags != 0 ||
+        address < ANIMATION_FALLING_BASE ||
+        address - ANIMATION_FALLING_BASE > ANIMATION_FALLING_SIZE - 14) {
+        return -1;
+    }
+    const unsigned char *parts = animation_falling_data + address - ANIMATION_FALLING_BASE;
+    unsigned int bytes = 14 + definition_word(parts) * 6;
+    if (bytes > ANIMATION_FALLING_SIZE - (address - ANIMATION_FALLING_BASE)) {
+        return -1;
+    }
+    ENGINE_OBJECT *object = engine_acquire_object(pool, &engine_falling_behavior);
+    if (!object) {
+        return -1;
+    }
+    *state = (ENGINE_FALLING_OBJECT){0};
+    state->owner = position;
+    state->visibility = visibility;
+    state->render_pool = renders;
+    state->node = render_acquire_node(renders, &state->owner, flags << 16, order, parts, bytes);
+    if (!state->node) {
+        if (engine_release_object(pool, object) != 0) {
+            return -1;
+        }
+        return -1;
+    }
+    state->flags = (unsigned char)(flags >> 8);
+    object->context = state;
+    ENGINE_OBJECT *previous = pool->current;
+    int previous_status = pool->update_status;
+    pool->current = object;
+    pool->update_status = 0;
+    update_falling(pool, object);
+    int status = pool->update_status;
+    int culled = !pool->current;
+    pool->current = previous;
+    pool->update_status = previous_status;
+    if (status || culled) {
+        if (state->node) {
+            if (render_release_node(renders, state->node) != 0) {
+                return -1;
+            }
+            state->node = 0;
+        }
+        if (engine_release_object(pool, object) != 0) {
+            return -1;
+        }
+        *created = 0;
+        return status ? -1 : 1;
+    }
+    *created = object;
+    return 0;
+}
 #else
 /* Original behavior 0x288a1 and visibility helpers remain in recovered blocks. */
 #endif
