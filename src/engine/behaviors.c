@@ -137,9 +137,9 @@ static unsigned int definition_dword(const unsigned char *data)
     return definition_word(data) | definition_word(data + 2) << 16;
 }
 
-int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+static int spawn_definition(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
-    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created)
+    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created, int timed)
 {
     if (!pool || !renders || !state || !visibility || !created ||
         !pool->free_head || !renders->free_head) {
@@ -151,11 +151,12 @@ int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
         }
     }
     const unsigned char *definition = animation_falling_data +
-        ANIMATION_FALLING_DEFINITION - ANIMATION_FALLING_BASE;
+        (timed ? ANIMATION_TIMED_DEFINITION : ANIMATION_FALLING_DEFINITION) - ANIMATION_FALLING_BASE;
+    unsigned int handler = timed ? 0x1881d : 0x188a1;
     unsigned int flags = definition_word(definition + 4);
     unsigned int address = definition_dword(definition + 6);
-    if (definition_dword(definition) != 0x188a1 ||
-        definition_dword(definition + 10) != 0x188a1 || flags != 0 ||
+    if (definition_dword(definition) != handler ||
+        definition_dword(definition + 10) != handler || flags != 0 ||
         address < ANIMATION_FALLING_BASE ||
         address - ANIMATION_FALLING_BASE > ANIMATION_FALLING_SIZE - 14) {
         return -1;
@@ -165,7 +166,8 @@ int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     if (bytes > ANIMATION_FALLING_SIZE - (address - ANIMATION_FALLING_BASE)) {
         return -1;
     }
-    ENGINE_OBJECT *object = engine_acquire_object(pool, &engine_falling_behavior);
+    const ENGINE_OBJECT_BEHAVIOR *behavior = timed ? &engine_timed_behavior : &engine_falling_behavior;
+    ENGINE_OBJECT *object = engine_acquire_object(pool, behavior);
     if (!object) {
         return -1;
     }
@@ -186,7 +188,7 @@ int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     int previous_status = pool->update_status;
     pool->current = object;
     pool->update_status = 0;
-    update_falling(pool, object);
+    behavior->update(pool, object);
     int status = pool->update_status;
     int culled = !pool->current;
     pool->current = previous;
@@ -206,6 +208,36 @@ int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     }
     *created = object;
     return 0;
+}
+
+int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
+    const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created)
+{
+    return spawn_definition(pool, renders, state, position, visibility, order, created, 0);
+}
+
+int engine_spawn_timed(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_TIMED_OBJECT *state, ENGINE_FALLING_OBJECT *child, RENDER_OWNER position,
+    const RENDER_BOUNDS *visibility, short order, short child_order,
+    ENGINE_OBJECT **created)
+{
+    if (!state || !child || child == &state->body || !pool) {
+        return -1;
+    }
+    for (ENGINE_OBJECT *object = pool->head; object; object = object->next) {
+        if (object->context == child) {
+            return -1;
+        }
+    }
+    int status = spawn_definition(pool, renders, &state->body, position, visibility,
+        order, created, 1);
+    if (status == 0) {
+        /* The immediate initializer changes 10 to 9; it cannot spawn yet. */
+        state->child = child;
+        state->child_order = child_order;
+    }
+    return status;
 }
 #else
 /* Original behavior 0x288a1 and visibility helpers remain in recovered blocks. */

@@ -36,5 +36,9 @@ extern const ENGINE_OBJECT_BEHAVIOR engine_timed_behavior;
 int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,
     const RENDER_BOUNDS *visibility, short order, ENGINE_OBJECT **created);
+int engine_spawn_timed(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_TIMED_OBJECT *state, ENGINE_FALLING_OBJECT *child, RENDER_OWNER position,
+    const RENDER_BOUNDS *visibility, short order, short child_order,
+    ENGINE_OBJECT **created);
 
 #endif

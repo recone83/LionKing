@@ -36,7 +36,7 @@ int main(void)
     ENGINE_FALLING_OBJECT child;
     ENGINE_OBJECT *parent = setup(&pool, &renders, &timed, &child);
     uint32_t position = UINT32_C(0x80000000), velocity = 0;
-    for (unsigned int tick = 1; tick <= 2000; ++tick) {
+    for (unsigned int tick = 1; tick <= 65545; ++tick) {
         unsigned short before_y = (unsigned short)timed.body.owner.y;
         assert(engine_update_objects(&pool, &keys) == 0);
         velocity += 0x4e00;
@@ -63,6 +63,11 @@ int main(void)
             }
         }
     }
+    assert(timed.body.animation.counter == 1);
+    velocity = timed.body.motion.velocity_y;
+    assert(engine_update_objects(&pool, &keys) == -1 &&
+        timed.body.animation.counter == 0 && timed.body.motion.velocity_y == velocity);
+    assert(parent->next == pool.tail && pool.tail->context == &child);
     parent = setup(&pool, &renders, &timed, &child);
     for (unsigned int i = 0; i < 9; ++i) {
         assert(engine_update_objects(&pool, &keys) == 0);
@@ -89,7 +94,8 @@ int main(void)
         assert(engine_acquire_object(&pool, 0));
     }
     assert(engine_update_objects(&pool, &keys) == -1 && parent->active && !child.node);
-    puts("PASS: original 0x2881d timed behavior, 2000 updates, exact 10-update spawn "
-        "before gravity, child immediate+same-tick update, counter wrap, culling and errors");
+    puts("PASS: original 0x2881d timed behavior, 65545 updates, exact 10-update spawn "
+        "before gravity, child immediate+same-tick update, full counter wrap, "
+        "active child-state reuse rejected at update 65546, culling and errors");
     return 0;
 }

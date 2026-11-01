@@ -129,6 +129,14 @@ nieistniejącego natywnego alokatora. Brak stanu lub zasobów zgłasza błąd.
 Przy ponownym zerze po 65536 aktualizacjach potrzebny jest wolny stan dziecka;
 aktywnego stanu nie nadpisujemy. Podgląd nie został zmieniony.
 
+`engine_spawn_timed` odczytuje oryginalny rekord DS `0x162f0` i korzysta ze
+wspólnej ścieżki tworzenia obiektu/rendera. Oba handler ID to `0x1881d`,
+flagi zerowe, deskryptor początkowy `0xe4c8`. Inicjalizacja od razu zmniejsza
+licznik do 9, więc dziecko powstaje w dziewiątej późniejszej aktualizacji
+dispatchera, nie dziesiątej. Wywołujący przekazuje osobne żywe stany rodzica
+i dziecka. [check_spawn_timed.c](../../tools/check_spawn_timed.c) sprawdza
+całą tę ścieżkę bez ręcznego ustawiania handlera lub skryptu.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |
