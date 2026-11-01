@@ -161,6 +161,17 @@ static short bounds_hit(const RENDER_BOUNDS *a, const RENDER_BOUNDS *b)
         a->left <= b->right && a->top <= b->bottom ? -1 : 0;
 }
 
+int render_objects_hit(const RENDER_NODE *current, const RENDER_NODE *other, short *hit)
+{
+    RENDER_BOUNDS a, b;
+    if (!hit || render_object_bounds(current, &a) != 0 ||
+        render_object_bounds(other, &b) != 0) {
+        return -1;
+    }
+    *hit = bounds_hit(&a, &b);
+    return 0;
+}
+
 int render_local_rectangle_hit(const RENDER_NODE *target, const RENDER_NODE *source,
     const RENDER_BOUNDS *local, short *hit)
 {

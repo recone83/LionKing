@@ -35,6 +35,12 @@ Porównania są ze znakiem, krawędzie włączone, współrzędne zawijane 16-bi
 [check_rectangle.c](../../tools/check_rectangle.c) sprawdza obie orientacje
 obiektu źródłowego, wszystkie odbicia celu i skrajne współrzędne.
 
+`render_objects_hit` przenosi `0x16a57`: dwa pełne deskryptory, niezależne
+odbicia H/V i pozycje właścicieli. Współdzieli sprawdzony odczyt granic i
+porównanie z testem prostokąta, bez globalnych buforów tymczasowych DOS.
+[check_overlap.c](../../tools/check_overlap.c) sprawdza również symetrię wyniku
+po zamianie obu obiektów i brak normalizacji zawiniętych granic.
+
 Ścieżka idle używa teraz również oryginalnego nadrzędnego skryptu DS `0x5f84`:
 inicjalizacja podstrumienia, wykonanie, powrót z zapisaniem adresu wznowienia
 i względny skok pętli. Obsługiwane są też inicjalizacja oraz wykonanie
