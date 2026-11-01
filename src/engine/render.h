@@ -51,6 +51,7 @@ int render_local_rectangle_hit(const RENDER_NODE *target, const RENDER_NODE *sou
 int render_objects_hit(const RENDER_NODE *current, const RENDER_NODE *other, short *hit);
 int render_near_view(const RENDER_OWNER *owner, const RENDER_OWNER *camera,
     short margin_x, short margin_y, short *near);
+short render_limit_camera_x(short x, short width_tiles);
 
 typedef struct {
     const unsigned char *data;

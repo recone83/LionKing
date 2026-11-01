@@ -174,6 +174,12 @@ int render_near_view(const RENDER_OWNER *owner, const RENDER_OWNER *camera,
     return 0;
 }
 
+short render_limit_camera_x(short x, short width_tiles)
+{
+    int limit = (int)width_tiles * 8 - 320;
+    return x > limit ? bounds_word((unsigned int)limit) : x;
+}
+
 int render_objects_hit(const RENDER_NODE *current, const RENDER_NODE *other, short *hit)
 {
     RENDER_BOUNDS a, b;

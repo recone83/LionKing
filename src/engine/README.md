@@ -28,6 +28,12 @@ przeglądaniem (`--manual` wybiera ręczny start). Zdarzenia tworzące obiekty g
 są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
 Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
 
+`render_limit_camera_x` przenosi używany wynik 16-bitowy helpera `0x288e3`:
+porównuje X ze znakiem z szerokością mapy w kafelkach *8-320 i ogranicza
+tylko górną granicę. Nie dodano nieobecnego w oryginale dolnego limitu 0.
+[check_camera_limit.c](../../tools/check_camera_limit.c) sprawdza wszystkie X
+dla szerokości przy granicach i zawijanie wyniku.
+
 `render_near_view` przenosi `0x2805c`: pozycja względem kamery i okna
 320x200 z osobnymi marginesami ze znakiem. Krawędzie są wyłączone;
 obliczenia granic są 32-bitowe, nie zawijane do 16 bitów.
