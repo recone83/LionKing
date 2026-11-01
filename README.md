@@ -247,6 +247,19 @@ build/check_render_pass
 
 ### Interactive DOS64 test
 
+The native asset-list reader follows binary `0x11400`: a starting slot word,
+a count word, then eight-byte space-padded names with `.MCH` appended.
+The original young Simba list at DS `0x744c` is retained byte-for-byte: 28
+banks assigned to slots 6 through 33. The host check compares the compiled
+list directly to the untouched data dump. Invalid lists report failure;
+the legacy full level bundle/sample loader remains unported.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_assets.c src/engine/assets.c -o build/check_assets
+build/check_assets
+```
+
 The native palette transition preserves default settings at DS `0xa60`:
 one phase per PIT tick, no interval delay, all 256 colors. Binary `0x105cb`
 snapshots the source/target palettes; `0x1062b` interpolates with signed
