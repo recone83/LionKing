@@ -3,8 +3,11 @@ set -euo pipefail
 ScriptDir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 cd -- "$ScriptDir"
 
-if [ "$#" -ne 0 ]; then
-    echo "Usage: bash build.sh (compile only; image/run.sh launches DOS64)" >&2
+BuildOnly=0
+if [ "$#" -eq 1 ] && [ "$1" = "--build-only" ]; then
+    BuildOnly=1
+elif [ "$#" -ne 0 ]; then
+    echo "Usage: bash build.sh [--build-only]" >&2
     exit 2
 fi
 
@@ -27,7 +30,7 @@ fi
 mkdir -p build
 Temporary=$(mktemp -d "$ScriptDir/build/.lionking.XXXXXX")
 cleanup() {
-    rm -f -- "$Temporary/lionking.exe"
+    rm -f -- "$Temporary/lionking.exe" "$Temporary/dos64.img"
     rmdir -- "$Temporary"
 }
 trap cleanup EXIT
@@ -35,12 +38,22 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 "$Compiler" -m64 -O2 -Wall -Wextra -Werror -ffreestanding -nostdlib -nostartfiles \
-    -fno-stack-protector -mno-red-zone -Iinclude -Isrc \
+    -fno-stack-protector -mno-red-zone -Iinclude -Isrc -DLK_DOS64_NATIVE \
     -Wl,-e,dos64_entry -Wl,--subsystem,windows -Wl,--dynamicbase \
-    src/dos64/start.c src/dos64/platform.c lib/dos64_startup.o -Llib -lbmetal \
+    src/dos64/start.c src/dos64/platform.c src/engine/resources.c \
+    src/engine/resource_decoder.c \
+    src/engine/sprites.c src/libs/vga.c \
+    src/engine/tile_blitters.c \
+    src/engine/tiles.c \
+    lib/dos64_startup.o -Llib -lbmetal \
     -o "$Temporary/lionking.exe"
 mv -- "$Temporary/lionking.exe" build/lionking.exe
 if [ -f bin/bmetal.dll ]; then
     cp bin/bmetal.dll build/bmetal.dll
 fi
 echo "Built build/lionking.exe. Windows additionally requires bmetal.dll beside it."
+
+if [ "$BuildOnly" -eq 0 ]; then
+    bash image/build-image.sh "$Temporary/dos64.img"
+    bash image/run.sh "$Temporary/dos64.img"
+fi

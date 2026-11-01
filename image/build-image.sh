@@ -17,8 +17,8 @@ for Tool in sfdisk mkfs.vfat mcopy mmd truncate mktemp; do
         exit 1
     fi
 done
-if [ ! -f BOOTX64.EFI ] || [ ! -f ../build/lionking.exe ]; then
-    echo "Requires image/BOOTX64.EFI and build/lionking.exe; run bash build.sh from the project root first." >&2
+if [ ! -f BOOTX64.EFI ] || [ ! -f ../build/lionking.exe ] || [ ! -f ../data/LIONKING.EPF ]; then
+    echo "Requires image/BOOTX64.EFI, build/lionking.exe and data/LIONKING.EPF." >&2
     exit 1
 fi
 
@@ -53,6 +53,10 @@ mmd -i "$System" ::/EFI ::/EFI/BOOT
 mcopy -i "$System" BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
 mmd -i "$Data" ::/GAMES ::/GAMES/LIONKING
 mcopy -i "$Data" ../build/lionking.exe ::/GAMES/LIONKING/LIONKING.EXE
+mcopy -i "$Data" ../data/LIONKING.EPF ::/GAMES/LIONKING/LIONKING.EPF
+if [ -f ../data/LIONKING.CFG ]; then
+    mcopy -i "$Data" ../data/LIONKING.CFG ::/GAMES/LIONKING/LIONKING.CFG
+fi
 printf '@ECHO OFF\r\nCD C:\\GAMES\\LIONKING\r\nLIONKING.EXE\r\n' > "$Temporary/autoexec.txt"
 mcopy -i "$Data" "$Temporary/autoexec.txt" ::/AUTOEXEC.BAT
 

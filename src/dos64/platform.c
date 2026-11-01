@@ -14,9 +14,11 @@ int lk_platform_init(const DOS64_API *api)
     }
     if (!api->Write || !api->Sleep || !api->Input.Poll ||
         !api->Time.Nanoseconds || !api->DrawImage || !api->Gfx.Present ||
-        !api->Gfx.SelectLayer || api->Gfx.Width < LK_WIDTH || api->Gfx.Height < LK_HEIGHT) {
+        !api->Gfx.SelectLayer || !api->Fs.Open || !api->Fs.Read ||
+        !api->Fs.Seek || !api->Fs.Tell || !api->Fs.Close ||
+        api->Gfx.Width < LK_WIDTH || api->Gfx.Height < LK_HEIGHT) {
         if (api->Write) {
-            api->Write("Lion King: required graphics/input/time services unavailable.\n");
+            api->Write("Lion King: required graphics/input/time/file services unavailable.\n");
         }
         return -1;
     }

@@ -1,5 +1,15 @@
 # Wydzielone bloki silnika
 
+## Migracja DOS64
+
+`LK_DOS64_NATIVE` wybiera zmigrowane implementacje w istniejących modułach:
+[resources.c](resources.c), [resource_decoder.c](resource_decoder.c) i
+[sprites.c](sprites.c). Stare ciała w gałęziach alternatywnych są materiałem
+do dalszego odtwarzania, nie kodem linkowanym do EXE. Natywne sygnatury używają
+jawnych buforów, rozmiarów i błędów zamiast rejestrów oraz globalnych adresów DOS.
+Sprawdzanie eksportu nadal dotyczy zachowanych ciał; testy natywnych gałęzi są
+osobne, opisane w [README projektu](../../README.md).
+
 Podział na podstawie potwierdzonego przepływu instrukcji, bez odtwarzania brakujących ciał C:
 
 | Moduł | Definicje | Zakres |

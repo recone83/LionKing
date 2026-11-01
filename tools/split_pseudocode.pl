@@ -51,6 +51,8 @@ sub original_names {
 
 sub definitions {
     my ($text) = @_;
+    $text =~ s{^#ifdef LK_DOS64_NATIVE\n.*?^#else\n}
+        {my $masked = $&; $masked =~ s/[^\n]/ /g; $masked}gmse;
     my %result;
     while ($text =~ /^((?:[A-Za-z_][A-Za-z0-9_ \t*]*\n)?[^\n;{}]*\b((?:thunk_)?FUN_[0-9a-f]{8}|[a-z][a-z0-9_]+)\([^;{}]*?\)\n(?:\s*\n)*\{.*?^\})/msg) {
         my ($body, $symbol) = ($1, $2);

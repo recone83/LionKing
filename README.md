@@ -3,7 +3,8 @@
 This project separates the recovered DOS game code into modules and prepares
 it for DOS64. **The DOS64 platform test builds; the game is not playable yet.**
 The original export contains invalid C and missing functions. The executable
-currently displays a grayscale test image, not game assets or gameplay.
+currently displays a real decoded Simba sprite with the first level's palette,
+not gameplay.
 
 ## Layout
 
@@ -46,7 +47,14 @@ isolated C harness using the host `cc`. These checks do not execute the game.
 bash build.sh
 ```
 
-This command compiles only: it does not modify disk images or launch QEMU.
+This command compiles, creates a fresh temporary DOS64 image under `build/`
+with the executable and game archive, then launches QEMU. Close QEMU before
+building again. The temporary image is removed after QEMU exits; existing
+images are never modified. To compile without launching, use:
+
+```bash
+bash build.sh --build-only
+```
 The output is `build/lionking.exe`. Input binaries remain in `bin/`.
 A failed compilation leaves the last successfully built executable unchanged;
 do not mistake an old executable for a successful new build.
@@ -57,8 +65,83 @@ The build links only this entry, [platform.c](src/dos64/platform.c) and SDK star
 not the pseudocode aggregator or legacy DOS drivers. The platform test exercises
 indexed 320x200 image conversion to ARGB, integer scaling, input polling and
 monotonic time. Escape exits; `--selftest` exits after approximately one second.
-It is not yet connected to `game_main`. Files, memory management, audio and
-the actual game loop remain to be migrated.
+It is not yet connected to `game_main`. The existing resource module now has a
+native DOS64 branch selected by `LK_DOS64_NATIVE`; it validates the real EPF
+header, index and payload bounds through DOS64 filesystem callbacks.
+Its original exported bodies remain in the non-native branch for migration,
+not in the executable. Memory management, decoding, audio and the actual game
+loop remain to be migrated. Run the executable from a directory containing
+`LIONKING.EPF`.
+
+The native resource test uses the real supplied archive:
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_epf.c src/engine/resources.c src/engine/resource_decoder.c \
+    src/engine/sprites.c src/libs/vga.c src/engine/tiles.c src/engine/tile_blitters.c \
+    -o build/check_epf
+build/check_epf
+```
+
+The archive has 338 entries (13 raw and 325 dictionary-compressed), totalling
+8824931 decoded bytes. The original reader allocates/requests an extra record;
+the native branch uses the actual on-disk count and rejects truncated reads.
+
+The native branch of the existing decoder module reconstructs MSB-first codes,
+9-to-14-bit widths, width-dependent terminal/reset codes and reset without
+returning to 9 bits. The test decodes all 325 compressed entries, requires exact
+output sizes, tests truncated input and too-small output, and compares named
+resource loads with direct decoding. Enable `-fsanitize=address,undefined` with
+the host compiler for memory checks. This validates structure and bounds, not
+yet byte-for-byte equivalence with an independently run original decoder.
+Caller-owned buffers replace the original DOS allocations; decoder errors
+return failure and the resource layer reports diagnostics.
+
+The existing sprite module now has a native branch for MCH frame tables and
+run packets, clipped to the 320x200 framebuffer. Bits `0x8000` and `0x2000`
+retain the original horizontal/vertical flip coordinates, including the original
+width/height anchor convention. The viewer loads frame zero of `SYIDLE1.MCH`
+and the palette of `LEVEL1.MAP`. This is an asset inspection stage, not a
+replacement game loop or a reconstruction of the original opening screen.
+
+MAP palettes are **not CMAP chunks**: code at `0x115c2` takes the first
+little-endian dword as an offset to 768 six-bit RGB components. The native
+palette reader expands those values for DOS64, without BIOS or DAC port I/O.
+The test covers all 2597 MCH frames, both flips and clipping, all 14 MAP palettes,
+and exact synthetic pixel-placement checks.
+
+The existing [tile blitter module](src/engine/tile_blitters.c) has a native
+`render_blit_tile` implementation shared by opaque and transparent operations.
+It preserves 8x8 indexed pixels, zero-pixel transparency, horizontal `0x8000`
+and vertical `0x4000` flags, row windows and 320-byte destination rows.
+The old six entry points remain only in the reference branch.
+Zero-length windows intentionally do nothing; invalid windows fail before writes.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_tiles.c src/engine/tile_blitters.c src/engine/tiles.c -o build/check_tiles
+build/check_tiles
+```
+
+The test compares all destination pixels in 3600 cases with an independent
+source-to-destination reference, covering both flips, edge clipping, transparency
+and all valid row windows, plus invalid input without destination modifications.
+
+The existing [tile pass module](src/engine/tiles.c) now reads one MAP layer
+using its 12-byte dimension/offset record, tile storage offset and little-endian
+entries. Tile indices start at 1; zero is empty. The two passes select bit
+`0x2000` and use the native transparent blitter. Tests exercise layer zero
+of all 14 maps and an exact synthetic two-pass camera-clipping case.
+The viewer shows layer zero of LEVEL1 at camera (0,0) behind the sprite.
+This is a map preview: parallax, opaque background stage, interleaved object
+passes and the gameplay camera are still unported, so it is not a complete
+reconstruction of `render_game_scene`.
+
+Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
+implementations, with `include/` and `src/` as include roots. No implementation
+`.inc` files are included by the native build. The old pseudocode aggregator
+still textually includes unported modules for reference; it is not built.
 
 Compilation requires MinGW-w64 (`gcc-mingw-w64-x86-64` on Debian/Ubuntu).
 Override the compiler with `MINGW_GCC`. Flags use freestanding x86-64 PE,
@@ -77,14 +160,14 @@ bash image/run.sh fresh.img
 ```
 
 Relative image names are resolved inside `image/`. Image creation installs
-`build/lionking.exe` as `C:\GAMES\LIONKING\LIONKING.EXE` and configures startup
-in that directory. Game assets still need to be installed there before the
-game can use them.
+`build/lionking.exe` as `C:\GAMES\LIONKING\LIONKING.EXE`, copies `LIONKING.EPF`
+and the configuration when supplied, and configures startup in that directory.
 
 Image creation refuses to overwrite existing files. The launcher creates a
 missing image, but **does not update an existing one**. Use a new image name
 to test a new executable; stop QEMU before manipulating any image.
 Existing user images and startup commands are not rewritten by the build.
+The default build/run workflow always uses a fresh temporary image.
 
 Image creation requires mtools, dosfstools and util-linux. Running requires
 QEMU and OVMF; default firmware is `/usr/share/OVMF/OVMF_CODE.fd`.
