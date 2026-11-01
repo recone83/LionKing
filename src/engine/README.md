@@ -84,6 +84,13 @@ Nie dobiera sam kierunku hamowania. Zachowuje też x86 `abs(INT_MIN)`,
 które pozostaje ujemne. [check_braking.c](../../tools/check_braking.c) sprawdza
 te progi, oba znaki i niezmienione ułamki pozycji.
 
+`engine_motion_right/left` przenoszą `0x1a886/0x1a8f2`, wymuszając odpowiednio
+prędkość co najmniej +2 lub co najwyżej -2 przed integracją X. Tylko prawy
+helper sprawdza bit 0x10 bajtu obiektu +0x4f i zeruje wtedy prędkość;
+nie wprowadzono symetrycznej flagi, której nie ma w oryginale.
+[check_directional_motion.c](../../tools/check_directional_motion.c) sprawdza
+pełny zakres ułamków i granice porównań ze znakiem.
+
 [render_object_bounds](render.c) i `render_point_hit` przenoszą test punktu
 `0x168a4`: granice z deskryptora +2/+4/+6/+8, odbicia H/V, 16-bitowe
 dodawanie pozycji i porównania ze znakiem z włączonymi krawędziami.

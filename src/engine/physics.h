@@ -19,5 +19,8 @@ int engine_motion_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner);
 int engine_motion_accelerate_x(ENGINE_MOTION *motion, RENDER_OWNER *owner,
     uint32_t increment);
 int engine_motion_brake_x(ENGINE_MOTION *motion, uint32_t decrement);
+int engine_motion_right(ENGINE_MOTION *motion, RENDER_OWNER *owner,
+    unsigned char flags_high);
+int engine_motion_left(ENGINE_MOTION *motion, RENDER_OWNER *owner);
 
 #endif

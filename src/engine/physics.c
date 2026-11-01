@@ -82,6 +82,35 @@ int engine_motion_brake_x(ENGINE_MOTION *motion, uint32_t decrement)
     motion->velocity_x = a < b ? 0 : velocity - decrement;
     return 0;
 }
+
+int engine_motion_right(ENGINE_MOTION *motion, RENDER_OWNER *owner,
+    unsigned char flags_high)
+{
+    if (!motion || !owner) {
+        return -1;
+    }
+    if (flags_high & 0x10) {
+        motion->velocity_x = 0;
+    } else if (motion->velocity_x >= UINT32_C(0x80000000) ||
+        motion->velocity_x < UINT32_C(0x20000)) {
+        motion->velocity_x = UINT32_C(0x20000);
+    }
+    integrate(&owner->x, &motion->fraction_x, motion->velocity_x);
+    return 0;
+}
+
+int engine_motion_left(ENGINE_MOTION *motion, RENDER_OWNER *owner)
+{
+    if (!motion || !owner) {
+        return -1;
+    }
+    if (motion->velocity_x < UINT32_C(0x80000000) ||
+        motion->velocity_x > UINT32_C(0xfffe0000)) {
+        motion->velocity_x = UINT32_C(0xfffe0000);
+    }
+    integrate(&owner->x, &motion->fraction_x, motion->velocity_x);
+    return 0;
+}
 #else
 /* Original helpers remain in recovered/block_08000.c. */
 #endif
