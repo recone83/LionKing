@@ -299,3 +299,28 @@ z markerem X zero (bez wywołania obrażeń gracza). Przesunięcie obejmuje map�
 i sprite'y, nie kamerę używaną do cullingu; po prezentacji zeruje się jak
 oryginalne DS `0x173e2`. Test sceny mierzy rzeczywistą różnicę kolorów ARGB
 względem nieruchomej mapy, nie tylko zmianę indeksów palety.
+
+Większy blok Simby z [block_0c000.c](../recovered/block_0c000.c) jest
+przeniesiony do [behaviors.c](./behaviors.c): selektory `0x1e36e`, `0x1e3bf`,
+`0x1e667`, `0x1e6ee` oraz reakcje `0x1e410`, `0x1e545`.
+Selektory zwracają dokładny adres handlera, skrypt DS i licznik; adresy są
+danymi, nie wskaźnikami funkcji x64. Kod maszynowy uzupełnił zgubione
+przez dekompilator argumenty: skrypty `61aa/61b8` lub `5952/5960`,
+liczniki 50/20 i skrypt `6116/591a` przy wyjściu.
+Równie ważna poprawka: test kolizji ustawia **OR `0x20`**, nie stałą `0xbb`.
+
+Reakcje działają przez dispatcher, oryginalny interpreter skryptów i
+grawitację gracza `0x20e37` (+`0x4e00` młody / +`0x6000` dorosły).
+Zachowano 16 aktualizacji ruchu, wyjście w następnej, ujemną prędkość Y -5,
+ruch X -3/+3 i asymetryczny stop prawego wariantu.
+Nieprzeniesiony test `0x174b2` i docelowe stany gracza są jawnymi callbackami.
+Brak wymaganej zależności zatrzymuje dispatcher błędem.
+
+Test [check_player_reactions.c](../../tools/check_player_reactions.c) wykonuje
+11010048 selekcji; [check_player_deflection.c](../../tools/check_player_deflection.c)
+sprawdza cały odcinek z dokładnymi pozycjami, ułamkami i deskryptorami.
+Podgląd `--deflection` korzysta z oryginalnych `SYFLIPBW/SYFLIPFW` i wykonuje
+osiem powtarzanych przypadków testowych. Na granicy następnego stanu zatrzymuje
+reakcję, zamiast dopisywać rozgrywkę. [check_scene.c](../../tools/check_scene.c)
+z argumentem `--deflection` sprawdza 20 sekund rzeczywistego wejścia:
+128064000 pikseli ARGB, 320 klatek z ruchem i 20 granic przejścia.

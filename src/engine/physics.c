@@ -43,8 +43,21 @@ int engine_motion_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner)
     if (!motion || !owner) {
         return -1;
     }
+
     /* 0x1a7ed calls the capped helper directly, regardless of object flags. */
     motion->velocity_y = engine_add_velocity(motion->velocity_y, UINT32_C(0x4e00), 0);
+    integrate(&owner->y, &motion->fraction_y, motion->velocity_y);
+    return 0;
+}
+
+int engine_motion_player_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner,
+    unsigned short form)
+{
+    if (!motion || !owner) {
+        return -1;
+    }
+    motion->velocity_y = engine_add_velocity(motion->velocity_y,
+        form ? UINT32_C(0x6000) : UINT32_C(0x4e00), 0);
     integrate(&owner->y, &motion->fraction_y, motion->velocity_y);
     return 0;
 }

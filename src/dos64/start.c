@@ -154,6 +154,146 @@ static int argument_requested(const char *arguments, const char *expected)
     return !*expected && (!*arguments || *arguments == ' ');
 }
 
+typedef struct {
+    const DOS64_API *api;
+    ENGINE_PLAYER_DEFLECTION player;
+    ENGINE_OBJECT *object;
+    unsigned int variant;
+    unsigned char collision_flags;
+    int completed;
+    int failed;
+} DEFLECTION_PREVIEW;
+
+static int preview_player_probe(void *context, short x, short y, short *hit)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    (void)x;
+    (void)y;
+    *hit = preview->variant & 4 ? -1 : 0;
+    return 0;
+}
+
+static int preview_player_transition(void *context, const ENGINE_PLAYER_CALL *call)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    if ((call->handler != 0xaa97U && call->handler != 0xae53U) ||
+        call->script != 0x6116U || call->counter != 0) {
+        lk_platform_log("Lion King: unexpected player preview transition.\n");
+        return -1;
+    }
+    preview->object->behavior = 0;
+    preview->completed = 1;
+    lk_platform_log("Player deflection reached unported next state; fixture pauses.\n");
+    return 0;
+}
+
+static int begin_player_preview(DEFLECTION_PREVIEW *preview)
+{
+    ENGINE_PLAYER_CALL call;
+    uint32_t position = UINT32_C(0x6c31) + (preview->variant & 2 ? 2 : 0);
+    int status = preview->variant & 1 ?
+        engine_player_reaction_e6ee(0, position, &call) :
+        engine_player_reaction_e667(0, position, &call);
+    if (status != 0) {
+        return -1;
+    }
+    preview->player.body.owner = (RENDER_OWNER){160, 100};
+    preview->player.body.motion = (ENGINE_MOTION){0};
+    preview->collision_flags = 0;
+    preview->completed = 0;
+    return engine_player_begin_deflection(preview->object, &preview->player, &call);
+}
+
+static void update_player_preview(void *context)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    if (!preview->failed &&
+        engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
+        preview->failed = 1;
+    }
+}
+
+static int run_deflection_preview(const DOS64_API *api)
+{
+    unsigned int map_size;
+    if (resources_load_entry(api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
+        map, sizeof(map), &dictionary, &map_size) != 0 ||
+        vga_load_palette(map, map_size, palette) != 0) {
+        lk_platform_log("Lion King: cannot load player reaction preview map.\n");
+        return 1;
+    }
+    RENDER_SPRITE_BANK banks[34] = {0};
+    for (unsigned int i = 0; i < 2; ++i) {
+        unsigned int slot, loaded;
+        if (assets_load_named_bank(api, "LIONKING.EPF", assets_young_bank_list,
+            sizeof(assets_young_bank_list), 5 + i, packed, sizeof(packed),
+            idle_sprites[i], sizeof(idle_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
+            slot != 11 + i) {
+            lk_platform_log("Lion King: cannot load original flip banks.\n");
+            return 1;
+        }
+        banks[slot] = (RENDER_SPRITE_BANK){idle_sprites[i], loaded};
+    }
+    engine_initialize_objects(&scene_objects);
+    render_initialize_nodes(&render_pool);
+    DEFLECTION_PREVIEW preview = {0};
+    preview.api = api;
+    preview.player.body.render_pool = &render_pool;
+    preview.player.body.node = render_acquire_node(&render_pool,
+        &preview.player.body.owner, 0, 0,
+        animation_movement_data + 0x78b4 - ANIMATION_MOVEMENT_BASE, 20);
+    preview.object = engine_acquire_object(&scene_objects, 0);
+    preview.player.probe = preview_player_probe;
+    preview.player.transition = preview_player_transition;
+    preview.player.context = &preview;
+    preview.player.collision_flags = &preview.collision_flags;
+    if (!preview.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
+        lk_platform_log("Lion King: cannot initialize original player deflection.\n");
+        return 1;
+    }
+    lk_platform_log("Original Simba deflection test: --deflection, Escape exits.\n"
+        "Eight automatic fixture cases: both selectors, both script ranges, probe off/on.\n"
+        "Original motion and visual scripts; probe results and restarts are diagnostic.\n");
+    VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
+    unsigned long long begin = lk_platform_time_ns();
+    ENGINE_CLOCK clock;
+    engine_clock_reset(&clock, begin);
+    for (;;) {
+        lk_platform_poll();
+        if (lk_platform_exit_requested()) {
+            break;
+        }
+        unsigned long long now = lk_platform_time_ns();
+        if (preview.completed && now - begin >= 1000000000ULL) {
+            preview.variant = (preview.variant + 1) & 7;
+            begin = now;
+            if (begin_player_preview(&preview) != 0) {
+                lk_platform_log("Lion King: cannot restart player deflection fixture.\n");
+                return 1;
+            }
+        }
+        unsigned char *view = pixels + LK_WIDTH;
+        for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) {
+            view[i] = 0;
+        }
+        if (render_map_tile_pass(map, map_size, 0, 0, 0, 0, view) != 0 ||
+            render_map_tile_pass(map, map_size, 0, 0, 0, 1, view) != 0 ||
+            render_object_pass(&render_pool, 0, 0, 0, banks, 34, view) != 0 ||
+            vga_present_frame(&frame) != 0) {
+            lk_platform_log("Lion King: cannot render player deflection preview.\n");
+            return 1;
+        }
+        if (engine_dispatch_ticks(&clock, now, update_player_preview, &preview) < 0 ||
+            preview.failed) {
+            lk_platform_log("Lion King: original player deflection preview failed.\n");
+            return 1;
+        }
+        lk_platform_sleep(10);
+    }
+    lk_platform_log("Original player deflection preview finished.\n");
+    return 0;
+}
+
 static int run_emitter_scene(const DOS64_API *api)
 {
     unsigned int map_size, loaded, slot;
@@ -265,6 +405,9 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     if (!api->Arguments) {
         lk_platform_log("Lion King: missing runtime argument string.\n");
         return 1;
+    }
+    if (argument_requested(api->Arguments, "--deflection")) {
+        return run_deflection_preview(api);
     }
     if (!argument_requested(api->Arguments, "--idle") &&
         !argument_requested(api->Arguments, "--manual") &&

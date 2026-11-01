@@ -57,6 +57,43 @@ typedef struct {
 
 typedef int (*ENGINE_PLAYER_IMPACT)(void *context);
 
+/* Original base-zero handler and DS script addresses, not native pointers. */
+typedef struct {
+    unsigned int handler;
+    unsigned int script;
+    unsigned short counter;
+} ENGINE_PLAYER_CALL;
+
+int engine_player_reaction_e667(unsigned short form, uint32_t script_position,
+    ENGINE_PLAYER_CALL *call);
+int engine_player_reaction_e6ee(unsigned short form, uint32_t script_position,
+    ENGINE_PLAYER_CALL *call);
+int engine_player_reaction_e36e(short contact, unsigned short form,
+    uint32_t script_position, ENGINE_PLAYER_CALL *call);
+int engine_player_reaction_e3bf(short contact, unsigned short form,
+    uint32_t script_position, ENGINE_PLAYER_CALL *call);
+
+typedef int (*ENGINE_PLAYER_PROBE)(void *context, short x, short y, short *hit);
+typedef int (*ENGINE_PLAYER_TRANSITION)(void *context, const ENGINE_PLAYER_CALL *call);
+
+typedef struct {
+    ENGINE_FALLING_OBJECT body;
+    unsigned int handler;
+    unsigned short form;
+    unsigned short immunity;
+    unsigned char flags_high;
+    unsigned char controls;
+    unsigned char age;
+    unsigned char *collision_flags;
+    ENGINE_PLAYER_PROBE probe;
+    ENGINE_PLAYER_TRANSITION transition;
+    void *context;
+} ENGINE_PLAYER_DEFLECTION;
+
+extern const ENGINE_OBJECT_BEHAVIOR engine_player_deflection_behavior;
+int engine_player_begin_deflection(ENGINE_OBJECT *object,
+    ENGINE_PLAYER_DEFLECTION *state, const ENGINE_PLAYER_CALL *call);
+
 typedef struct {
     ENGINE_FALLING_OBJECT body;
     unsigned short *camera_shake;

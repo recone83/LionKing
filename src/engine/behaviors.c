@@ -2,6 +2,62 @@
 #include "behaviors.h"
 #include "animation_data.h"
 
+static int select_player_reaction(unsigned short form, uint32_t script_position,
+    int reverse, ENGINE_PLAYER_CALL *call)
+{
+    if (!call) {
+        return -1;
+    }
+    uint32_t base = form ? UINT32_C(0x5bd9) : UINT32_C(0x6c31);
+    /* SAR followed by AND 0xffff depends only on bits 1..16 of wrapped SUB. */
+    unsigned int index = ((script_position - base) >> 1) & 0xffffU;
+    int middle = index > 0 && index < 25;
+    call->handler = middle != reverse ? 0xe545U : 0xe410U;
+    call->script = middle ? (form ? 0x5960U : 0x61b8U) :
+        (form ? 0x5952U : 0x61aaU);
+    call->counter = middle ? 20 : 50;
+    return 0;
+}
+
+int engine_player_reaction_e667(unsigned short form, uint32_t script_position,
+    ENGINE_PLAYER_CALL *call)
+{
+    return select_player_reaction(form, script_position, 0, call);
+}
+
+int engine_player_reaction_e6ee(unsigned short form, uint32_t script_position,
+    ENGINE_PLAYER_CALL *call)
+{
+    return select_player_reaction(form, script_position, 1, call);
+}
+
+static int select_contact_reaction(short contact, unsigned short form,
+    uint32_t script_position, int reverse, ENGINE_PLAYER_CALL *call)
+{
+    if (!call) {
+        return -1;
+    }
+    if (contact < 4 || contact > 48 || (contact > 16 && contact < 32)) {
+        return select_player_reaction(form, script_position, reverse, call);
+    }
+    call->handler = reverse ? 0xae53U : 0xaa97U;
+    call->script = form ? 0x591aU : 0x6116U;
+    call->counter = 0;
+    return 0;
+}
+
+int engine_player_reaction_e36e(short contact, unsigned short form,
+    uint32_t script_position, ENGINE_PLAYER_CALL *call)
+{
+    return select_contact_reaction(contact, form, script_position, 1, call);
+}
+
+int engine_player_reaction_e3bf(short contact, unsigned short form,
+    uint32_t script_position, ENGINE_PLAYER_CALL *call)
+{
+    return select_contact_reaction(contact, form, script_position, 0, call);
+}
+
 static int check_visibility(ENGINE_OBJECT_POOL *pool, ENGINE_FALLING_OBJECT *state)
 {
     if (state->flags & 1) {
@@ -49,6 +105,97 @@ static int valid_state(const ENGINE_FALLING_OBJECT *state)
     }
     return 1;
 }
+
+int engine_player_begin_deflection(ENGINE_OBJECT *object,
+    ENGINE_PLAYER_DEFLECTION *state, const ENGINE_PLAYER_CALL *call)
+{
+    if (!object || !object->active || !state || !valid_state(&state->body) ||
+        !call || (call->handler != 0xe410U && call->handler != 0xe545U)) {
+        return -1;
+    }
+    ANIMATION_PROGRAM program;
+    if (animation_program_initialize(&program, animation_movement_data,
+        ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, call->script,
+        animation_movement_data, ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE) != 0) {
+        return -1;
+    }
+    program.counter = call->counter;
+    /* Initialization replaces the script pointer, not the object's state word. */
+    program.state = state->body.animation.state;
+    state->body.animation = program;
+    state->body.motion.velocity_y = UINT32_C(0xfffb0000);
+    state->age = 0;
+    state->handler = call->handler;
+    object->context = state;
+    object->behavior = &engine_player_deflection_behavior;
+    return 0;
+}
+
+static void update_player_deflection(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_PLAYER_DEFLECTION *state = object->context;
+    if (!state || !valid_state(&state->body) ||
+        (state->handler != 0xe410U && state->handler != 0xe545U)) {
+        pool->update_status = -1;
+        return;
+    }
+    if (!state->immunity && (state->flags_high & 4)) {
+        ENGINE_PLAYER_CALL call = {0xef04, 0, 0};
+        if (!state->transition || state->transition(state->context, &call) != 0) {
+            pool->update_status = -1;
+        }
+        return;
+    }
+    unsigned char stop = state->handler == 0xe410U ? 4 : 8;
+    if (state->controls & stop) {
+        state->body.motion.velocity_x = 0;
+        state->age = 16;
+    }
+    short hit;
+    if (!state->probe || state->probe(state->context, state->body.owner.x,
+        state->body.owner.y, &hit) != 0) {
+        pool->update_status = -1;
+        return;
+    }
+    if (hit) {
+        if (!state->collision_flags) {
+            pool->update_status = -1;
+            return;
+        }
+        state->body.motion.velocity_y = 0;
+        *state->collision_flags |= 0x20;
+    }
+    if (state->age == 16) {
+        ENGINE_PLAYER_CALL call = {
+            state->handler == 0xe410U ? 0xae53U : 0xaa97U,
+            state->form ? 0x591aU : 0x6116U, 0
+        };
+        state->handler = call.handler;
+        state->body.animation.counter = state->body.animation.state = 0;
+        if (!state->transition || state->transition(state->context, &call) != 0) {
+            pool->update_status = -1;
+        }
+        return;
+    }
+    ++state->age;
+    if (engine_motion_player_gravity(&state->body.motion, &state->body.owner,
+        state->form) != 0 ||
+        animation_program_step(&state->body.animation, state->body.node,
+            &state->body.owner, 0, 0) != 0) {
+        pool->update_status = -1;
+        return;
+    }
+    state->body.motion.velocity_x = state->handler == 0xe410U ?
+        UINT32_C(0xfffd0000) : UINT32_C(0x30000);
+    int status = state->handler == 0xe410U ?
+        engine_motion_left(&state->body.motion, &state->body.owner) :
+        engine_motion_right(&state->body.motion, &state->body.owner, state->flags_high);
+    if (status != 0) {
+        pool->update_status = -1;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_player_deflection_behavior = {update_player_deflection};
 
 static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
 {
