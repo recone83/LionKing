@@ -31,6 +31,7 @@
 #include "engine/objects.c"
 #include "engine/input.c"
 #include "engine/main.c"
+#include "engine/animation.c"
 
 // WARNING: Globals starting with '_' overlap smaller symbols at the same address
 

@@ -247,6 +247,21 @@ build/check_render_pass
 
 ### Interactive DOS64 test
 
+The native visual animation stream implements the verified handler at
+`0x1630b`, called by the original script interpreter `0x162c0`.
+Duration N holds a descriptor for N+1 updates. Controls toggle flips, set
+the script state, add signed X/Y offsets with 16-bit wrap, invoke explicitly
+supplied event callbacks or follow checked DS-address jumps. Invalid pointers,
+missing event handlers and control-only cycles return errors. This is the
+visual substream, not the entire behavior/script interpreter.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_animation.c src/engine/animation.c src/engine/render.c \
+    src/engine/sprites.c -o build/check_animation
+build/check_animation
+```
+
 The native asset-list reader follows binary `0x11400`: a starting slot word,
 a count word, then eight-byte space-padded names with `.MCH` appended.
 The original young Simba list at DS `0x744c` is retained byte-for-byte: 28

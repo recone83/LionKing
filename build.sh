@@ -50,6 +50,7 @@ trap 'exit 143' TERM
     src/engine/input.c \
     src/engine/render.c \
     src/engine/assets.c \
+    src/engine/animation.c \
     lib/dos64_startup.o -Llib -lbmetal \
     -o "$Temporary/lionking.exe"
 mv -- "$Temporary/lionking.exe" build/lionking.exe
