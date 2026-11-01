@@ -47,7 +47,7 @@ Wykryto 184 odwołania do portów. Część wyrażeń jest ucięta przez dekompi
 
 Wstępny podział funkcji znajduje się w katalogu [`libs/`](./libs/). Zawiera osobne pliki dla DOS-owego I/O, usług systemowych, VGA, audio oraz runtime Watcoma/libc/conio. Podział jest heurystyczny; szczegóły i ograniczenia opisuje [`libs/README.md`](./libs/README.md).
 
-Aktualny [`libs/FUNCTIONS.tsv`](./libs/FUNCTIONS.tsv) zawiera 216 wydzielonych definicji wraz z oryginalnymi i aktualnymi nazwami oraz modułami. Każda z 750 definicji trafia dokładnie do jednego miejsca: 190 do `libs/*`, 26 do `engine/*`, a 534 pozostaje w głównym [`pseiudo.c`](./pseiudo.c). Poprzedni licznik 749 pomijał deklarację `FUN_000070ae` bez typu zwrotnego; funkcja była zachowana. Oryginał jest zachowany jako [`pseiudo.c.backup`](./pseiudo.c.backup).
+Aktualny [`libs/FUNCTIONS.tsv`](./libs/FUNCTIONS.tsv) zawiera wszystkie 753 wydzielone definicje wraz z oryginalnymi i aktualnymi nazwami oraz modułami. Każda trafia dokładnie do jednego miejsca: 228 do [`libs/`](./libs/), 47 do [`engine/`](./engine/), 478 do [`recovered/`](./recovered/). Główny [`pseiudo.c`](./pseiudo.c) zawiera tylko dołączenia i zachowane komentarze. Deklaracje globalne są w [`recovered/globals.inc`](./recovered/globals.inc). Poprzedni licznik 750 pomijał trzy sygnatury z wielowierszowymi parametrami; typ zwrotny `FUN_000070ae` również znajduje się w poprzednim wierszu. Oryginał jest zachowany jako [`pseiudo.c.backup`](./pseiudo.c.backup). Liczniki w poniższych historycznych etapach dotyczą wcześniejszego parsera.
 
 ## Następny krok analizy
 
@@ -90,7 +90,7 @@ Adresy `DS:...` z instrukcji są offsetami względem segmentu danych. Nie należ
 
 ### Zalecany kolejny etap
 
-Obecny podział zachowuje kompletność tylko względem 750 definicji wyeksportowanych przez dekompilator, a nie całego kodu EXE. Brak startupu i prawdopodobnego `main` jest potwierdzony, nie wynika z utraty funkcji przy podziale.
+Obecny podział zachowuje kompletność tylko względem 753 definicji wyeksportowanych przez dekompilator, a nie całego kodu EXE. Brak startupu i prawdopodobnego `main` jest potwierdzony, nie wynika z utraty funkcji przy podziale.
 
 Należy uzupełnić analizę/dekompilację od offsetów `0x35ad4`, `0x35b4c`, `0x36f7f`, `0x36fce` i `0x10`, zachowując poprawne granice instrukcji oraz relokacje. Następnie prześledzić wywołania z `0x10`, zwłaszcza `0x46b0` i `0x1f0`, aby rozpoznać sterowanie grą. Nie zastąpiono brakujących funkcji wymyślonym pseudokodem.
 
@@ -248,3 +248,122 @@ Dowody zapisano w [`bin/resource_decoder.asm`](./bin/resource_decoder.asm):
 To silne dowody rodziny LZW, lecz nie zgodności z konkretnym formatem czy biblioteką. Położenie kodów sterujących zależy tutaj od szerokości i różni się od popularnych wariantów. Nie podmieniono dekodera na standardową bibliotekę. Jego wyeksportowane ciało nadal zawiera błędne stałe i wskaźniki; przeniesienie nie jest naprawą implementacji.
 
 Brakujące definicje inicjalizacji pul (`0x183b5`, `0x188c1`) nie mogą zostać po prostu przeniesione z eksportu: tych dokładnych funkcji w nim nie ma. Ich odtworzenie wymaga osobnego, zweryfikowanego etapu. Po tej ekstrakcji pozostały 534 definicje w pliku głównym; zachowano wszystkie 750.
+
+## Wydzielenie slotów, kafelków i konfiguracji audio
+
+Kolejnych osiem definicji wydzielono z zachowaniem ich sygnatur i ciał. Dowody: [`bin/tile_audio_blocks.asm`](./bin/tile_audio_blocks.asm).
+
+| Oryginalny symbol | Aktualna nazwa | Moduł |
+|---|---|---|
+| `FUN_00000d10` | `resources_load_slot` | `engine/resources.c` |
+| `FUN_00000d75` | `resources_release_slot` | `engine/resources.c` |
+| `FUN_00001aba` | `render_prepare_tile_parameters` | `engine/tiles.c` |
+| `FUN_00001b0b` | `render_tiles_unflagged_pass` | `engine/tiles.c` |
+| `FUN_00001c45` | `render_tiles_flagged_pass` | `engine/tiles.c` |
+| `FUN_00008a84` | `audio_config_parse_settings` | `engine/audio_config.c` |
+| `FUN_00008c3f` | `audio_config_build_device_settings` | `engine/audio_config.c` |
+| `FUN_00008d1d` | `audio_config_initialize_backend` | `engine/audio_config.c` |
+
+- Sloty zasobów są tablicą 250 wskaźników pod `DS:0x114c`; wartość `0xffff` wybiera wolny slot. Przed załadowaniem nowego zasobu istniejący slot jest zwalniany. To własny mechanizm uchwytów, nie standardowe API libc.
+- Oba przebiegi kafelków maskują identyfikator przez `0x1fff`, a bit `0x2000` wybiera przebieg. Kod obsługuje częściowe kafelki przy brzegach widoku. Nie przypisano nazw „tło/pierwszy plan” bez potwierdzenia zawartości map.
+- `render_stage_two` wywołuje teraz nazwany `render_tiles_flagged_pass`. Helpery rysowania `FUN_00001fe3`, `FUN_000020ae`, `FUN_0000214f` przeniesiono w kolejnym etapie do modułu blitterów.
+- Konfiguracja audio parsuje formaty i pola od offsetów danych `0x142`–`0x165`, przygotowuje ustawienia wybranego urządzenia i inicjalizuje backend. Nie rozpoznano jeszcze pełnych nazw API bibliotek audio.
+- Dwa eksporty audio zaczynają się pięć bajtów po rzeczywistych początkach funkcji: `0x18a84` względem `0x18a7f`, `0x18d1d` względem `0x18d18`. Przeniesienie nie poprawia tych granic ani zepsutych sygnatur.
+
+Aktualny wynik: 34 definicje silnika, 190 bibliotecznych i 526 w pliku głównym. Nie zmieniono globali ani ABI. Kierunek kolejnego podziału: helpery rysowania kafelków i slotów, po zweryfikowaniu ich granic i roli.
+
+## Wydzielenie kopiowania pikseli kafelków
+
+Do [`engine/tile_blitters.c`](./engine/tile_blitters.c) przeniesiono sześć definicji; dowody instrukcyjne są w [`bin/tile_blitters.asm`](./bin/tile_blitters.asm). Wszystkie wywołania w aktywnym pseudokodzie zostały przemianowane.
+
+| Adres kodu | Aktualna nazwa | Oryginał |
+|---|---|---|
+| `0x11d7f` | `render_blit_tile_opaque_left_clip` | `FUN_00001d7f` |
+| `0x11e4f` | `render_blit_tile_opaque_full_width` | `FUN_00001e4f` |
+| `0x11f18` | `render_blit_tile_opaque_right_clip` | `FUN_00001f18` |
+| `0x11fe3` | `render_blit_tile_transparent_left_clip` | `FUN_00001fe3` |
+| `0x120ae` | `render_blit_tile_transparent_full` | `FUN_000020ae` |
+| `0x1214f` | `render_blit_tile_transparent_right_clip` | `FUN_0000214f` |
+
+Każdy kafelek ma 64 bajty, czyli 8×8 pikseli; indeks jest przesuwany o 6 bitów i dodawany do bazy `DS:0x1582`. Bit wpisu `0x8000` wybiera odbicie poziome, a `0x4000` pionowe. Krok wiersza w docelowym buforze to `0x140 = 320` bajtów. Wariant lewego brzegu pomija pierwsze kolumny i kopiuje pozostałe; wariant prawego brzegu ogranicza liczbę kopiowanych kolumn.
+
+Warianty przezroczyste sprawdzają wartość piksela i zapisują tylko niezerowe bajty. Warianty nieprzezroczyste nadpisują również zera, a ich wysokość/offset pionowy zależą od parametrów `DS:0x157c` i `DS:0x1578`; nazwa pełnej szerokości nie zakłada pełnej wysokości. Nie zastąpiono tych funkcji przez `memcpy`, które nie implementuje takiego kontraktu.
+
+Obie funkcje przebiegów kafelków korzystają teraz z nazwanych blitterów zamiast helperów w monobloku. Zachowano uszkodzone adresy i liczniki eksportu, bez zgadywania ich naprawy. Po tym podziale: 40 definicji silnika, 190 bibliotecznych i 520 w pliku głównym; komplet 750 nadal jest zachowany.
+
+## Wydzielenie sprite'ów i zestawów zasobów
+
+Wyodrębniono siedem kolejnych definicji. Dowody: [`bin/asset_loading_blocks.asm`](./bin/asset_loading_blocks.asm).
+
+| Oryginalny symbol | Aktualna nazwa | Moduł |
+|---|---|---|
+| `FUN_00000d99` | `render_draw_sprite` | `engine/sprites.c` |
+| `FUN_000010d9` | `assets_load_level_bundle` | `engine/assets.c` |
+| `FUN_0000130e` | `assets_reload_level_samples` | `engine/assets.c` |
+| `FUN_00001400` | `assets_load_named_slot_list` | `engine/assets.c` |
+| `FUN_0000146a` | `assets_load_named_sample_list` | `engine/assets.c` |
+| `FUN_00000cd0` | `resources_load_slot_wrapper` | `engine/resources.c` |
+| `FUN_00000ce2` | `resources_release_slot_wrapper` | `engine/resources.c` |
+
+`render_draw_sprite` wybiera zasób z tablicy slotów `DS:0x114c`, sprawdza indeks klatki i pobiera jej metadane. Przetwarza ciągi pikseli zakończone znacznikiem `0xff`, obsługuje przycinanie do widoku i kierunek kopiowania. To renderer formatu sprite'ów, nie zwykłe `memcpy`. Używa kroku obrazu 320 bajtów. Przebieg obiektów `render_object_pass` korzysta teraz z tej nazwy.
+
+`assets_load_level_bundle` przygotowuje zasoby zależne od numeru poziomu/stanu i wywołuje ładowanie list. Helper `assets_load_named_slot_list` pobiera ośmiobajtowe nazwy i usuwa końcowe spacje. `assets_load_named_sample_list` ładuje próbki do rekordów od `DS:0x1fb18` i wywołuje ich przygotowanie w sterowniku audio. `assets_reload_level_samples` zwalnia poprzednie próbki, a następnie wybiera kolejne listy; nie nazwano go po prostu cleanup.
+
+Zachowano uszkodzone sygnatury i granice eksportu; nie dodano nowych implementacji ani zamienników bibliotek. W aktywnym kodzie wszystkie odwołania używają nowych nazw. Stan po ekstrakcji: 47 definicji silnika, 190 bibliotecznych i 513 w pliku głównym.
+
+## Duży blok loaderów muzyki
+
+Do [`libs/music_loaders.c`](./libs/music_loaders.c) przeniesiono 40 definicji: 38 z głównego pliku i dwie z `libs/system.c`. Wcześniej opisany obszar `0x26000`–`0x2bfff` obejmował 36 definicji pozostających w monobloku. Uzupełniono go o końcowy dispatcher `0x2c2b8`, jego etap rozwiązania wskaźników `0x2c260` oraz dwa helpery wcześniej błędnie sklasyfikowane jako systemowe.
+
+Podstawą podziału są powiązane wywołania, a nie tylko zakres adresów:
+
+| Punkt wejścia eksportu | Aktualna nazwa | Łańcuch etapów — oryginalne sufiksy |
+|---|---|---|
+| `0x26e34` | `music_load_family_a` | `26118` → `26428` → `26a58` → `26ddc`; helpery `26080`, `260f8` |
+| `0x27d3c` | `music_load_family_b` | `27010` → `271f0` → `2793c` → `27a2c` → `27ce4`; konwerter `27454` |
+| `0x29230` | `music_load_family_c` | `27ea0` → `280d4` → `282c8` → `28f80` → `291d8` |
+| `0x29ea0` | `music_load_family_d` | `29440` → `2959c` → `29700` → `29ba0` → `29e48` |
+| `0x2ae44` | `music_load_family_e` | `2a070` → `2a210` → `2a958` → `2aba4` → `2ade4`; konwerter `2a3b0` |
+| `0x2c2b8` | `music_load_family_f` | `2b010` → `2b208` → `2bbe4` → `2bf6c` → `2c260`; konwerter `2b3f0` |
+
+Powyższe adresy są offsetami kodu eksportu; dla adresów liniowych należy dodać `0x10000`. Rodziny A–F są nazwami roboczymi, nie oznaczeniami konkretnych formatów. Pozostałe symbole zachowano w formie adresowej.
+
+Wspólne cechy: odczyt nagłówków i danych, rekordy kanałów/wzorców, przygotowanie próbek, konwersja zakodowanych zdarzeń oraz zamiana indeksów w polach wzorców na wskaźniki. Są to mocne dowody ładowania/konwersji modułów muzycznych, nie rysowania obrazu. Samo podobieństwo nie ustala autorstwa ani oryginalnej biblioteki.
+
+Dowody instrukcyjne zapisano w [`bin/music_loader_dispatch.asm`](./bin/music_loader_dispatch.asm) i [`bin/music_loader_headers.asm`](./bin/music_loader_headers.asm). Oddzielny most gry pod `0x19a71` pobiera zasób EPF i porównuje jego sygnaturę z bajtami `AMF` (`0x19af6`). Nie należy mylić go z `0x39a71` ani wnioskować, że wszystkie rodziny A–F obsługują AMF. Brak rozpoznania formatu dla każdej rodziny blokuje bezpieczną zamianę na zewnętrzną bibliotekę.
+
+Nie przeniesiono wspólnych wrapperów alokacji ani `FUN_00030a70`, którego kontrakt pozostaje poza tą analizą. Moduł nie jest jeszcze hermetyczny ani kompilowalny. Nie zmieniono sygnatur ani ciał po odwróceniu przemianowania. W głównym pliku pozostało 475 definicji; 228 jest w bibliotekach i 47 w silniku.
+
+## Zakończenie strukturalnego podziału monobloku
+
+Wszystkie pozostałe funkcje przeniesiono do 13 neutralnych bloków [`recovered/`](./recovered/README.md), według przedziałów adresów eksportu o szerokości `0x4000`. To organizacja materiału, nie rozpoznanie pierwotnych granic modułów ani nazw bibliotek. Funkcje bez potwierdzonej roli zachowują nazwy adresowe.
+
+Przy sprawdzaniu braku kodu poza modułami wykryto lukę poprzedniego parsera: pomijał sygnatury `FUN_000119e0`, `FUN_00036b7a` i `FUN_00036c98`, których parametry zajmują kilka wierszy. Po poprawce rzeczywisty eksport liczy 753 definicje, nie 750. Przeniesiono również cały typ zwrotny wielowierszowej sygnatury `FUN_000070ae`. Wszystkie te funkcje były obecne w materiale; nie dopisano nowych implementacji.
+
+[`tools/split_pseudocode.pl`](./tools/split_pseudocode.pl) obsługuje teraz `--complete`. Walidacja porównuje wszystkie sygnatury i ciała z backupem po odwróceniu przemianowań, deklaracje globalne, wyłączność właściciela, dołączenia modułów, brak starych nazw w kodzie i aktualność manifestów. Główny plik zmniejszył się do 75 wierszy dołączeń i komentarzy, bez funkcji i globali.
+
+Nie jest to jeszcze działający program. Zachowano błędy eksportu, zależności globalne i brakujące funkcje EXE. Nie wykonano niepotwierdzonych zamian na biblioteki. Następny etap powinien tworzyć zweryfikowaną, kompilowalną implementację małego modułu z testami i kontraktem, równolegle ustalając platformę docelową; sama dalsza reorganizacja nie naprawi pseudokodu.
+
+## Odtworzony punkt wejścia gry
+
+Dodano [`engine/main.c`](./engine/main.c) i dołączono go do
+[`pseiudo.c`](./pseiudo.c). `game_main` odtwarza logiczną sekwencję
+`0x10010–0x10061`: zapis stanu wideo, tryb 13h, timer, klawiatura, otwarcie EPF
+z offsetem danych `4`, konfiguracja audio, backend audio, flaga joysticka
+`DS:0x17396 = 0xff`, kalibracja, inicjalizacja zegara, sterowanie grą `0x146b0`
+i sprzątanie `0x101f0` z offsetem komunikatu `0x11`. Ostatnia wartość nie jest
+zadeklarowana jako kod wyjścia. Nie odtworzono tu hostowego `int main` ani
+startupu Watcoma.
+
+Prologi `0x18a7f–0x18a83` i `0x18d18–0x18d1c` jedynie zapisują EBX, ECX, EDX,
+ESI i EDI. Logiczne wywołania skierowano do istniejących
+`audio_config_parse_settings` i `audio_config_initialize_backend`; to nie
+naprawia uszkodzonych ciał ani ich ABI. Istniejąca `FUN_0000864c` obsługuje
+inicjalizację zegara. Pozostałe osiem zależności ma jawne deklaracje `extern`,
+bez atrap. Szczególnie `FUN_000046b0` nadal nie ma implementacji C: nie można
+udawać jej zastąpienia prostą nieskończoną pętlą renderowania.
+
+[`tools/check_main.pl`](./tools/check_main.pl) porównuje cele wywołań i stałe
+z oryginalnym obiektem kodu oraz testuje odtworzony przepływ przez izolowany
+harness C. Atrapy istnieją tylko podczas testu; nie są backendem gry.
+Odtworzony `game_main` jest liczony osobno od 753 definicji eksportu.

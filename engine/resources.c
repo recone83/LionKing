@@ -173,3 +173,83 @@ void resources_get_entry_info_wrapper(void)
   resources_get_entry_info();
   return;
 }
+
+/* Backup line 1235; original FUN_00000d10; code address 0x10d10. */
+
+
+
+
+ushort __regparm3 resources_load_slot(ushort param_1,undefined4 param_2)
+
+{
+  ushort uVar1;
+  undefined4 uVar2;
+  short sVar3;
+  short sVar4;
+  int iVar5;
+  undefined4 *puVar6;
+  
+  if (param_1 == 0xffff) {
+    sVar3 = 0xfa;
+    iVar5 = 0;
+    do {
+      if (*(int *)(iVar5 + 0x114c) == 0) {
+        sVar4 = 0;
+      }
+      else {
+        iVar5 = iVar5 + 4;
+        sVar4 = sVar3;
+      }
+      sVar3 = sVar4 + -1;
+    } while (sVar3 != 0 && 0 < sVar4);
+    param_1 = (ushort)iVar5 >> 2;
+  }
+  if (param_1 < 0xfa) {
+    resources_release_slot(param_2);
+    puVar6 = (undefined4 *)((uint)param_1 * 4 + 0x114c);
+    uVar2 = resources_load_entry();
+    *puVar6 = uVar2;
+    return param_1;
+  }
+  uVar1 = FUN_00000207();
+  return uVar1;
+}
+
+/* Backup line 1273; original FUN_00000d75; code address 0x10d75. */
+
+
+
+
+void __regparm3 resources_release_slot(ushort param_1)
+
+{
+  if (param_1 < 0xfa) {
+    *(undefined4 *)((uint)param_1 * 4 + 0x114c) = 0;
+    FUN_000001e0();
+  }
+  return;
+}
+
+/* Backup line 1217; original FUN_00000cd0; code address 0x10cd0. */
+
+
+
+
+void resources_load_slot_wrapper(void)
+
+{
+  resources_load_slot();
+  return;
+}
+
+/* Backup line 1226; original FUN_00000ce2; code address 0x10ce2. */
+
+
+
+
+undefined8 __regparm3 resources_release_slot_wrapper(undefined4 param_1,undefined4 param_2)
+
+{
+  resources_release_slot();
+  return CONCAT44(param_2,param_1);
+}

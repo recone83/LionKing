@@ -95,7 +95,7 @@ void render_stage_one(void)
     iVar9 = 5;
     sStack_c = 0x27;
     if (-1 < (short)((*puVar7 & 0x1fff) - 1)) {
-      FUN_00001d7f();
+      render_blit_tile_opaque_left_clip();
       iVar9 = extraout_EDX;
     }
     puVar7 = puVar7 + 1;
@@ -105,7 +105,7 @@ void render_stage_one(void)
       uRam000018da = 0x18de;
       uVar4 = (ushort)iVar9;
       if (-1 < (short)((*puVar7 & 0x1fff) - 1)) {
-        FUN_00001e4f(uVar4);
+        render_blit_tile_opaque_full_width(uVar4);
         sStack_c = extraout_CX;
       }
       puVar7 = puVar7 + 1;
@@ -116,7 +116,7 @@ void render_stage_one(void)
       sStack_c = sStack_c + -1;
     } while (sStack_c != 0);
     if (-1 < (short)((*puVar7 & 0x1fff) - 1)) {
-      FUN_00001f18();
+      render_blit_tile_opaque_right_clip();
     }
     iVar6 = iVar6 + 0x5f5d;
     uVar8 = uVar8 + 0x4400;
@@ -128,7 +128,7 @@ void render_stage_one(void)
     uRam000018d6 = 0xa3000019;
     sVar2 = sVar2 + -1;
   } while (sVar2 != 0);
-  FUN_00001b0b();
+  render_tiles_unflagged_pass();
   return;
 }
 
@@ -140,7 +140,7 @@ void render_stage_one(void)
 void render_stage_two(void)
 
 {
-  FUN_00001c45();
+  render_tiles_flagged_pass();
   return;
 }
 
@@ -223,7 +223,7 @@ LAB_000087e7:
       _DAT_00019a9e = *(short **)(iVar2 + 0x12);
       psVar3 = _DAT_00019a9e + 7;
       for (DAT_00019a9c = *_DAT_00019a9e; DAT_00019a9c != 0; DAT_00019a9c = DAT_00019a9c + -1) {
-        FUN_00000d99(psVar3,iVar2,sVar1);
+        render_draw_sprite(psVar3,iVar2,sVar1);
         psVar3 = psVar3 + 3;
       }
     }
