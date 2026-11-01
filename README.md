@@ -172,6 +172,23 @@ cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
 build/check_objects
 ```
 
+Native [input.c](src/engine/input.c) preserves the original eight control bits
+and configurable binding table, mapping the dumped defaults to USB HID:
+arrows, Space, left Alt, left Ctrl and left Shift. Held/pressed masks retain
+the original repeat-mask operation; DOS64 KeyPressed also captures quick taps.
+Replay pairs keep the original N+1 update duration with checked boundaries.
+Joystick hardware is deliberately not accessed: DOS64 has no supplied joystick
+service. The original keyboard threshold belongs to its IRQ driver and is
+replaced by HID state, not reimplemented as a delay. The numeric return register
+artifact is replaced by explicit held/pressed state and a checked status.
+Replay failures must be reported by its caller. The viewer is not gameplay.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_input.c src/engine/input.c -o build/check_input
+build/check_input
+```
+
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.
 Original pseudocode bodies are kept in adjacent `*_legacy.inc` files,
