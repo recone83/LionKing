@@ -205,7 +205,7 @@ in the host test. All other original renderer helpers are in `render_legacy.inc`
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_render.c src/engine/render.c -o build/check_render
+    tools/check_render.c src/engine/render.c src/engine/sprites.c -o build/check_render
 build/check_render
 ```
 
@@ -219,8 +219,29 @@ Pool exhaustion and invalid release are explicit failures, not substitute nodes.
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_render_nodes.c src/engine/render.c -o build/check_render_nodes
+    tools/check_render_nodes.c src/engine/render.c src/engine/sprites.c -o build/check_render_nodes
 build/check_render_nodes
+```
+
+The object render pass now draws real multipart descriptors: a 14-byte header
+followed by six-byte records (two anchor words, frame byte, bank byte). It
+preserves visibility/pass gating and the exact countdown/flag transitions from
+binary `0x18762`, including the `0x08`, `0x04` and `0x10` interactions.
+Sprite parts use the existing MCH decoder, original flip anchors and 16-bit
+coordinate wrap. Banks and descriptor bounds are checked.
+
+Binary verification corrected the decompiler's damaged register reconstruction:
+owner offsets 0/2 are X/Y, not depth; flag `0x40` adds the viewport's X/Y words,
+not a depth increment. This implementation uses the verified instructions.
+The preview does not yet load the game's multipart descriptors or bind them to
+gameplay objects; this pass is compiled and tested, not claimed as a working
+character animation controller.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_render_pass.c src/engine/render.c src/engine/sprites.c \
+    -o build/check_render_pass
+build/check_render_pass
 ```
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`

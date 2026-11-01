@@ -1,5 +1,6 @@
 #ifdef LK_DOS64_NATIVE
 #include "render.h"
+#include "sprites.h"
 
 void render_initialize_nodes(RENDER_POOL *pool)
 {
@@ -100,6 +101,102 @@ int render_release_node(RENDER_POOL *pool, RENDER_NODE *node)
     pool->free_head = node;
     node->owner = 0;
     node->active = 0;
+    return 0;
+}
+
+static unsigned int render_u16(const unsigned char *p)
+{
+    return (unsigned int)p[0] | (unsigned int)p[1] << 8;
+}
+
+static int render_signed_word(int value)
+{
+    unsigned int word = (unsigned int)value & 0xffff;
+    return word < 0x8000 ? (int)word : (int)word - 65536;
+}
+
+static int render_node_visible(RENDER_NODE *node, unsigned char pass)
+{
+    if ((node->pass_flags & 0x80) != pass || (node->flags & 0x80)) {
+        return 0;
+    }
+    if (!(node->flags & 0x20)) {
+        return 1;
+    }
+    if (!(node->flags & 0x10)) {
+        if (node->remaining) {
+            --node->remaining;
+            return 1;
+        }
+        node->remaining = node->period;
+        if (node->flags & 8) {
+            node->flags |= 4;
+        }
+        return 0;
+    }
+    if (node->remaining) {
+        --node->remaining;
+        return 0;
+    }
+    node->remaining = node->period;
+    if (node->flags & 8) {
+        node->flags &= 0xef;
+    }
+    return 1;
+}
+
+int render_object_pass(RENDER_POOL *pool, unsigned char pass, short viewport_x,
+    short viewport_y, const RENDER_SPRITE_BANK *banks, unsigned int bank_count,
+    unsigned char *pixels)
+{
+    if (!pool || !banks || bank_count > 256 || !pixels || (pass != 0 && pass != 0x80)) {
+        return -1;
+    }
+    for (RENDER_NODE *node = pool->head; node; node = node->next) {
+        if (!render_node_visible(node, pass)) {
+            continue;
+        }
+        if (!node->owner || !node->parts || node->parts_size < 14) {
+            return -1;
+        }
+        unsigned int count = render_u16(node->parts);
+        if (count > (node->parts_size - 14) / 6) {
+            return -1;
+        }
+        int x = node->owner->x;
+        int y = node->owner->y;
+        if (node->flags & 0x40) {
+            x = render_signed_word(x + viewport_x);
+            y = render_signed_word(y + viewport_y);
+        }
+        for (unsigned int i = 0; i < count; ++i) {
+            const unsigned char *part = node->parts + 14 + i * 6;
+            unsigned int bank = part[5], frame = part[4];
+            if (bank >= bank_count || !banks[bank].data || banks[bank].size < 2) {
+                return -1;
+            }
+            const unsigned char *asset = banks[bank].data;
+            unsigned int frames = render_u16(asset);
+            if (frame >= frames || 2ULL + frames * 8ULL > banks[bank].size) {
+                return -1;
+            }
+            const unsigned char *entry = asset + 2 + frame * 8;
+            int px = x - (int)render_u16(part);
+            int py = y - (int)render_u16(part + 2);
+            if (node->pass_flags & 8) {
+                frame |= 0x8000;
+                px = x - (int)render_u16(entry) + (int)render_u16(part);
+            }
+            if (node->pass_flags & 0x10) {
+                frame |= 0x2000;
+                py = y - (int)render_u16(entry + 2) + (int)render_u16(part + 2);
+            }
+            if (render_draw_sprite(asset, banks[bank].size, (unsigned short)frame,
+                render_signed_word(px), render_signed_word(py), pixels) != 0) {
+                return -1;
+            }
+        }
+    }
     return 0;
 }
 

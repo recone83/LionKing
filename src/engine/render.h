@@ -37,6 +37,15 @@ int render_release_node(RENDER_POOL *pool, RENDER_NODE *node);
 void render_disable_animation(RENDER_NODE *node);
 void render_set_animation_period(RENDER_NODE *node, unsigned char period);
 
+typedef struct {
+    const unsigned char *data;
+    unsigned int size;
+} RENDER_SPRITE_BANK;
+
+int render_object_pass(RENDER_POOL *pool, unsigned char pass, short viewport_x,
+    short viewport_y, const RENDER_SPRITE_BANK *banks, unsigned int bank_count,
+    unsigned char *pixels);
+
 typedef struct RENDER_SCENE RENDER_SCENE;
 typedef int (*RENDER_STEP)(RENDER_SCENE *scene);
 
