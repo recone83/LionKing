@@ -256,7 +256,8 @@ the legacy full level bundle/sample loader remains unported.
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_assets.c src/engine/assets.c -o build/check_assets
+    tools/check_assets.c src/engine/assets.c src/engine/resources.c \
+    src/engine/resource_decoder.c -o build/check_assets
 build/check_assets
 ```
 
@@ -286,7 +287,8 @@ the native input masks, render-node pool, multipart sprite pass and migrated
 
 | Key | Diagnostic action |
 |-----|-------------------|
-| Left / Right | Previous / next of the 24 real `SYIDLE1.MCH` frames, wrapping |
+| Up / Down | Previous / next of the 28 original young Simba sprite banks |
+| Left / Right | Previous / next frame of the selected bank, wrapping |
 | Left Alt | Toggle horizontal flip |
 | Left Ctrl | Toggle vertical flip |
 | Left Shift | Hide / show the sprite using its original visibility flag |
@@ -297,6 +299,12 @@ the native input masks, render-node pool, multipart sprite pass and migrated
 Actions trigger on presses, not repeatedly while a key is held. This is an
 interactive **asset test**, not invented gameplay or a replacement animation
 script. The background remains the limited layer-zero preview.
+The initial bank is `SYIDLE1.MCH` (24 frames), in its original slot 14.
+Bank selection uses the original slot-list names and EPF loader, resets only
+the frame, and preserves flips/visibility. Only the selected bank is resident,
+in a checked caller buffer; no allocator or original DOS resource pointers
+are reused. Bank names are printed when selected. Selecting banks/frames is
+diagnostic browsing, not replacement movement or animation logic.
 F is a diagnostic command, not a new gameplay binding. It calls the migrated
 palette transition at the original PIT rate, about 101 ticks per second,
 independent of gameplay updates. A full transition takes at most 65 serviced
@@ -317,13 +325,16 @@ cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     tools/check_viewer.c src/dos64/start.c src/dos64/platform.c \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
     src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \
-    src/engine/input.c src/engine/render.c src/libs/vga.c -o build/check_viewer
+    src/engine/input.c src/engine/render.c src/engine/assets.c src/libs/vga.c \
+    -o build/check_viewer
 build/check_viewer
 ```
 
 The end-to-end host test runs the actual DOS64 entry with the real EPF and mocked
 runtime services. It verifies every output pixel through frame changes, held
 keys, flips, hiding, reset, timed fades and interrupted fades, and Escape. The presentation test checks all 65536
+It now loads all 28 original banks through the actual entry, checking bank
+wrap and held keys and comparing 10944000 ARGB pixels. The presentation test checks all 65536
 camera words. The real PE sample was also booted in headless QEMU: Right
 changed 3150 viewport pixels, Shift removed the sprite (5787 changed pixels),
 and Escape returned to the DOS64 shell with exit code zero. Host tests verify
@@ -331,6 +342,9 @@ the other controls pixel-for-pixel; manual QEMU testing remains useful.
 The updated fade sample was also tested in real QEMU: F made all 576000
 scaled viewport pixels black; F again restored the viewport byte-for-byte,
 including all 5967 previously nonblack pixels. Escape again exited cleanly.
+Bank selection was verified in QEMU too: Down loaded `SYIDLE2.MCH`, changing
+4797 viewport pixels; Up reloaded `SYIDLE1.MCH` and restored the original
+viewport exactly. The sample exited with code zero.
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.

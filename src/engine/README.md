@@ -11,6 +11,14 @@ jawnych buforów, rozmiarów i błędów zamiast rejestrów oraz globalnych adre
 Sprawdzanie eksportu nadal dotyczy zachowanych ciał; testy natywnych gałęzi są
 osobne, opisane w [README projektu](../../README.md).
 
+[assets.c](assets.c) ma teraz natywny odczyt list nazw banków MCH oraz ładowanie
+wybranego banku przez sprawdzony loader EPF. Lista młodego Simby z DS `0x744c`
+zachowuje wszystkie 28 nazw i sloty 6-33. Próbka pozwala przełączać banki
+klawiszami góra/dół; nie jest to zastępstwo logiki animacji ani rozgrywki.
+Pełny loader zestawów poziomów i próbek audio pozostaje w
+[assets_legacy.inc](assets_legacy.inc). Liczby definicji w tabeli poniżej
+opisują zachowany eksport, nie liczbę natywnych funkcji.
+
 Podział na podstawie potwierdzonego przepływu instrukcji, bez odtwarzania brakujących ciał C:
 
 | Moduł | Definicje | Zakres |

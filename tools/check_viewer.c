@@ -5,6 +5,7 @@
 #include "engine/resources.h"
 #include "engine/sprites.h"
 #include "engine/tiles.h"
+#include "engine/assets.h"
 #include "libs/vga.h"
 
 int __attribute__((ms_abi)) start(const DOS64_API *api);
@@ -12,7 +13,7 @@ int __attribute__((ms_abi)) start(const DOS64_API *api);
 static DOS64_API api;
 static unsigned int iteration, shown;
 static unsigned long long now;
-static unsigned char map[347816], sprite[20419], packed[65536];
+static unsigned char map[347816], sprite[32768], packed[65536];
 static RESOURCE_DICTIONARY dictionary;
 static unsigned char expected[LK_WIDTH * LK_HEIGHT];
 static DOS64_COLOR palette[256];
@@ -23,6 +24,23 @@ static unsigned char original_rgb[768], fade_rgb[768], fade_source[768], fade_ta
 static unsigned int fade_phase;
 static int fade_active, fade_black;
 static unsigned long long serviced_ticks;
+static unsigned int bank_index = ASSETS_YOUNG_IDLE_INDEX;
+static unsigned int seen_banks = 1U << ASSETS_YOUNG_IDLE_INDEX;
+
+static void load_reference_bank(unsigned int index)
+{
+    unsigned int slot;
+    char name[13];
+    assert(assets_slot_list_entry(assets_young_bank_list, sizeof(assets_young_bank_list),
+        index, &slot, name) == 0);
+    assert(slot == index + 6);
+    assert(resources_load_entry(&api, "LIONKING.EPF", name, packed, sizeof(packed),
+        sprite, sizeof(sprite), &dictionary, &sprite_size) == 0);
+    frames = (unsigned int)sprite[0] | (unsigned int)sprite[1] << 8;
+    assert(frames && frames <= 256);
+    bank_index = index;
+    seen_banks |= 1U << index;
+}
 
 static void __attribute__((ms_abi)) write_text(const char *text)
 {
@@ -70,14 +88,20 @@ static void __attribute__((ms_abi)) poll_input(void)
     case 11: key = 0x4f; break;
     case 12: case 80: case 90: case 100: key = 0x09; break;
     case 110: key = 0x2c; break;
-    case 112: key = 0x29; break;
+    case 168: case 169: key = 0x52; break;
+    case 170: key = 0x4f; break;
+    case 171: key = 0xe2; break;
+    case 172: key = 0x29; break;
     default: break;
+    }
+    if (iteration >= 112 && iteration <= 166 && !(iteration & 1)) {
+        key = 0x51;
     }
     if (key) {
         api.Input.KeyDown[key] = 1;
-        api.Input.KeyPressed[key] = (iteration != 3 && iteration != 8);
+        api.Input.KeyPressed[key] = (iteration != 3 && iteration != 8 && iteration != 169);
     }
-    assert(iteration <= 112);
+    assert(iteration <= 172);
 }
 static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
     unsigned int width, unsigned int height, unsigned int stride,
@@ -120,15 +144,21 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
         }
     }
     assert(vga_palette_colors(fade_rgb, palette) == 0);
+    if (iteration >= 112 && iteration <= 166 && !(iteration & 1)) {
+        load_reference_bank((bank_index + 1) % ASSETS_YOUNG_BANK_COUNT);
+    }
+    if (iteration == 168) {
+        load_reference_bank((bank_index + ASSETS_YOUNG_BANK_COUNT - 1) % ASSETS_YOUNG_BANK_COUNT);
+    }
     memset(expected, 0, sizeof(expected));
     assert(render_map_tile_pass(map, map_size, 0, 0, 0, 0, expected) == 0);
     assert(render_map_tile_pass(map, map_size, 0, 0, 0, 1, expected) == 0);
     unsigned int frame = (iteration == 2 || iteration == 3) ? 1 :
-        iteration == 10 ? frames - 1 : 0;
+        iteration == 10 ? frames - 1 : iteration >= 170 ? 1 : 0;
     unsigned short flags = (unsigned short)frame;
     int px = 140, py = 80;
     const unsigned char *entry = sprite + 2 + frame * 8;
-    if (iteration >= 5 && iteration <= 8) {
+    if ((iteration >= 5 && iteration <= 8) || iteration == 171) {
         flags |= 0x8000;
         px -= (int)((unsigned int)entry[0] | (unsigned int)entry[1] << 8);
     }
@@ -164,13 +194,18 @@ int main(void)
     assert(vga_load_palette(map, map_size, palette) == 0);
     assert(vga_load_palette_rgb(map, map_size, original_rgb) == 0);
     memcpy(fade_rgb, original_rgb, sizeof(fade_rgb));
-    assert(resources_load_entry(&api, "LIONKING.EPF", "SYIDLE1.MCH", packed, sizeof(packed),
-        sprite, sizeof(sprite), &dictionary, &sprite_size) == 0);
-    frames = (unsigned int)sprite[0] | (unsigned int)sprite[1] << 8;
+    load_reference_bank(ASSETS_YOUNG_IDLE_INDEX);
     assert(frames > 1);
+    unsigned int invalid_slot = 999, invalid_loaded = 999;
+    assert(assets_load_named_bank(&api, "LIONKING.EPF", assets_young_bank_list,
+        sizeof(assets_young_bank_list), 28, packed, sizeof(packed), sprite,
+        sizeof(sprite), &dictionary, &invalid_slot, &invalid_loaded) == -1);
+    assert(failures == 1 && invalid_slot == 999 && invalid_loaded == 999);
+    failures = 0;
     assert(start(&api) == 0);
-    assert(iteration == 112 && shown == 111 && failures == 0);
-    printf("PASS: DOS64 start with real assets (%u frames), all 7104000 ARGB pixels, "
-        "frame stepping, held keys, flips, hide/reset, timed fades/interruption and Escape\n", frames);
+    assert(iteration == 172 && shown == 171 && failures == 0);
+    assert(seen_banks == (1U << ASSETS_YOUNG_BANK_COUNT) - 1);
+    puts("PASS: DOS64 start, all 28 real banks, all 10944000 ARGB pixels, "
+        "bank/frame wrap, held keys, flips, hide/reset, timed fades/interruption and Escape");
     return 0;
 }

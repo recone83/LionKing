@@ -68,6 +68,31 @@ int assets_slot_list_entry(const unsigned char *list, unsigned int size,
     *slot = ((unsigned int)list[0] | (unsigned int)list[1] << 8) + index;
     return 0;
 }
+
+int assets_load_named_bank(const DOS64_API *api, const char *archive,
+    const unsigned char *list, unsigned int list_size, unsigned int index,
+    unsigned char *packed, unsigned int packed_capacity, unsigned char *data,
+    unsigned int data_capacity, RESOURCE_DICTIONARY *dictionary,
+    unsigned int *slot, unsigned int *loaded)
+{
+    char name[13];
+    unsigned int selected_slot;
+    if (!slot || !loaded || assets_slot_list_entry(list, list_size, index,
+        &selected_slot, name) != 0) {
+        if (api && api->Write) {
+            api->Write("Lion King: invalid sprite slot list or requested bank.\n");
+        }
+        return -1;
+    }
+    unsigned int size;
+    if (resources_load_entry(api, archive, name, packed, packed_capacity,
+        data, data_capacity, dictionary, &size) != 0) {
+        return -1;
+    }
+    *slot = selected_slot;
+    *loaded = size;
+    return 0;
+}
 #else
 #include "assets_legacy.inc"
 #endif
