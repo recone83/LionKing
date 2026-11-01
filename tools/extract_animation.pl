@@ -36,6 +36,14 @@ int animation_falling_initialize(ANIMATION_PROGRAM *program)
         animation_falling_data, ANIMATION_FALLING_SIZE, ANIMATION_FALLING_BASE);
 }
 FALLING
+print <<'TIMED';
+int animation_timed_initialize(ANIMATION_PROGRAM *program)
+{
+    return animation_program_initialize(program, animation_falling_data,
+        ANIMATION_FALLING_SIZE, ANIMATION_FALLING_BASE, ANIMATION_TIMED_START,
+        animation_falling_data, ANIMATION_FALLING_SIZE, ANIMATION_FALLING_BASE);
+}
+TIMED
 print <<'NATIVE';
 int animation_movement_initialize(ANIMATION_PROGRAM *program)
 {

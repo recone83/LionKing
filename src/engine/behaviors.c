@@ -34,19 +34,26 @@ static int check_visibility(ENGINE_OBJECT_POOL *pool, ENGINE_FALLING_OBJECT *sta
     return 1;
 }
 
-static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+static int valid_state(const ENGINE_FALLING_OBJECT *state)
 {
-    ENGINE_FALLING_OBJECT *state = object->context;
     if (!state || !state->render_pool || !state->node || !state->node->active ||
         state->node->owner != &state->owner) {
-        pool->update_status = -1;
-        return;
+        return 0;
     }
     unsigned int index;
     for (index = 0; index < RENDER_NODE_COUNT &&
         state->node != &state->render_pool->nodes[index]; ++index) {
     }
     if (index == RENDER_NODE_COUNT) {
+        return 0;
+    }
+    return 1;
+}
+
+static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_FALLING_OBJECT *state = object->context;
+    if (!valid_state(state)) {
         pool->update_status = -1;
         return;
     }
@@ -73,6 +80,52 @@ static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
 }
 
 const ENGINE_OBJECT_BEHAVIOR engine_falling_behavior = {update_falling};
+
+static void update_timed(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_TIMED_OBJECT *timed = object->context;
+    ENGINE_FALLING_OBJECT *state = timed ? &timed->body : 0;
+    if (!valid_state(state)) {
+        pool->update_status = -1;
+        return;
+    }
+    if (!state->initialized) {
+        if (animation_timed_initialize(&state->animation) != 0) {
+            pool->update_status = -1;
+            return;
+        }
+        state->initialized = 1;
+        state->animation.counter = 10;
+        state->spatial_type = 0;
+    }
+    int visibility = check_visibility(pool, state);
+    if (visibility < 0) {
+        pool->update_status = -1;
+        return;
+    }
+    if (visibility) {
+        return;
+    }
+    --state->animation.counter;
+    if (!state->animation.counter) {
+        unsigned int bits = ((unsigned int)state->owner.y - 16U) & 0xffff;
+        RENDER_OWNER position = {state->owner.x,
+            (short)(bits < 0x8000 ? (int)bits : (int)bits - 65536)};
+        ENGINE_OBJECT *child;
+        if (!timed->child || timed->child == state ||
+            engine_spawn_falling(pool, state->render_pool, timed->child, position,
+                state->visibility, timed->child_order, &child) < 0) {
+            pool->update_status = -1;
+            return;
+        }
+    }
+    if (engine_motion_gravity(&state->motion, &state->owner) != 0 ||
+        animation_program_step(&state->animation, state->node, &state->owner, 0, 0) != 0) {
+        pool->update_status = -1;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_timed_behavior = {update_timed};
 
 static unsigned int definition_word(const unsigned char *data)
 {

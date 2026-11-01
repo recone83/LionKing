@@ -24,8 +24,11 @@ int animation_movement_initialize(ANIMATION_PROGRAM *program);
 #define ANIMATION_FALLING_SIZE (0x1675aU - ANIMATION_FALLING_BASE)
 #define ANIMATION_FALLING_START 0x16741U
 #define ANIMATION_FALLING_DEFINITION 0x162feU
+#define ANIMATION_TIMED_START 0x16728U
+#define ANIMATION_TIMED_DEFINITION 0x162f0U
 
 extern const unsigned char animation_falling_data[ANIMATION_FALLING_SIZE];
 int animation_falling_initialize(ANIMATION_PROGRAM *program);
+int animation_timed_initialize(ANIMATION_PROGRAM *program);
 
 #endif

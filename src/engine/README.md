@@ -118,6 +118,17 @@ a przydzielone elementy są zwalniane. Usunięcie przez widoczność zwraca osob
 status 1; sukces z aktywnym obiektem 0, błąd -1.
 Nie przeniesiono jeszcze wyboru obiektów przez pełną pętlę poziomu.
 
+`engine_timed_behavior` odtwarza handler `0x2881d`: skrypt DS `0x16728`,
+licznik 10, widoczność, dekrementacja licznika, utworzenie dziecka DS `0x162fe`
+przy zerze na X rodzica i Y-16, następnie grawitacja i skrypt rodzica.
+Dziecko powstaje przed przesunięciem rodzica; jest inicjalizowane od razu i
+aktualizowane ponownie podczas dalszego przejścia tej samej listy.
+[check_timed.c](../../tools/check_timed.c) sprawdza tę kolejność i zawijanie licznika.
+Wywołujący dostarcza żywy stan dziecka oraz kolejność renderowania zamiast
+nieistniejącego natywnego alokatora. Brak stanu lub zasobów zgłasza błąd.
+Przy ponownym zerze po 65536 aktualizacjach potrzebny jest wolny stan dziecka;
+aktywnego stanu nie nadpisujemy. Podgląd nie został zmieniony.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |
