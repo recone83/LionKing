@@ -156,8 +156,11 @@ build/check_timing
 ```
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
-implementations, with `include/` and `src/` as include roots. No implementation
-`.inc` files are included by the native build. The old pseudocode aggregator
+implementations, with `include/` and `src/` as include roots.
+Original pseudocode bodies are kept in adjacent `*_legacy.inc` files,
+conditionally included only without `LK_DOS64_NATIVE`. They do not enter the
+native build. The preservation validator expands these reference includes
+and keeps them separate when writing modules. The old pseudocode aggregator
 still textually includes unported modules for reference; it is not built.
 
 Compilation requires MinGW-w64 (`gcc-mingw-w64-x86-64` on Debian/Ubuntu).

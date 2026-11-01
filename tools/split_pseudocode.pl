@@ -14,11 +14,31 @@ sub read_text {
     my ($path) = @_;
     open my $file, '<:raw', $path or die "Cannot read $path: $!";
     local $/;
-    return <$file>;
+    my $text = <$file>;
+    if ($path =~ /\.c$/) {
+        my ($directory) = $path =~ m{^(.*)/};
+        $text =~ s{^#include "([a-z_]+_legacy\.inc)"\n}
+            {read_text("$directory/$1")}gme;
+    }
+    return $text;
 }
 
 sub write_text {
     my ($path, $text) = @_;
+    if ($path =~ /\.c$/ && -e $path) {
+        open my $current, '<:raw', $path or die "Cannot read $path: $!";
+        local $/;
+        my $existing = <$current>;
+        if ($existing =~ /^#include "([a-z_]+_legacy\.inc)"$/m) {
+            my $name = $1;
+            my ($directory) = $path =~ m{^(.*)/};
+            my $legacy;
+            $text =~ s{(^#else\n)(.*)(^#endif\s*\z)}
+                {$legacy = $2; $1 . "#include \"$name\"\n" . $3}mse
+                or die "Cannot preserve legacy branch in $path\n";
+            write_text("$directory/$name", $legacy);
+        }
+    }
     open my $file, '>:raw', $path or die "Cannot write $path: $!";
     print {$file} $text or die "Cannot write $path: $!";
     close $file or die "Cannot close $path: $!";
