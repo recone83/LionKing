@@ -142,6 +142,18 @@ dispatchera, nie dziesiątej. Wywołujący przekazuje osobne żywe stany rodzica
 i dziecka. [check_spawn_timed.c](../../tools/check_spawn_timed.c) sprawdza
 całą tę ścieżkę bez ręcznego ustawiania handlera lub skryptu.
 
+`engine_emitter_behavior` przenosi `0x2865d`: pierwsze wywołanie ustawia
+kontynuację i wraca, kolejne zachowują licznik sprzed dekrementacji.
+Przy aktywnej fladze DS `0x1938f` sprawdzane jest rozszerzone okno kamery,
+na dolnych 7 bitach starego licznika 20/40 tworzone są rodzice na X-8/X+8.
+Y jest wyrównywane do 4 z dodatkiem 2 zależnym od bitu 1 starego licznika.
+Grawitacja zależy od znaku starego licznika, również przy wyłączonej fladze.
+Na końcu wykonywany jest oryginalny skrypt.
+Kamera i flaga są jawnymi żywymi wskaźnikami; pamięć łańcuchów rodzic/dziecko
+dostarcza wywołujący jako sloty. Brak wolnego slotu jest błędem, nie pominięciem
+tworzenia obiektu. [check_emitter.c](../../tools/check_emitter.c) sprawdza
+160 aktualizacji z czterema emisjami i rzeczywistą aktualizacją całego łańcucha.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

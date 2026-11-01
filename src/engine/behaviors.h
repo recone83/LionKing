@@ -30,8 +30,24 @@ typedef struct {
     short child_order;
 } ENGINE_TIMED_OBJECT;
 
+typedef struct {
+    ENGINE_TIMED_OBJECT parent;
+    ENGINE_FALLING_OBJECT child;
+} ENGINE_EMITTER_SLOT;
+
+typedef struct {
+    ENGINE_FALLING_OBJECT body;
+    const unsigned short *trigger;
+    const RENDER_OWNER *camera;
+    ENGINE_EMITTER_SLOT *slots;
+    unsigned int slot_count;
+    short parent_order;
+    short child_order;
+} ENGINE_EMITTER_OBJECT;
+
 extern const ENGINE_OBJECT_BEHAVIOR engine_falling_behavior;
 extern const ENGINE_OBJECT_BEHAVIOR engine_timed_behavior;
+extern const ENGINE_OBJECT_BEHAVIOR engine_emitter_behavior;
 /* 0: created, 1: culled by original initialization, -1: error. */
 int engine_spawn_falling(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     ENGINE_FALLING_OBJECT *state, RENDER_OWNER position,

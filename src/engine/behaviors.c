@@ -127,6 +127,97 @@ static void update_timed(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
 
 const ENGINE_OBJECT_BEHAVIOR engine_timed_behavior = {update_timed};
 
+static short offset_coordinate(short coordinate, int offset)
+{
+    unsigned int bits = ((unsigned int)coordinate + (unsigned int)offset) & 0xffff;
+    return (short)(bits < 0x8000 ? (int)bits : (int)bits - 65536);
+}
+
+static int spawn_emission(ENGINE_OBJECT_POOL *pool, ENGINE_EMITTER_OBJECT *emitter,
+    int offset)
+{
+    if (!emitter->slots || !emitter->slot_count ||
+        !emitter->body.visibility) {
+        return -1;
+    }
+    for (unsigned int i = 0; i < emitter->slot_count; ++i) {
+        ENGINE_EMITTER_SLOT *slot = &emitter->slots[i];
+        int used = 0;
+        for (ENGINE_OBJECT *object = pool->head; object; object = object->next) {
+            if (object->context == &slot->parent || object->context == &slot->child) {
+                used = 1;
+                break;
+            }
+        }
+        if (!used) {
+            ENGINE_OBJECT *created;
+            RENDER_OWNER position = {
+                offset_coordinate(emitter->body.owner.x, offset), emitter->body.owner.y
+            };
+            return engine_spawn_timed(pool, emitter->body.render_pool, &slot->parent,
+                &slot->child, position, emitter->body.visibility, emitter->parent_order,
+                emitter->child_order, &created) < 0 ? -1 : 0;
+        }
+    }
+    return -1;
+}
+
+static void update_emitter(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_EMITTER_OBJECT *emitter = object->context;
+    ENGINE_FALLING_OBJECT *state = emitter ? &emitter->body : 0;
+    if (!valid_state(state)) {
+        pool->update_status = -1;
+        return;
+    }
+    if (!state->initialized) {
+        state->initialized = 1;
+        return;
+    }
+    if (!emitter->trigger || !state->animation.script.data) {
+        pool->update_status = -1;
+        return;
+    }
+    /* The original keeps CX from before decrementing the object counter. */
+    unsigned short counter = state->animation.counter;
+    if (*emitter->trigger) {
+        --state->animation.counter;
+        short near;
+        if (render_near_view(&state->owner, emitter->camera, 128, 128, &near) != 0) {
+            pool->update_status = -1;
+            return;
+        }
+        if (!near) {
+            if (render_release_node(state->render_pool, state->node) != 0) {
+                pool->update_status = -1;
+                return;
+            }
+            state->node = 0;
+            pool->current = 0;
+            return;
+        }
+        if ((counter & 0x7f) == 20 && spawn_emission(pool, emitter, -8) != 0) {
+            pool->update_status = -1;
+            return;
+        }
+        if ((counter & 0x7f) == 40 && spawn_emission(pool, emitter, 8) != 0) {
+            pool->update_status = -1;
+            return;
+        }
+        state->owner.y = offset_coordinate(state->owner.y,
+            -(int)((unsigned short)state->owner.y & 3) + (counter & 2 ? 2 : 0));
+    }
+    if ((counter & 0x8000) && engine_motion_gravity(&state->motion, &state->owner) != 0) {
+        pool->update_status = -1;
+        return;
+    }
+    if (animation_program_step(&state->animation, state->node, &state->owner, 0, 0) != 0) {
+        pool->update_status = -1;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_emitter_behavior = {update_emitter};
+
 static unsigned int definition_word(const unsigned char *data)
 {
     return (unsigned int)data[0] | (unsigned int)data[1] << 8;

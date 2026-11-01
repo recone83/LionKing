@@ -31,4 +31,11 @@ extern const unsigned char animation_falling_data[ANIMATION_FALLING_SIZE];
 int animation_falling_initialize(ANIMATION_PROGRAM *program);
 int animation_timed_initialize(ANIMATION_PROGRAM *program);
 
+#define ANIMATION_EMITTER_BASE 0xe48cU
+#define ANIMATION_EMITTER_SIZE (0x16728U - ANIMATION_EMITTER_BASE)
+#define ANIMATION_EMITTER_DEFINITION 0x162e2U
+#define ANIMATION_EMITTER_FIRST 0x166f6U
+#define ANIMATION_EMITTER_SECOND 0x1670fU
+extern const unsigned char animation_emitter_data[ANIMATION_EMITTER_SIZE];
+
 #endif
