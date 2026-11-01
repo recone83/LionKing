@@ -14,6 +14,9 @@ static unsigned char map[347816];
 static unsigned char sprite[20419];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
+static VGA_FADE fade;
+static unsigned char level_rgb[768];
+static const unsigned char black_rgb[768];
 
 static int present_frame(void *context, const unsigned char *source,
     const DOS64_COLOR *colors)
@@ -60,7 +63,9 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
         map, sizeof(map), &dictionary, &loaded) != 0) {
         return 1;
     }
-    if (vga_load_palette(map, loaded, palette) != 0) {
+    if (vga_load_palette_rgb(map, loaded, level_rgb) != 0 ||
+        vga_fade_initialize(&fade, level_rgb) != 0 ||
+        vga_palette_colors(fade.current, palette) != 0) {
         lk_platform_log("Lion King: invalid level palette.\n");
         return 1;
     }
@@ -92,16 +97,31 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     input_initialize(&input);
     VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
     lk_platform_log("Lion King DOS64 interactive asset test; not gameplay.\n"
-        "Left/Right: frame. Alt/Ctrl: flip X/Y. Shift: hide. Space: reset. Escape: exit.\n");
+        "Left/Right: frame. Alt/Ctrl: flip X/Y. Shift: hide.\n"
+        "F: fade to black/back. Space: reset. Escape: exit.\n");
     int selftest = selftest_requested(api->Arguments);
     unsigned long long begin = lk_platform_time_ns();
     ENGINE_CLOCK clock;
+    ENGINE_CLOCK palette_clock;
     unsigned long long updates = 0;
     engine_clock_reset(&clock, begin);
+    engine_clock_reset(&palette_clock, begin);
+    int fade_black = 0;
     for (;;) {
         lk_platform_poll();
         if (lk_platform_exit_requested()) {
             break;
+        }
+        unsigned long long palette_ticks;
+        if (engine_clock_elapsed_ticks(&palette_clock, lk_platform_time_ns(), &palette_ticks) != 0) {
+            lk_platform_log("Lion King: invalid palette clock state.\n");
+            return 1;
+        }
+        for (unsigned long long i = 0; i < palette_ticks && fade.active; ++i) {
+            if (vga_fade_tick(&fade) < 0) {
+                lk_platform_log("Lion King: invalid palette transition state.\n");
+                return 1;
+            }
         }
         if (input_poll_controls(&input, &api->Input) != 0) {
             lk_platform_log("Lion King: cannot read preview controls.\n");
@@ -124,6 +144,23 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
         }
         if (input.pressed & 0x20) {
             part[18] = node->pass_flags = node->flags = 0;
+            fade_black = 0;
+            if (vga_fade_initialize(&fade, level_rgb) != 0) {
+                lk_platform_log("Lion King: cannot reset preview palette.\n");
+                return 1;
+            }
+        }
+        /* F is a diagnostic command, not an added gameplay binding. */
+        if (api->Input.KeyPressed[0x09]) {
+            fade_black = !fade_black;
+            if (vga_fade_begin(&fade, fade_black ? black_rgb : level_rgb) != 0) {
+                lk_platform_log("Lion King: cannot start palette transition.\n");
+                return 1;
+            }
+        }
+        if (vga_palette_colors(fade.current, palette) != 0) {
+            lk_platform_log("Lion King: invalid preview palette components.\n");
+            return 1;
         }
         unsigned char *view = pixels + ((frame.camera_y + 1U) & 7) * LK_WIDTH;
         for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) {

@@ -277,12 +277,18 @@ the native input masks, render-node pool, multipart sprite pass and migrated
 | Left Alt | Toggle horizontal flip |
 | Left Ctrl | Toggle vertical flip |
 | Left Shift | Hide / show the sprite using its original visibility flag |
-| Space | Reset frame, flips and visibility |
+| F | Original integer palette fade to black / back; can interrupt a fade |
+| Space | Reset frame, flips, visibility and palette |
 | Escape | Exit |
 
 Actions trigger on presses, not repeatedly while a key is held. This is an
 interactive **asset test**, not invented gameplay or a replacement animation
 script. The background remains the limited layer-zero preview.
+F is a diagnostic command, not a new gameplay binding. It calls the migrated
+palette transition at the original PIT rate, about 101 ticks per second,
+independent of gameplay updates. A full transition takes at most 65 serviced
+ticks (phase zero through 64); fade-to-black can finish earlier due to the
+original signed rounding. It does not install an IRQ driver.
 
 The VGA wrapper preserves the original source row `((camera_y + 1) & 7) * 320`,
 64000-byte visible area and reset of the low camera word after presentation.
@@ -304,11 +310,14 @@ build/check_viewer
 
 The end-to-end host test runs the actual DOS64 entry with the real EPF and mocked
 runtime services. It verifies every output pixel through frame changes, held
-keys, flips, hiding, reset and Escape. The presentation test checks all 65536
+keys, flips, hiding, reset, timed fades and interrupted fades, and Escape. The presentation test checks all 65536
 camera words. The real PE sample was also booted in headless QEMU: Right
 changed 3150 viewport pixels, Shift removed the sprite (5787 changed pixels),
 and Escape returned to the DOS64 shell with exit code zero. Host tests verify
 the other controls pixel-for-pixel; manual QEMU testing remains useful.
+The updated fade sample was also tested in real QEMU: F made all 576000
+scaled viewport pixels black; F again restored the viewport byte-for-byte,
+including all 5967 previously nonblack pixels. Escape again exited cleanly.
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.

@@ -19,6 +19,10 @@ static DOS64_COLOR palette[256];
 static unsigned int map_size, sprite_size;
 static unsigned int frames;
 static unsigned int failures;
+static unsigned char original_rgb[768], fade_rgb[768], fade_source[768], fade_target[768];
+static unsigned int fade_phase;
+static int fade_active, fade_black;
+static unsigned long long serviced_ticks;
 
 static void __attribute__((ms_abi)) write_text(const char *text)
 {
@@ -64,14 +68,16 @@ static void __attribute__((ms_abi)) poll_input(void)
     case 9: key = 0x2c; break;
     case 10: key = 0x50; break;
     case 11: key = 0x4f; break;
-    case 12: key = 0x29; break;
+    case 12: case 80: case 90: case 100: key = 0x09; break;
+    case 110: key = 0x2c; break;
+    case 112: key = 0x29; break;
     default: break;
     }
     if (key) {
         api.Input.KeyDown[key] = 1;
         api.Input.KeyPressed[key] = (iteration != 3 && iteration != 8);
     }
-    assert(iteration <= 12);
+    assert(iteration <= 112);
 }
 static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
     unsigned int width, unsigned int height, unsigned int stride,
@@ -79,6 +85,41 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
 {
     assert(width == 320 && height == 200 && stride == 320);
     assert(x == 0 && y == 40 && dest_width == 640 && dest_height == 400);
+    unsigned long long ticks = now * 1193182ULL / (11830ULL * 1000000000ULL);
+    for (unsigned long long t = serviced_ticks; t < ticks && fade_active; ++t) {
+        int complete = 1;
+        for (unsigned int i = 0; i < 768; ++i) {
+            int product = ((int)fade_target[i] - fade_source[i]) * (int)fade_phase;
+            unsigned int ax = (unsigned int)product & 0xffff;
+            fade_rgb[i] = (unsigned char)((ax >> 6) + fade_source[i]);
+            if (fade_rgb[i] != fade_target[i]) {
+                complete = 0;
+            }
+        }
+        ++fade_phase;
+        if (complete) {
+            fade_active = 0;
+        }
+    }
+    serviced_ticks = ticks;
+    if (iteration == 12 || iteration == 80 || iteration == 90 || iteration == 100) {
+        fade_black = !fade_black;
+        memcpy(fade_source, fade_rgb, sizeof(fade_source));
+        for (unsigned int i = 0; i < 768; ++i) {
+            fade_target[i] = fade_black ? 0 : original_rgb[i];
+        }
+        fade_active = 1; fade_phase = 0;
+    }
+    if (iteration == 110) {
+        memcpy(fade_rgb, original_rgb, sizeof(fade_rgb));
+        fade_active = fade_black = 0;
+    }
+    if (iteration == 79) {
+        for (unsigned int i = 0; i < 768; ++i) {
+            assert(fade_rgb[i] == 0);
+        }
+    }
+    assert(vga_palette_colors(fade_rgb, palette) == 0);
     memset(expected, 0, sizeof(expected));
     assert(render_map_tile_pass(map, map_size, 0, 0, 0, 0, expected) == 0);
     assert(render_map_tile_pass(map, map_size, 0, 0, 0, 1, expected) == 0);
@@ -121,13 +162,15 @@ int main(void)
     assert(resources_load_entry(&api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
         map, sizeof(map), &dictionary, &map_size) == 0);
     assert(vga_load_palette(map, map_size, palette) == 0);
+    assert(vga_load_palette_rgb(map, map_size, original_rgb) == 0);
+    memcpy(fade_rgb, original_rgb, sizeof(fade_rgb));
     assert(resources_load_entry(&api, "LIONKING.EPF", "SYIDLE1.MCH", packed, sizeof(packed),
         sprite, sizeof(sprite), &dictionary, &sprite_size) == 0);
     frames = (unsigned int)sprite[0] | (unsigned int)sprite[1] << 8;
     assert(frames > 1);
     assert(start(&api) == 0);
-    assert(iteration == 12 && shown == 11 && failures == 0);
-    printf("PASS: DOS64 start with real assets (%u frames), all 704000 ARGB pixels, "
-        "frame stepping/wrap, held keys, flips, hide/reset and Escape\n", frames);
+    assert(iteration == 112 && shown == 111 && failures == 0);
+    printf("PASS: DOS64 start with real assets (%u frames), all 7104000 ARGB pixels, "
+        "frame stepping, held keys, flips, hide/reset, timed fades/interruption and Escape\n", frames);
     return 0;
 }
