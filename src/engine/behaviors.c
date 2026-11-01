@@ -366,6 +366,54 @@ int engine_spawn_emitter(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     }
     return status;
 }
+
+int engine_setup_emitter_group(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_EMITTER_GROUP *group, const RENDER_OWNER *camera,
+    const RENDER_BOUNDS *visibility, short order, short parent_order, short child_order)
+{
+    if (!pool || !renders || !group || !camera || !visibility) {
+        return -1;
+    }
+    unsigned int free_objects = 0, free_nodes = 0;
+    for (ENGINE_OBJECT *object = pool->free_head; object; object = object->next) {
+        ++free_objects;
+    }
+    for (RENDER_NODE *node = renders->free_head; node; node = node->next) {
+        ++free_nodes;
+    }
+    if (free_objects < ENGINE_EMITTER_GROUP_COUNT || free_nodes < ENGINE_EMITTER_GROUP_COUNT) {
+        return -1;
+    }
+    for (ENGINE_OBJECT *object = pool->head; object; object = object->next) {
+        for (unsigned int i = 0; i < ENGINE_EMITTER_GROUP_COUNT; ++i) {
+            if (object->context == &group->emitters[i]) {
+                return -1;
+            }
+            for (unsigned int j = 0; j < ENGINE_EMITTER_GROUP_SLOTS; ++j) {
+                ENGINE_EMITTER_SLOT *slot = &group->slots[i][j];
+                if (object->context == &slot->parent || object->context == &slot->child) {
+                    return -1;
+                }
+            }
+        }
+    }
+    static const short x_positions[ENGINE_EMITTER_GROUP_COUNT] = {0xd98, 0xdb8, 0xdd0, 0xdf0};
+    static const unsigned short counters[ENGINE_EMITTER_GROUP_COUNT] = {0xaa, 0xbe, 0xc8, 0xd2};
+    group->trigger = 0;
+    for (unsigned int i = 0; i < ENGINE_EMITTER_GROUP_COUNT; ++i) {
+        group->objects[i] = 0;
+    }
+    for (unsigned int i = 0; i < ENGINE_EMITTER_GROUP_COUNT; ++i) {
+        if (engine_spawn_emitter(pool, renders, &group->emitters[i],
+            (RENDER_OWNER){x_positions[i], 0x1a8}, counters[i], i & 1,
+            &group->trigger, camera, visibility, group->slots[i],
+            ENGINE_EMITTER_GROUP_SLOTS, order, parent_order, child_order,
+            &group->objects[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
 #else
 /* Original behavior 0x288a1 and visibility helpers remain in recovered blocks. */
 #endif

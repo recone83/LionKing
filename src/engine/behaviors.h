@@ -45,6 +45,16 @@ typedef struct {
     short child_order;
 } ENGINE_EMITTER_OBJECT;
 
+#define ENGINE_EMITTER_GROUP_COUNT 4U
+#define ENGINE_EMITTER_GROUP_SLOTS 4U
+
+typedef struct {
+    unsigned short trigger;
+    ENGINE_EMITTER_OBJECT emitters[ENGINE_EMITTER_GROUP_COUNT];
+    ENGINE_EMITTER_SLOT slots[ENGINE_EMITTER_GROUP_COUNT][ENGINE_EMITTER_GROUP_SLOTS];
+    ENGINE_OBJECT *objects[ENGINE_EMITTER_GROUP_COUNT];
+} ENGINE_EMITTER_GROUP;
+
 extern const ENGINE_OBJECT_BEHAVIOR engine_falling_behavior;
 extern const ENGINE_OBJECT_BEHAVIOR engine_timed_behavior;
 extern const ENGINE_OBJECT_BEHAVIOR engine_emitter_behavior;
@@ -61,5 +71,8 @@ int engine_spawn_emitter(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     unsigned int variant, const unsigned short *trigger, const RENDER_OWNER *camera,
     const RENDER_BOUNDS *visibility, ENGINE_EMITTER_SLOT *slots, unsigned int slot_count,
     short order, short parent_order, short child_order, ENGINE_OBJECT **created);
+int engine_setup_emitter_group(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_EMITTER_GROUP *group, const RENDER_OWNER *camera,
+    const RENDER_BOUNDS *visibility, short order, short parent_order, short child_order);
 
 #endif

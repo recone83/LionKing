@@ -178,6 +178,21 @@ Sloty i ich stany muszą być wyłączne dla danego emitera i jego puli; ponowne
 użycie następuje dopiero po usunięciu obu obiektów ze slotu.
 Pełny setup poziomu i jego flaga aktywacji nadal nie są podłączone do podglądu.
 
+`engine_setup_emitter_group` przenosi konkretny setup `0x287bb`: zeruje flagę
+aktywacji, tworzy cztery emitery na X 3480/3512/3536/3568, Y 424, z licznikami
+170/190/200/210 i wariantami 0/1/0/1. Właścicielem żywej flagi i stanów
+łańcuchów jest `ENGINE_EMITTER_GROUP`. Wywołujący dostarcza kamerę, okno
+widoczności i kolejności renderowania. Nie przestawiamy flagi na 1 zamiast
+nieprzeniesionej jeszcze ścieżki zachowania bossa.
+[check_emitter_group.c](../../tools/check_emitter_group.c) porównuje stałe
+z instrukcjami oryginalnego kodu i uruchamia cały setup przez dispatcher,
+łącznie z ośmioma łańcuchami rodzic/dziecko.
+Przed setupem wymagane są cztery wolne obiekty i cztery węzły renderowania;
+brak zasobów nie zeruje flagi i nie tworzy części grupy.
+Grupy nie można zainicjalizować ponownie, dopóki którykolwiek jej obiekt
+lub potomek jest aktywny w tej samej puli. Grupa musi pozostać żywa.
+To setup emiterów, nie pełny setup ani działająca rozgrywka poziomu.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |
