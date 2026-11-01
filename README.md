@@ -247,6 +247,20 @@ build/check_render_pass
 
 ### Interactive DOS64 test
 
+The native palette transition preserves default settings at DS `0xa60`:
+one phase per PIT tick, no interval delay, all 256 colors. Binary `0x105cb`
+snapshots the source/target palettes; `0x1062b` interpolates with signed
+integer multiplication and division by 64, completing as soon as every
+component matches. Interrupting a fade starts from the current palette.
+No old timer interrupt or VGA port access is retained. Nondefault range/speed
+settings are not yet exposed by this native interface.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_fade.c src/libs/vga.c -o build/check_fade
+build/check_fade
+```
+
 Run `./build.sh` to build and launch the updated sample in QEMU. It now uses
 the native input masks, render-node pool, multipart sprite pass and migrated
 `vga_present_frame`, rather than drawing the sprite directly once.
