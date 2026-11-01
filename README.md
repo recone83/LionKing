@@ -192,6 +192,23 @@ cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
 build/check_input
 ```
 
+The [render orchestration](src/engine/render.c) now preserves the exported
+`render_game_scene` and `render_basic_scene` call order with explicit stage
+interfaces: viewport, stage one, object pass 0, stage two, object pass 0x80,
+overlays and presentation. Levels below 11 use overlays; level 4 skips the
+middle overlay. Missing stages and stage errors propagate failure.
+These interfaces are not empty replacement implementations: the original
+viewport/parallax, object draw callbacks and overlays still need migration.
+The asset viewer continues its explicitly limited preview instead of supplying
+fake stages to pretend it is the full game renderer. Test callbacks exist only
+in the host test. All other original renderer helpers are in `render_legacy.inc`.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_render.c src/engine/render.c -o build/check_render
+build/check_render
+```
+
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.
 Original pseudocode bodies are kept in adjacent `*_legacy.inc` files,
