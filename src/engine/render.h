@@ -46,6 +46,8 @@ typedef struct {
 
 int render_object_bounds(const RENDER_NODE *node, RENDER_BOUNDS *bounds);
 int render_point_hit(const RENDER_NODE *node, short x, short y, short *hit);
+int render_local_rectangle_hit(const RENDER_NODE *target, const RENDER_NODE *source,
+    const RENDER_BOUNDS *local, short *hit);
 
 typedef struct {
     const unsigned char *data;

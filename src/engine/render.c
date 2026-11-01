@@ -155,6 +155,34 @@ int render_point_hit(const RENDER_NODE *node, short x, short y, short *hit)
     return 0;
 }
 
+static short bounds_hit(const RENDER_BOUNDS *a, const RENDER_BOUNDS *b)
+{
+    return a->right >= b->left && a->bottom >= b->top &&
+        a->left <= b->right && a->top <= b->bottom ? -1 : 0;
+}
+
+int render_local_rectangle_hit(const RENDER_NODE *target, const RENDER_NODE *source,
+    const RENDER_BOUNDS *local, short *hit)
+{
+    RENDER_BOUNDS target_bounds;
+    if (!source || !source->active || !source->owner || !local || !hit ||
+        render_object_bounds(target, &target_bounds) != 0) {
+        return -1;
+    }
+    RENDER_BOUNDS source_bounds = *local;
+    /* 0x1693d mirrors the supplied rectangle horizontally only. */
+    if (source->pass_flags & 8) {
+        source_bounds.left = bounds_word(0U - (unsigned int)local->right);
+        source_bounds.right = bounds_word(0U - (unsigned int)local->left);
+    }
+    source_bounds.left = bounds_word((unsigned int)source_bounds.left + (unsigned int)source->owner->x);
+    source_bounds.right = bounds_word((unsigned int)source_bounds.right + (unsigned int)source->owner->x);
+    source_bounds.top = bounds_word((unsigned int)source_bounds.top + (unsigned int)source->owner->y);
+    source_bounds.bottom = bounds_word((unsigned int)source_bounds.bottom + (unsigned int)source->owner->y);
+    *hit = bounds_hit(&target_bounds, &source_bounds);
+    return 0;
+}
+
 static int render_signed_word(int value)
 {
     unsigned int word = (unsigned int)value & 0xffff;

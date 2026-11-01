@@ -28,6 +28,13 @@ przeglądaniem (`--manual` wybiera ręczny start). Zdarzenia tworzące obiekty g
 są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
 Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
 
+`render_local_rectangle_hit` odtwarza `0x1693d`: granice deskryptora obiektu
+docelowego z odbiciami H/V i prostokąt lokalny względem obiektu bieżącego.
+Ten drugi jest odbijany tylko poziomo, zgodnie z instrukcjami oryginału.
+Porównania są ze znakiem, krawędzie włączone, współrzędne zawijane 16-bitowo.
+[check_rectangle.c](../../tools/check_rectangle.c) sprawdza obie orientacje
+obiektu źródłowego, wszystkie odbicia celu i skrajne współrzędne.
+
 Ścieżka idle używa teraz również oryginalnego nadrzędnego skryptu DS `0x5f84`:
 inicjalizacja podstrumienia, wykonanie, powrót z zapisaniem adresu wznowienia
 i względny skok pętli. Obsługiwane są też inicjalizacja oraz wykonanie
