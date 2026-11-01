@@ -154,6 +154,16 @@ dostarcza wywołujący jako sloty. Brak wolnego slotu jest błędem, nie pomini�
 tworzenia obiektu. [check_emitter.c](../../tools/check_emitter.c) sprawdza
 160 aktualizacji z czterema emisjami i rzeczywistą aktualizacją całego łańcucha.
 
+`engine_spawn_emitter` odtwarza oba wrappery `0x28773/0x28797`, warianty 0/1.
+Rekord DS `0x162e2` ma handler/inicjalizator `0x1865d` i deskryptor `0xe4a0`.
+Skrypt DS `0x166f6` lub `0x1670f` i licznik są przypisywane po powrocie
+inicjalizatora; pierwsza klatka nie jest wykonywana w konstruktorze.
+[check_spawn_emitter.c](../../tools/check_spawn_emitter.c) testuje oba warianty,
+aktywną flagę i cały łańcuch emiter -> rodzic -> dziecko.
+Sloty i ich stany muszą być wyłączne dla danego emitera i jego puli; ponowne
+użycie następuje dopiero po usunięciu obu obiektów ze slotu.
+Pełny setup poziomu i jego flaga aktywacji nadal nie są podłączone do podglądu.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |

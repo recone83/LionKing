@@ -241,23 +241,27 @@ static int spawn_definition(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
             return -1;
         }
     }
-    const unsigned char *definition = animation_falling_data +
-        (timed ? ANIMATION_TIMED_DEFINITION : ANIMATION_FALLING_DEFINITION) - ANIMATION_FALLING_BASE;
-    unsigned int handler = timed ? 0x1881d : 0x188a1;
+    const unsigned char *data = timed == 2 ? animation_emitter_data : animation_falling_data;
+    unsigned int base = timed == 2 ? ANIMATION_EMITTER_BASE : ANIMATION_FALLING_BASE;
+    unsigned int size = timed == 2 ? ANIMATION_EMITTER_SIZE : ANIMATION_FALLING_SIZE;
+    unsigned int definition_address = timed == 2 ? ANIMATION_EMITTER_DEFINITION :
+        timed ? ANIMATION_TIMED_DEFINITION : ANIMATION_FALLING_DEFINITION;
+    const unsigned char *definition = data + definition_address - base;
+    unsigned int handler = timed == 2 ? 0x1865d : timed ? 0x1881d : 0x188a1;
     unsigned int flags = definition_word(definition + 4);
     unsigned int address = definition_dword(definition + 6);
     if (definition_dword(definition) != handler ||
         definition_dword(definition + 10) != handler || flags != 0 ||
-        address < ANIMATION_FALLING_BASE ||
-        address - ANIMATION_FALLING_BASE > ANIMATION_FALLING_SIZE - 14) {
+        address < base || address - base > size - 14) {
         return -1;
     }
-    const unsigned char *parts = animation_falling_data + address - ANIMATION_FALLING_BASE;
+    const unsigned char *parts = data + address - base;
     unsigned int bytes = 14 + definition_word(parts) * 6;
-    if (bytes > ANIMATION_FALLING_SIZE - (address - ANIMATION_FALLING_BASE)) {
+    if (bytes > size - (address - base)) {
         return -1;
     }
-    const ENGINE_OBJECT_BEHAVIOR *behavior = timed ? &engine_timed_behavior : &engine_falling_behavior;
+    const ENGINE_OBJECT_BEHAVIOR *behavior = timed == 2 ? &engine_emitter_behavior :
+        timed ? &engine_timed_behavior : &engine_falling_behavior;
     ENGINE_OBJECT *object = engine_acquire_object(pool, behavior);
     if (!object) {
         return -1;
@@ -326,6 +330,38 @@ int engine_spawn_timed(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     if (status == 0) {
         /* The immediate initializer changes 10 to 9; it cannot spawn yet. */
         state->child = child;
+        state->child_order = child_order;
+    }
+    return status;
+}
+
+int engine_spawn_emitter(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
+    ENGINE_EMITTER_OBJECT *state, RENDER_OWNER position, unsigned short counter,
+    unsigned int variant, const unsigned short *trigger, const RENDER_OWNER *camera,
+    const RENDER_BOUNDS *visibility, ENGINE_EMITTER_SLOT *slots, unsigned int slot_count,
+    short order, short parent_order, short child_order, ENGINE_OBJECT **created)
+{
+    if (!state || variant > 1 || !trigger || !camera || !slots || !slot_count) {
+        return -1;
+    }
+    ANIMATION_PROGRAM animation;
+    if (animation_program_initialize(&animation, animation_emitter_data,
+        ANIMATION_EMITTER_SIZE, ANIMATION_EMITTER_BASE,
+        variant ? ANIMATION_EMITTER_SECOND : ANIMATION_EMITTER_FIRST,
+        animation_emitter_data, ANIMATION_EMITTER_SIZE, ANIMATION_EMITTER_BASE) != 0) {
+        return -1;
+    }
+    int status = spawn_definition(pool, renders, &state->body, position, visibility,
+        order, created, 2);
+    if (status == 0) {
+        /* 0x28773/0x28797 assign script and counter after the initial callback returns. */
+        state->body.animation = animation;
+        state->body.animation.counter = counter;
+        state->trigger = trigger;
+        state->camera = camera;
+        state->slots = slots;
+        state->slot_count = slot_count;
+        state->parent_order = parent_order;
         state->child_order = child_order;
     }
     return status;
