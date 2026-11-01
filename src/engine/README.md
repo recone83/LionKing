@@ -46,6 +46,13 @@ tego stanu ani kolizji; podgląd nadal pokazuje idle, bez nowego przypisania kla
 
 Podział na podstawie potwierdzonego przepływu instrukcji, bez odtwarzania brakujących ciał C:
 
+[physics.c](physics.c) przenosi oryginalne integratory 16.16: X `0x1a962`,
+Y `0x1a99e`, grawitację `0x1a7ed` oraz ograniczenie prędkości `0x1a7bd/0x1a7d0`.
+Dodawanie zachowuje 32-bitowe zawijanie, a limit `0x70000` używa porównania
+ze znakiem. Grawitacja dodaje `0x4e00` przed zmianą pozycji i zawsze stosuje
+limit, niezależnie od flagi wyłączającej go w drugim helperze.
+[check_physics.c](../../tools/check_physics.c) sprawdza wszystkie ułamki 16-bitowe.
+
 | Moduł | Definicje | Zakres |
 |---|---:|---|
 | [render.c](./render.c) | 10 | Przygotowanie widoku, etapy rysowania, warianty sceny, przebieg obiektów, pula węzłów renderowania i sterowanie animacją. |
