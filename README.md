@@ -161,14 +161,17 @@ acquisition and push-to-front recycling. Each object retains 116 bytes of game
 data; list pointers and behavior pointers are native, so the old 128-byte binary
 stride is deliberately not used in memory. Pool exhaustion still returns null.
 Invalid releases return failure; future gameplay callers must report that error.
-The original update dispatcher stays in [objects_legacy.inc](src/engine/objects_legacy.inc)
-until input and gameplay callbacks have been migrated. The viewer does not yet
-use this pool; this step does not change its image.
+The native dispatcher now follows `0x14f50`: increments the 16-bit update
+counter, reads controls, calls behavior entries, tracks the current-object
+pointer and recycles an object when its callback clears that pointer. It
+continues with the saved next object after removal. Real gameplay behaviors
+remain unported; tests use callbacks only in the host harness.
+The viewer does not yet use this pool; this step does not change its image.
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_objects.c src/engine/objects.c -o build/check_objects
+    tools/check_objects.c src/engine/objects.c src/engine/input.c -o build/check_objects
 build/check_objects
 ```
 

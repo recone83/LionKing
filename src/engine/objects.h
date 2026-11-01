@@ -1,5 +1,6 @@
 #ifndef LIONKING_OBJECTS_H
 #define LIONKING_OBJECTS_H
+#include "input.h"
 
 #define ENGINE_OBJECT_CAPACITY 96U
 
@@ -22,11 +23,17 @@ struct ENGINE_OBJECT_POOL {
     ENGINE_OBJECT *free_head;
     ENGINE_OBJECT *head;
     ENGINE_OBJECT *tail;
+    ENGINE_OBJECT *current;
+    ENGINE_OBJECT *tracked;
+    unsigned short update_count;
+    unsigned short controls;
+    ENGINE_INPUT input;
 };
 
 void engine_initialize_objects(ENGINE_OBJECT_POOL *pool);
 ENGINE_OBJECT *engine_acquire_object(ENGINE_OBJECT_POOL *pool,
     const ENGINE_OBJECT_BEHAVIOR *behavior);
 int engine_release_object(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object);
+int engine_update_objects(ENGINE_OBJECT_POOL *pool, const DOS64_INPUT *keys);
 
 #endif

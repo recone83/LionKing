@@ -5,6 +5,9 @@
 void engine_initialize_objects(ENGINE_OBJECT_POOL *pool)
 {
     pool->head = pool->tail = 0;
+    pool->current = pool->tracked = 0;
+    pool->update_count = pool->controls = 0;
+    input_initialize(&pool->input);
     pool->free_head = &pool->objects[0];
     for (unsigned int i = 0; i < ENGINE_OBJECT_CAPACITY; ++i) {
         ENGINE_OBJECT *object = &pool->objects[i];
@@ -68,6 +71,40 @@ int engine_release_object(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
     }
     pool->free_head = object;
     object->active = 0;
+    return 0;
+}
+
+int engine_update_objects(ENGINE_OBJECT_POOL *pool, const DOS64_INPUT *keys)
+{
+    if (!pool || !keys) {
+        return -1;
+    }
+    ++pool->update_count;
+    if (input_poll_controls(&pool->input, keys) != 0) {
+        return -1;
+    }
+    pool->controls = pool->input.pressed;
+    ENGINE_OBJECT *object = pool->head;
+    while (object) {
+        if (!object->behavior || !object->behavior->update) {
+            object = object->next;
+            continue;
+        }
+        pool->current = object;
+        object->behavior->update(pool, object);
+        if (object == pool->tracked) {
+            pool->tracked = pool->current;
+        }
+        if (!pool->current) {
+            ENGINE_OBJECT *next = object->next;
+            if (engine_release_object(pool, object) != 0) {
+                return -1;
+            }
+            object = next;
+        } else {
+            object = object->next;
+        }
+    }
     return 0;
 }
 #else
