@@ -66,6 +66,12 @@ ze znakiem. Grawitacja dodaje `0x4e00` przed zmianą pozycji i zawsze stosuje
 limit, niezależnie od flagi wyłączającej go w drugim helperze.
 [check_physics.c](../../tools/check_physics.c) sprawdza wszystkie ułamki 16-bitowe.
 
+`engine_motion_accelerate_x` przenosi `0x1a9da` i helper `0x1cda1`:
+32-bitowe dodanie przyspieszenia, ograniczenie ze znakiem do -4/+4 w 16.16,
+następnie integracja X nową prędkością. Stan Y pozostaje bez zmian.
+[check_acceleration.c](../../tools/check_acceleration.c) obejmuje wszystkie
+ułamki oraz granice limitu i przepełnienia.
+
 [render_object_bounds](render.c) i `render_point_hit` przenoszą test punktu
 `0x168a4`: granice z deskryptora +2/+4/+6/+8, odbicia H/V, 16-bitowe
 dodawanie pozycji i porównania ze znakiem z włączonymi krawędziami.

@@ -48,6 +48,23 @@ int engine_motion_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner)
     integrate(&owner->y, &motion->fraction_y, motion->velocity_y);
     return 0;
 }
+
+int engine_motion_accelerate_x(ENGINE_MOTION *motion, RENDER_OWNER *owner,
+    uint32_t increment)
+{
+    if (!motion || !owner) {
+        return -1;
+    }
+    uint32_t velocity = motion->velocity_x + increment;
+    if (velocity >= UINT32_C(0x80000000) && velocity < UINT32_C(0xfffc0000)) {
+        velocity = UINT32_C(0xfffc0000);
+    } else if (velocity < UINT32_C(0x80000000) && velocity > UINT32_C(0x40000)) {
+        velocity = UINT32_C(0x40000);
+    }
+    motion->velocity_x = velocity;
+    integrate(&owner->x, &motion->fraction_x, velocity);
+    return 0;
+}
 #else
 /* Original helpers remain in recovered/block_08000.c. */
 #endif
