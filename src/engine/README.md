@@ -28,6 +28,11 @@ przeglądaniem (`--manual` wybiera ręczny start). Zdarzenia tworzące obiekty g
 są wyłącznie jawnie rejestrowane w trybie diagnostycznym, nie wykonywane.
 Nie jest to odtworzony pełny interpreter ani logika zachowania Simby.
 
+`render_near_view` przenosi `0x2805c`: pozycja względem kamery i okna
+320x200 z osobnymi marginesami ze znakiem. Krawędzie są wyłączone;
+obliczenia granic są 32-bitowe, nie zawijane do 16 bitów.
+[check_near_view.c](../../tools/check_near_view.c) sprawdza dokładne progi.
+
 `render_local_rectangle_hit` odtwarza `0x1693d`: granice deskryptora obiektu
 docelowego z odbiciami H/V i prostokąt lokalny względem obiektu bieżącego.
 Ten drugi jest odbijany tylko poziomo, zgodnie z instrukcjami oryginału.

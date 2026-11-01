@@ -161,6 +161,19 @@ static short bounds_hit(const RENDER_BOUNDS *a, const RENDER_BOUNDS *b)
         a->left <= b->right && a->top <= b->bottom ? -1 : 0;
 }
 
+int render_near_view(const RENDER_OWNER *owner, const RENDER_OWNER *camera,
+    short margin_x, short margin_y, short *near)
+{
+    if (!owner || !camera || !near) {
+        return -1;
+    }
+    *near = (int)owner->x > (int)camera->x - margin_x &&
+        (int)owner->x < (int)camera->x + 320 + margin_x &&
+        (int)owner->y > (int)camera->y - margin_y &&
+        (int)owner->y < (int)camera->y + 200 + margin_y ? -1 : 0;
+    return 0;
+}
+
 int render_objects_hit(const RENDER_NODE *current, const RENDER_NODE *other, short *hit)
 {
     RENDER_BOUNDS a, b;

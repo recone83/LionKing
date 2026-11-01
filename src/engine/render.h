@@ -49,6 +49,8 @@ int render_point_hit(const RENDER_NODE *node, short x, short y, short *hit);
 int render_local_rectangle_hit(const RENDER_NODE *target, const RENDER_NODE *source,
     const RENDER_BOUNDS *local, short *hit);
 int render_objects_hit(const RENDER_NODE *current, const RENDER_NODE *other, short *hit);
+int render_near_view(const RENDER_OWNER *owner, const RENDER_OWNER *camera,
+    short margin_x, short margin_y, short *near);
 
 typedef struct {
     const unsigned char *data;
