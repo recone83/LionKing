@@ -115,6 +115,25 @@ static short bounds_word(unsigned int value)
     return (short)(value < 0x8000 ? (int)value : (int)value - 65536);
 }
 
+int render_prepare_viewport(RENDER_OWNER *camera, unsigned short width_tiles,
+    unsigned short height_tiles, unsigned short shake, RENDER_VIEWPORT *viewport)
+{
+    if (!camera || !viewport) {
+        return -1;
+    }
+    short limit_x = bounds_word((unsigned int)width_tiles * 8U - 320U);
+    short limit_y = bounds_word((unsigned int)height_tiles * 8U - 200U);
+    short x = camera->x < 0 ? 0 : camera->x;
+    short y = camera->y < 0 ? 0 : camera->y;
+    camera->x = x > limit_x ? limit_x : x;
+    camera->y = y > limit_y ? limit_y : y;
+    viewport->x = (unsigned short)camera->x;
+    viewport->y = (unsigned short)((unsigned int)(unsigned short)camera->y + shake);
+    viewport->aligned_x = viewport->x & 0xfff8U;
+    viewport->aligned_y = viewport->y & 0xfff8U;
+    return 0;
+}
+
 int render_object_bounds(const RENDER_NODE *node, RENDER_BOUNDS *bounds)
 {
     if (!node || !node->active || !node->owner || !node->parts ||

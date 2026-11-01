@@ -288,3 +288,14 @@ wszystkich obiektów są jawnie testowe; nie przeniesiono aktywacji przez bossa.
 Test [check_scene.c](../../tools/check_scene.c) sprawdza 20 sekund rzeczywistego
 wejścia i każdy piksel, a nie tylko powodzenie ładowania.
 `--idle` i `--manual` zachowują wcześniejszy podgląd Simby i przeglądarkę banków.
+
+Przygotowanie viewportu `0x11799` odtworzono z kodu maszynowego, ponieważ
+dekompilator błędnie zastąpił kamerę stałymi. Kolejność: dolny clamp do zera,
+górny clamp z porównaniem signed dolnego słowa wymiaru, zapis kamery logicznej,
+dodanie shake do widocznego Y i wyrównanie początków do 8 pikseli.
+[check_viewport.c](../../tools/check_viewport.c) sprawdza 1966080 przypadków.
+Scena testowa uruchamia oryginalny obiekt shake razem z aktywacją emiterów,
+z markerem X zero (bez wywołania obrażeń gracza). Przesunięcie obejmuje mapę
+i sprite'y, nie kamerę używaną do cullingu; po prezentacji zeruje się jak
+oryginalne DS `0x173e2`. Test sceny mierzy rzeczywistą różnicę kolorów ARGB
+względem nieruchomej mapy, nie tylko zmianę indeksów palety.

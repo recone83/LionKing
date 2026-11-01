@@ -14,6 +14,9 @@ int __attribute__((ms_abi)) start(const DOS64_API *api);
 static DOS64_API api;
 static ENGINE_OBJECT_POOL objects;
 static ENGINE_EMITTER_GROUP emitters;
+static ENGINE_SHAKE_OBJECT shake;
+static ENGINE_MOTION player_motion;
+static unsigned short camera_shake, immunity, player_flags;
 static RENDER_POOL renders;
 static RENDER_OWNER camera = {3400, 380};
 static RENDER_BOUNDS visibility = {3272, 252, 3848, 580};
@@ -24,6 +27,7 @@ static DOS64_COLOR palette[256];
 static unsigned long long now, verified;
 static unsigned long long cycle_begin;
 static unsigned int iteration, map_size, shown, changed, object_frames, activation;
+static unsigned int shake_frames, shake_pixels;
 static ENGINE_CLOCK clock;
 static void __attribute__((ms_abi)) log_text(const char *text)
 {
@@ -72,25 +76,48 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
             &visibility, 0, 0, 0) == 0);
         cycle_begin = now;
     }
-    if (now - cycle_begin >= 1000000000ULL) {
+    if (!emitters.trigger && now - cycle_begin >= 1000000000ULL) {
+        ENGINE_OBJECT *created;
+        assert(engine_spawn_shake(&objects, &renders, &shake, 0, &camera_shake,
+            &immunity, &player_motion, &player_flags, 0, 0, 0, &created) == 0);
         emitters.trigger = 1;
     }
+    RENDER_VIEWPORT viewport;
+    assert(render_prepare_viewport(&camera,
+        (unsigned short)(map[8] | (unsigned int)map[9] << 8),
+        (unsigned short)(map[12] | (unsigned int)map[13] << 8),
+        camera_shake, &viewport) == 0);
     memset(pixels, 0, sizeof(pixels));
-    assert(render_map_tile_pass(map, map_size, 0, camera.x, camera.y, 0, pixels) == 0);
-    assert(render_map_tile_pass(map, map_size, 0, camera.x, camera.y, 1, pixels) == 0);
+    assert(render_map_tile_pass(map, map_size, 0, viewport.x, viewport.y, 0, pixels) == 0);
+    assert(render_map_tile_pass(map, map_size, 0, viewport.x, viewport.y, 1, pixels) == 0);
     memcpy(background, pixels, sizeof(pixels));
+    if (camera_shake) {
+        unsigned char stationary[64000] = {0};
+        assert(render_map_tile_pass(map, map_size, 0, viewport.x, camera.y, 0, stationary) == 0);
+        assert(render_map_tile_pass(map, map_size, 0, viewport.x, camera.y, 1, stationary) == 0);
+        unsigned int differences = 0;
+        for (unsigned int i = 0; i < 64000; ++i) {
+            differences += memcmp(&palette[stationary[i]], &palette[pixels[i]],
+                sizeof(palette[0])) != 0;
+        }
+        assert(differences > 1000);
+        shake_pixels += differences;
+        ++shake_frames;
+    }
     for (RENDER_NODE *node = renders.head; node; node = node->next) {
         node->flags |= 0x40;
     }
-    assert(render_object_pass(&renders, 0, -camera.x, -camera.y, banks, 161, pixels) == 0);
+    assert(render_object_pass(&renders, 0, (short)-viewport.x, (short)-viewport.y, banks, 161, pixels) == 0);
     unsigned int visible = 0;
     for (unsigned int i = 0; i < 64000; ++i) {
         assert(memcmp(&image[i], &palette[pixels[i]], sizeof(image[i])) == 0);
-        visible += pixels[i] != background[i];
+        visible += memcmp(&palette[pixels[i]], &palette[background[i]],
+            sizeof(palette[0])) != 0;
         ++verified;
     }
     object_frames += visible != 0;
     changed += visible;
+    camera_shake = 0;
     for (RENDER_NODE *node = renders.head; node; node = node->next) {
         node->flags &= 0xbf;
     }
@@ -119,8 +146,10 @@ int main(void)
     assert(start(&api) == 0);
     assert(iteration == 2002 && shown == 2001 && activation >= 3);
     assert(object_frames > 1500 && changed > 100000 && objects.update_count > 900);
+    assert(shake_frames >= 20 && shake_pixels > 100000 && player_flags == 0x40);
     printf("PASS: default DOS64 emitter scene, 20 seconds, %llu exact ARGB pixels, "
-        "%u visible-object frames, %u object pixels, live spawning/culling and Escape\n",
-        verified, object_frames, changed);
+        "%u visible-object frames, %u object pixels, %u shaken frames/%u shake pixels, "
+        "live spawning/culling and Escape\n",
+        verified, object_frames, changed, shake_frames, shake_pixels);
     return 0;
 }

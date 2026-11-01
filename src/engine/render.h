@@ -54,6 +54,16 @@ int render_near_view(const RENDER_OWNER *owner, const RENDER_OWNER *camera,
 short render_limit_camera_x(short x, short width_tiles);
 
 typedef struct {
+    unsigned short x;
+    unsigned short y;
+    unsigned short aligned_x;
+    unsigned short aligned_y;
+} RENDER_VIEWPORT;
+
+int render_prepare_viewport(RENDER_OWNER *camera, unsigned short width_tiles,
+    unsigned short height_tiles, unsigned short shake, RENDER_VIEWPORT *viewport);
+
+typedef struct {
     const unsigned char *data;
     unsigned int size;
 } RENDER_SPRITE_BANK;

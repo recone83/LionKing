@@ -834,5 +834,28 @@ and checks 128064000 exact ARGB pixels, repeated activation and Escape.
 It requires more than 1500 frames with visible object pixels and at least
 100000 object pixels overall. Compile it with the same source list as
 `tools/check_viewer.c` above, substituting the test source and output name.
-The verified run produced 1911 visible-object frames and 7571730 object pixels.
 Real DOS64/QEMU captures also changed over time and Escape returned exit code 0.
+
+The scene now also exercises the original impact camera shake: the migrated
+`0x2853e` constructor and `0x283cd` behavior feed the restored viewport
+preparation at `0x11799`. Its signed 16-bit lower/upper clamps, low-word map
+limits and eight-pixel aligned origins come from `bin/frame_timing.asm`.
+Shake is added to the visible camera Y with word wrapping, after clamping,
+and cleared after successful presentation as in `0x10276`.
+Tiles and objects receive the same shaken viewport; visibility/culling use
+the unshaken camera. This replaces no gameplay damage: the demonstration
+supplies marker X zero, so the original impact gate does not call the still
+unported player damage routine. Starting the shake together with the emitter
+fixture is diagnostic, not a claim that the boss attack has been migrated.
+
+The scene test requires at least 20 visibly shaken frames and 100000 changed
+ARGB pixels against an unshaken map, in addition to exact output comparisons.
+`tools/check_viewport.c` checks 1966080 coordinate/dimension/shake combinations,
+including negative and wrapped limits and shake `0xffff`:
+
+```bash
+cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_viewport.c src/engine/render.c src/engine/sprites.c \
+    -o build/check_viewport
+build/check_viewport
+```
