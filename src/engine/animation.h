@@ -18,5 +18,7 @@ int animation_initialize(ANIMATION_STREAM *stream, const unsigned char *data,
     unsigned int size, unsigned int base, unsigned int position);
 int animation_step(ANIMATION_STREAM *stream, RENDER_NODE *node,
     RENDER_OWNER *owner, ANIMATION_EVENT event, void *context);
+int animation_motion_step(ANIMATION_STREAM *stream, const RENDER_NODE *node,
+    RENDER_OWNER *owner);
 
 #endif

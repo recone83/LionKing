@@ -262,6 +262,27 @@ cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
 build/check_animation
 ```
 
+The neighboring motion substream at `0x163ce` is now migrated too.
+Each four-byte record holds duration, signed X byte and a Y word. Movement
+is applied immediately and on each of the next N updates. A high duration
+bit mirrors X according to the live facing flag; `0xff` introduces an
+absolute DS-address jump instead. Coordinates wrap exactly as 16-bit words.
+It uses the same checked data-address resolver, without native calls to
+original code addresses. It is not yet connected to gameplay behaviors;
+the idle preview is intentionally unchanged rather than given invented motion.
+
+```bash
+cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_motion.c src/engine/animation.c src/engine/render.c \
+    src/engine/sprites.c -o build/check_motion
+build/check_motion
+```
+
+The movement test also reads the untouched original stream at DS `0x329c`,
+selected by script handler `0x163bc` at DS `0x3252`. It checks the original
+-4/-3/-2 opening and repeating -1 record for 1000 updates in each direction,
+in addition to 2550 synthetic boundary cases.
+
 The original idle visual sequence starts at DS `0x6531`, referenced by script
 DS `0x5f84` through handler `0x162fc`. It contains 307 timed descriptors,
 six callback commands and an absolute loop at `0x6b4e`. Its descriptors use

@@ -111,6 +111,56 @@ int animation_step(ANIMATION_STREAM *stream, RENDER_NODE *node,
     }
     return -1;
 }
+int animation_motion_step(ANIMATION_STREAM *stream, const RENDER_NODE *node,
+    RENDER_OWNER *owner)
+{
+    if (!stream || !stream->data || !node || !node->active || !owner ||
+        node->owner != owner || stream->size > ~0U - stream->base) {
+        return -1;
+    }
+    unsigned char remaining = (unsigned char)((stream->remaining & 0x7f) - 1U);
+    int mirrored = !!(stream->remaining & 0x80);
+    unsigned int position = stream->position;
+    const unsigned char *record;
+    if (remaining < 0x80) {
+        if (position < 4 || !(record = resolve(stream, position - 4, 4))) {
+            return -1;
+        }
+        if (mirrored) {
+            remaining |= 0x80;
+        }
+    } else {
+        unsigned int commands;
+        for (commands = 0; commands < stream->size; ++commands) {
+            record = resolve(stream, position, 4);
+            if (!record) {
+                return -1;
+            }
+            if (record[0] != 0xff) {
+                break;
+            }
+            if (!resolve(stream, position, 6)) {
+                return -1;
+            }
+            position = dword(record + 2);
+        }
+        if (commands == stream->size) {
+            return -1;
+        }
+        remaining = record[0];
+        mirrored = !!(remaining & 0x80);
+        position += 4;
+    }
+    int dx = record[1] < 128 ? record[1] : (int)record[1] - 256;
+    if (mirrored && (node->pass_flags & 8)) {
+        dx = -dx;
+    }
+    owner->x = add_word(owner->x, dx);
+    owner->y = add_word(owner->y, (int)word(record + 2));
+    stream->remaining = remaining;
+    stream->position = position;
+    return 0;
+}
 #else
 /* The exported FUN_000062c0 remains in recovered/block_04000.c. */
 #endif
