@@ -7,6 +7,8 @@
 #include "engine/animation_data.h"
 
 static unsigned char packed[79311], map[580488], contours[4096];
+static unsigned char tile_frames[12800], original_map[580488];
+static unsigned char background_pixels[64000], previous_pixels[64000];
 static RESOURCE_DICTIONARY dictionary;
 static ENGINE_MAP_COLLISION collision;
 static ENGINE_PLAYER_AIR player;
@@ -15,6 +17,99 @@ static RENDER_POOL renders;
 static ENGINE_OBJECT *object;
 static unsigned char flags;
 static unsigned int snaps, landings;
+
+static unsigned int little32(const unsigned char *p)
+{
+    return p[0] | (unsigned int)p[1] << 8 | (unsigned int)p[2] << 16 | (unsigned int)p[3] << 24;
+}
+
+static void check_scroll_profiles(void)
+{
+    unsigned char fixture[5312] = {0};
+    fixture[4] = 0x80; fixture[5] = 0x14;
+    fixture[8] = fixture[12] = 100;
+    fixture[20] = 80; fixture[24] = 32; fixture[28] = 128;
+    for (unsigned int i = 0; i < 80 * 32; ++i) fixture[128 + i * 2] = 1;
+    for (unsigned int i = 0; i < 64; ++i) fixture[5248 + i] = (unsigned char)(i + 1);
+    assert(render_map_background(fixture, sizeof(fixture), 1, 487, 0, background_pixels) == 0);
+    assert(background_pixels[0] == 5);
+    assert(render_map_background(fixture, sizeof(fixture), 1, 487, 239, background_pixels) == 0);
+    assert(background_pixels[0] == 29);
+    assert(render_map_background(fixture, sizeof(fixture), 2, 487, 0, background_pixels) == 0);
+    assert(background_pixels[18 * 8 * 320] == 5);
+    assert(background_pixels[19 * 8 * 320] == 1);
+    assert(background_pixels[24 * 8 * 320] == 5);
+    assert(render_map_background(fixture, sizeof(fixture), 2, 6000, 0, background_pixels) == 0);
+    assert(background_pixels[19 * 8 * 320] == 6);
+    assert(render_map_background(fixture, sizeof(fixture), 5, 487, 0, background_pixels) == 0);
+    assert(background_pixels[20 * 8 * 320] == 7);
+    assert(background_pixels[21 * 8 * 320] == 5);
+    assert(background_pixels[22 * 8 * 320] == 7);
+    fixture[128] = 1; fixture[129] = 0xc0;
+    assert(render_map_background(fixture, sizeof(fixture), 1, 0, 0, background_pixels) == 0);
+    assert(background_pixels[0] == 64);
+    fixture[128] = fixture[129] = 0;
+    memset(background_pixels, 71, sizeof(background_pixels));
+    assert(render_map_background(fixture, sizeof(fixture), 1, 0, 0, background_pixels) == 0);
+    assert(background_pixels[0] == 71);
+    puts("PASS: original row thresholds, repeated level-5 threshold, wrapping, flip and empty background tiles");
+}
+
+static void check_background(const DOS64_API *api, unsigned int level)
+{
+    unsigned int size, frame_size;
+    assert(resources_load_entry(api, "data/LIONKING.EPF",
+        level == 6 ? "LEVEL6.MAP" : "LEVEL10.MAP", packed, sizeof(packed),
+        map, sizeof(map), &dictionary, &size) == 0);
+    assert(resources_load_entry(api, "data/LIONKING.EPF",
+        level == 6 ? "LEVEL6.BLK" : "LEVEL10.BLK", packed, sizeof(packed),
+        tile_frames, sizeof(tile_frames), &dictionary, &frame_size) == 0);
+    memcpy(original_map, map, size);
+    ENGINE_TILE_ANIMATION animation;
+    assert(engine_tile_animation_initialize(&animation, map, size, level, tile_frames, frame_size) == 0);
+    assert(engine_tile_animation_initialize(&animation, map, size, level, tile_frames, frame_size - 1) == -1);
+    unsigned int camera_y = 0;
+    printf("Background LEVEL%u: foreground %ux%u, background %ux%u, table %u\n", level,
+        little32(map + 8), little32(map + 12), little32(map + 20),
+        little32(map + 24), little32(map + 28));
+    unsigned int changed = 0;
+    for (unsigned int tick = 0; tick < 21; ++tick) {
+        int result = engine_tile_animation_tick(&animation);
+        assert(result == (tick % 5 == 0 ? 1 : 0));
+        assert(animation.frame == (tick / 5 + 1) % 4);
+        const unsigned char *source = tile_frames + animation.frame * animation.frame_size;
+        for (unsigned int i = 0; i < animation.count; ++i) {
+            assert(memcmp(map + animation.destinations[i], source, animation.lengths[i]) == 0);
+            source += animation.lengths[i];
+        }
+        memset(background_pixels, 0, sizeof(background_pixels));
+        assert(render_map_background(map, size, level, 0, camera_y, background_pixels) == 0);
+        assert(render_map_tile_pass(map, size, 0, 0, camera_y, 0, background_pixels) == 0);
+        assert(render_map_tile_pass(map, size, 0, 0, camera_y, 1, background_pixels) == 0);
+        if (tick) {
+            for (unsigned int i = 0; i < sizeof(background_pixels); ++i) {
+                if (background_pixels[i] != previous_pixels[i]) ++changed;
+            }
+        }
+        memcpy(previous_pixels, background_pixels, sizeof(previous_pixels));
+    }
+    unsigned int mutated = 0;
+    for (unsigned int byte = 0; byte < size; ++byte) {
+        if (map[byte] == original_map[byte]) continue;
+        int destination = 0;
+        for (unsigned int i = 0; i < animation.count; ++i) {
+            if (byte >= animation.destinations[i] &&
+                byte - animation.destinations[i] < animation.lengths[i]) destination = 1;
+        }
+        assert(destination);
+        ++mutated;
+    }
+    printf("Background measurements: updates%u changed%u mutated%u cameraY%u\n",
+        animation.updates, changed, mutated, camera_y);
+    assert(animation.updates == 5 && changed && mutated);
+    printf("PASS: LEVEL%u animated tiles, 5 changes in 21 ticks, %u visible pixel changes; map planes untouched\n",
+        level, changed);
+}
 
 static int map_support(void *context, short *supported)
 {
@@ -304,5 +399,13 @@ int main(void)
     position = (RENDER_OWNER){63, 32};
     assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8 && position.x == 48);
     puts("PASS: original two-row contour support, tags, real slope traversal, jump and map landing");
+    assert(render_map_background(map, size, 1, 0, 0, background_pixels) == 0);
+    memcpy(previous_pixels, background_pixels, sizeof(previous_pixels));
+    assert(render_map_background(map, size, 1, 640, 1000, background_pixels) == 0);
+    assert(memcmp(background_pixels, previous_pixels, sizeof(previous_pixels)) != 0);
+    assert(render_map_background(map, size, 0, 0, 0, background_pixels) == -1);
+    check_scroll_profiles();
+    check_background(&api, 6);
+    check_background(&api, 10);
     return 0;
 }

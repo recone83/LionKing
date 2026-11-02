@@ -40,4 +40,25 @@ int engine_map_lateral(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owne
 int engine_map_ceiling(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
     short x, short y, short *hit);
 
+int render_map_background(const unsigned char *map, unsigned int size,
+    unsigned int level, unsigned int camera_x, unsigned int camera_y,
+    unsigned char *pixels);
+
+typedef struct {
+    unsigned char *map;
+    const unsigned char *frames;
+    unsigned int destinations[7];
+    unsigned int lengths[7];
+    unsigned int count;
+    unsigned int frame_size;
+    unsigned int frame;
+    unsigned int remaining;
+    unsigned int updates;
+} ENGINE_TILE_ANIMATION;
+
+int engine_tile_animation_initialize(ENGINE_TILE_ANIMATION *animation,
+    unsigned char *map, unsigned int size, unsigned int level,
+    const unsigned char *frames, unsigned int frames_size);
+int engine_tile_animation_tick(ENGINE_TILE_ANIMATION *animation);
+
 #endif

@@ -16,6 +16,7 @@ static DOS64_COLOR palette[256];
 static unsigned char packed[79311];
 static unsigned char map[580488];
 static unsigned char map_contours[4096];
+static unsigned char animated_tiles[12800];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -876,6 +877,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 "Floor, slopes, landing and edge queries use map planes, not a fixed Y.\n"
                 "Starting X160 is a preview choice; Y is found on the real contour.\n"
                 "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
+                "Original LEVEL1 parallax and foreground/object layer order are active.\n"
                 "Dynamic map objects and hazards remain unported.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
         } else {
@@ -984,10 +986,17 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) {
             view[i] = 0;
         }
-        if (render_map_tile_pass(map, map_size, 0, camera_x, camera_y, 0, view) != 0 ||
-            render_map_tile_pass(map, map_size, 0, camera_x, camera_y, 1, view) != 0 ||
+        if ((preview.map_mode && render_map_background(map, map_size, 1,
+                camera_x, camera_y, view) != 0) ||
+            render_map_tile_pass(map, map_size, 0, camera_x, camera_y, 0, view) != 0 ||
+            (!preview.map_mode && render_map_tile_pass(map, map_size, 0,
+                camera_x, camera_y, 1, view) != 0) ||
             render_object_pass(&render_pool, 0, (short)-(int)camera_x, (short)-(int)camera_y,
                 banks, 34, view) != 0 ||
+            (preview.map_mode && (render_map_tile_pass(map, map_size, 0,
+                camera_x, camera_y, 1, view) != 0 ||
+                render_object_pass(&render_pool, 0x80, (short)-(int)camera_x,
+                    (short)-(int)camera_y, banks, 34, view) != 0)) ||
             vga_present_frame(&frame) != 0) {
             lk_platform_log("Lion King: cannot render player deflection preview.\n");
             return 1;
@@ -1014,6 +1023,85 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         log_map_measurement("Map final X: ", (unsigned short)preview.air.player.body.owner.x);
         log_map_measurement("Map final Y: ", (unsigned short)preview.air.player.body.owner.y);
     }
+    return 0;
+}
+
+typedef struct {
+    ENGINE_TILE_ANIMATION tiles;
+    int failed;
+} BACKGROUND_PREVIEW;
+
+static void update_background_preview(void *context)
+{
+    BACKGROUND_PREVIEW *preview = context;
+    if (preview->tiles.count && engine_tile_animation_tick(&preview->tiles) < 0) {
+        lk_platform_log("Lion King: animated tile update failed.\n");
+        preview->failed = 1;
+    }
+}
+
+static int run_background_preview(const DOS64_API *api, unsigned int level)
+{
+    const char *name = level == 6 ? "LEVEL6.MAP" : level == 10 ? "LEVEL10.MAP" : "LEVEL1.MAP";
+    unsigned int size;
+    if (resources_load_entry(&resource_api, "LIONKING.EPF", name, packed, sizeof(packed),
+        map, sizeof(map), &dictionary, &size) != 0 ||
+        vga_load_palette(map, size, palette) != 0) {
+        lk_platform_log("Lion King: cannot load background preview map.\n");
+        return 1;
+    }
+    BACKGROUND_PREVIEW preview = {0};
+    if (level == 6 || level == 10) {
+        unsigned int bytes;
+        if (resources_load_entry(&resource_api, "LIONKING.EPF",
+            level == 6 ? "LEVEL6.BLK" : "LEVEL10.BLK", packed, sizeof(packed),
+            animated_tiles, sizeof(animated_tiles), &dictionary, &bytes) != 0 ||
+            engine_tile_animation_initialize(&preview.tiles, map, size, level,
+                animated_tiles, bytes) != 0) {
+            lk_platform_log("Lion King: cannot initialize original animated tiles.\n");
+            return 1;
+        }
+    }
+    RENDER_OWNER camera = {0};
+    unsigned short width = (unsigned short)(map[8] | (unsigned int)map[9] << 8);
+    unsigned short height = (unsigned short)(map[12] | (unsigned int)map[13] << 8);
+    lk_platform_log("Original background preview: arrows pan the camera; Escape exits.\n"
+        "Parallax uses per-level row profiles; only levels 6/10 have BLK tile animation.\n"
+        "Four original frames, one change per five logic ticks; no gameplay or text overlay.\n");
+    VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
+    ENGINE_CLOCK clock;
+    engine_clock_reset(&clock, lk_platform_time_ns());
+    for (;;) {
+        lk_platform_poll();
+        if (lk_platform_exit_requested()) break;
+        if (api->Input.KeyDown[0x50] && camera.x >= 4) camera.x -= 4;
+        if (api->Input.KeyDown[0x4f]) camera.x += 4;
+        if (api->Input.KeyDown[0x52] && camera.y >= 4) camera.y -= 4;
+        if (api->Input.KeyDown[0x51]) camera.y += 4;
+        RENDER_VIEWPORT viewport;
+        if (render_prepare_viewport(&camera, width, height, 0, &viewport) != 0) {
+            lk_platform_log("Lion King: invalid background preview viewport.\n");
+            return 1;
+        }
+        camera.x = (short)viewport.x; camera.y = (short)viewport.y;
+        unsigned char *view = pixels + LK_WIDTH;
+        for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) view[i] = 0;
+        if (render_map_background(map, size, level, viewport.x, viewport.y, view) != 0 ||
+            render_map_tile_pass(map, size, 0, viewport.x, viewport.y, 0, view) != 0 ||
+            render_map_tile_pass(map, size, 0, viewport.x, viewport.y, 1, view) != 0 ||
+            vga_present_frame(&frame) != 0) {
+            lk_platform_log("Lion King: cannot render original animated background.\n");
+            return 1;
+        }
+        if (engine_dispatch_ticks(&clock, lk_platform_time_ns(),
+            update_background_preview, &preview) < 0 || preview.failed) {
+            lk_platform_log("Lion King: background preview tick dispatch failed.\n");
+            return 1;
+        }
+        lk_platform_sleep(10);
+    }
+    log_map_measurement("Background level: ", level);
+    log_map_measurement("Background tile frame changes: ", preview.tiles.updates);
     return 0;
 }
 
@@ -1126,6 +1214,9 @@ static int run_preview(const DOS64_API *api)
         lk_platform_log("Lion King: missing runtime argument string.\n");
         return 1;
     }
+    if (argument_requested(api->Arguments, "--background6")) return run_background_preview(api, 6);
+    if (argument_requested(api->Arguments, "--background10")) return run_background_preview(api, 10);
+    if (argument_requested(api->Arguments, "--background")) return run_background_preview(api, 1);
     if (argument_requested(api->Arguments, "--deflection")) {
         return run_deflection_preview(api, 0);
     }

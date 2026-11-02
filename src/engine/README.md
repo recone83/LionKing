@@ -535,3 +535,27 @@ więc kontakty 0x40..0x4f i >=0xb0 blokują przed późniejszymi gałęziami
 tablicy DS 0x16d28. Nie zastąpiono tej osobliwości nową mechaniką.
 Test mapy sprawdza również zatrzymanie obu oryginalnych kierunków
 skoku przez rzeczywisty sufit LEVEL1.
+
+`render_map_background` przenosi paralaksę `0x11728/0x1181d`. Warstwa 1
+jest rysowana nieprzezroczysto za warstwą świata. Przesunięcie pionowe
+używa (height-26)/(main_height-26); poziome (width-40)/(main_width-40)
+z mnożnikami wierszy z DS 0x18e6..0x19ac i zawijaniem w obrębie warstwy.
+Zachowano ucięcie 16-bitowych mnożeń i powtórzony próg wiersza 21
+poziomu 5. Dodatkowe przesunięcie DS 0x193d7 od efektów świata nadal
+nie jest podłączone.
+
+`engine_tile_animation_initialize/tick` odpowiada `0x19d82/0x19e90`.
+LEVEL6: cel z warstwy 0 +0x3c, cztery klatki po 0xb40 bajtów.
+LEVEL10: cele z warstwy 1 +0xc02/+0xc80/+0xd00/+0xd80/+0xe00/+0xe80/+0xf00,
+cztery klatki po 0xc80 bajtów, rozdzielane na 128 i sześć razy 512 bajtów.
+Pierwszy tick kopiuje klatkę 1; potem zmiana co pięć ticków, modulo 4.
+Dane BLK są ładowane z EPF, a adresy celów wynikają z indeksów kafelków
+i bazowego offsetu grafiki MAP +4. Podmiana nie modyfikuje kolizji.
+
+`--map` korzysta z paralaksy LEVEL1 i oryginalnej kolejności warstw:
+tło, kafelki bez 0x2000, zwykłe obiekty, kafelki z 0x2000, obiekty
+przebiegu 0x80. `--background`, `--background6`, `--background10`
+pozwalają oglądać tło z ręcznym przewijaniem bez postaci. Dotychczasowe
+tryby diagnostyczne pozostawiono bez zmian. Test mapy weryfikuje
+rzeczywistą zmianę pikseli w obu animowanych poziomach i niezmienność
+bajtów poza docelowymi obszarami grafiki.

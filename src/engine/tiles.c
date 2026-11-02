@@ -235,6 +235,135 @@ int engine_map_ledge_height(const ENGINE_MAP_COLLISION *collision,
     return 0;
 }
 
+typedef struct {
+    unsigned short row;
+    unsigned short numerator;
+    unsigned short denominator;
+} BACKGROUND_SCROLL;
+
+/* DS 0x18e6 -> 0x191e..0x19ac; repeated row 21 in level 5 is intentional. */
+static const BACKGROUND_SCROLL background_scroll[][7] = {
+    {{0xffff, 1, 1}},
+    {{19,12,1}, {24,13,1}, {25,14,1}, {26,15,1}, {27,16,1}, {28,17,1}, {0xffff,1,1}},
+    {{14,2,1}, {16,6,1}, {20,12,1}, {0xffff,1,1}},
+    {{0xffff,1,1}},
+    {{19,2,1}, {20,3,1}, {21,6,1}, {21,10,1}, {0xffff,1,1}},
+    {{18,3,1}, {30,8,1}, {0xffff,1,1}},
+    {{14,2,1}, {18,6,1}, {24,10,1}, {0xffff,1,1}},
+    {{0xffff,1,1}},
+    {{14,2,1}, {19,6,1}, {0xffff,1,1}},
+    {{19,4,1}, {24,8,1}, {0xffff,1,1}},
+    {{0xffff,1,1}},
+    {{0xffff,1,1}}
+};
+
+int render_map_background(const unsigned char *map, unsigned int size,
+    unsigned int level, unsigned int camera_x, unsigned int camera_y,
+    unsigned char *pixels)
+{
+    if (!map || !pixels || size < 0x80 || !level || level > 12 ||
+        camera_x > 32767 || camera_y > 32767) return -1;
+    unsigned int width = map_u16(map + 20), height = map_u16(map + 24);
+    unsigned int table = map_u32(map + 28), tiles = map_u32(map + 4);
+    unsigned int main_width = map_u16(map + 8), main_height = map_u16(map + 12);
+    if (width < 40 || height < 26 || main_width < 40 || main_height < 26 ||
+        tiles >= size || !table || table + width * (unsigned long long)height * 2 > size) return -1;
+    unsigned int vertical = 0;
+    if (width > 40) {
+        unsigned int divisor = main_height - 26;
+        if (!divisor) return -1;
+        vertical = (height - 26) * camera_y / divisor;
+    }
+    const BACKGROUND_SCROLL *profile = background_scroll[level - 1];
+    unsigned int profile_index = 0, numerator = 1, denominator = 1;
+    /* Expand the original threshold stream once per source row, not per pixel. */
+    for (unsigned int row = 0; row < vertical / 8; ++row) {
+        if (row >= profile[profile_index].row) {
+            numerator = profile[profile_index].numerator;
+            denominator = profile[profile_index++].denominator;
+        }
+    }
+    for (unsigned int y = 0; y < LK_HEIGHT;) {
+        unsigned int source_y = vertical + y, row = source_y / 8;
+        if (row >= height) return -1;
+        if (row >= profile[profile_index].row) {
+            numerator = profile[profile_index].numerator;
+            denominator = profile[profile_index++].denominator;
+        }
+        unsigned int dx = (camera_x * numerator) & 0xffff;
+        unsigned int divisor = ((main_width - 40) * 8 * denominator) & 0xffff;
+        unsigned int horizontal = (width - 40) * 8;
+        if (dx) horizontal *= dx;
+        if (divisor) horizontal /= divisor;
+        horizontal %= width * 8;
+        unsigned int first_row = source_y & 7, rows = 8 - first_row;
+        if (rows > LK_HEIGHT - y) rows = LK_HEIGHT - y;
+        int phase_x = (int)(horizontal & 7);
+        for (int x = -phase_x; x < (int)LK_WIDTH; x += 8) {
+            unsigned int column = (horizontal / 8 + (unsigned int)(x + phase_x) / 8) % width;
+            unsigned int tile = map_u16(map + table + (row * width + column) * 2);
+            unsigned int index = tile & 0x1fff;
+            if (!index) continue;
+            unsigned long long offset = tiles + (index - 1) * 64ULL;
+            if (offset + 64 > size) return -1;
+            if (render_blit_tile(map + offset, (unsigned short)tile, x,
+                (int)y - (int)first_row, first_row, rows, 0, pixels) != 0) return -1;
+        }
+        y += rows;
+    }
+    return 0;
+}
+
+int engine_tile_animation_initialize(ENGINE_TILE_ANIMATION *animation,
+    unsigned char *map, unsigned int size, unsigned int level,
+    const unsigned char *frames, unsigned int frames_size)
+{
+    if (!animation || !map || size < 0x80 || !frames || (level != 6 && level != 10)) return -1;
+    static const unsigned int positions[7] = {0xc02,0xc80,0xd00,0xd80,0xe00,0xe80,0xf00};
+    ENGINE_TILE_ANIMATION result = {0};
+    result.map = map; result.frames = frames;
+    result.count = level == 6 ? 1 : 7;
+    result.frame_size = level == 6 ? 0xb40 : 0xc80;
+    if (frames_size != result.frame_size * 4) return -1;
+    unsigned int table = map_u32(map + (level == 6 ? 16 : 28));
+    unsigned int tiles = map_u32(map + 4);
+    if (!table || table >= size || tiles >= size) return -1;
+    for (unsigned int i = 0; i < result.count; ++i) {
+        unsigned int offset = table + (level == 6 ? 0x3c : positions[i]);
+        if (offset < table || offset + 2ULL > size) return -1;
+        unsigned int index = map_u16(map + offset) & 0x1fff;
+        if (!index) return -1;
+        unsigned long long destination = tiles + (index - 1) * 64ULL;
+        unsigned int length = level == 6 ? 0xb40 : (i ? 512 : 128);
+        if (destination + length > size) return -1;
+        result.destinations[i] = (unsigned int)destination;
+        result.lengths[i] = length;
+    }
+    *animation = result;
+    return 0;
+}
+
+int engine_tile_animation_tick(ENGINE_TILE_ANIMATION *animation)
+{
+    if (!animation || !animation->map || !animation->frames || !animation->count ||
+        animation->count > 7 || animation->remaining > 4 || animation->frame > 3) return -1;
+    if (animation->remaining) {
+        --animation->remaining;
+        return 0;
+    }
+    animation->remaining = 4;
+    animation->frame = (animation->frame + 1) & 3;
+    const unsigned char *source = animation->frames + animation->frame * animation->frame_size;
+    for (unsigned int i = 0; i < animation->count; ++i) {
+        unsigned char *destination = animation->map + animation->destinations[i];
+        for (unsigned int byte = 0; byte < animation->lengths[i]; ++byte) {
+            destination[byte] = *source++;
+        }
+    }
+    ++animation->updates;
+    return 1;
+}
+
 int render_map_tile_pass(const unsigned char *map, unsigned int size,
     unsigned int layer, unsigned int camera_x, unsigned int camera_y,
     int flagged, unsigned char *pixels)
