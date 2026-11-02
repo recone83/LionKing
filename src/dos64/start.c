@@ -204,6 +204,11 @@ typedef struct {
     unsigned int ledge_demo_phase;
     unsigned int ledge_variant;
     short fixture_floor;
+    int wall_demo;
+    unsigned int wall_demo_phase;
+    unsigned int wall_variant;
+    unsigned int wall_case;
+    int fixture_wall_contact;
     unsigned long long jump_begin;
 } DEFLECTION_PREVIEW;
 
@@ -316,8 +321,18 @@ static int preview_player_ground(void *context, short *kind, short *delta_y)
 
 static int preview_player_edge(void *context, short *hit, short *kind, short *x, short *y)
 {
-    (void)context;
+    DEFLECTION_PREVIEW *preview = context;
     *hit = *kind = *x = *y = 0;
+    unsigned int handler = preview->air.player.handler;
+    if (preview->fixture_wall_contact && (handler == 0xdc42U || handler == 0xdeafU) &&
+        preview->air.player.body.animation.counter <= 8) {
+        preview->fixture_wall_contact = 0;
+        *hit = -1;
+        *kind = preview->wall_case < 2 ? (handler == 0xdc42U ? 0xf8 : 0xe8) : 0xea;
+        *x = preview->air.player.body.owner.x;
+        *y = preview->air.player.body.owner.y;
+        if (*kind == 0xea) preview->fixture_floor = (short)((*y & 0xfff0) + 15);
+    }
     return 0;
 }
 
@@ -333,7 +348,8 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
         if (call->handler == 0xec69U || call->handler == 0xee35U ||
             call->handler == 0xee60U || call->handler == 0xf017U || call->handler == 0xf160U ||
             call->handler == 0xf2b1U || call->handler == 0xf3fbU || call->handler == 0xf6ccU ||
-            call->handler == 0x10075U || call->handler == 0xd40aU || call->handler == 0xd4ffU) {
+            call->handler == 0x10075U || call->handler == 0xd40aU || call->handler == 0xd4ffU ||
+            call->handler == 0xdc42U || call->handler == 0xdeafU) {
             lk_platform_log("Original player action handler selected.\n");
             return engine_player_begin_action(&scene_objects, preview->object, &preview->air, call);
         }
@@ -420,7 +436,21 @@ static void update_player_preview(void *context)
         unsigned short contact_actions = preview->input_taps & 0x1c00;
         int request_ledge = preview->input_taps & 0x2000;
         int request_perch = preview->input_taps & 0x4000;
-        if (!preview->manual && preview->ledge_demo) {
+        int request_wall = preview->input_taps & 0x8000;
+        if (!preview->manual && preview->wall_demo) {
+            unsigned long long elapsed = lk_platform_time_ns() - preview->jump_begin;
+            unsigned int phase = (unsigned int)(elapsed / 4000000000ULL) + 1;
+            unsigned long long within = elapsed % 4000000000ULL;
+            if (phase != preview->wall_demo_phase) {
+                preview->wall_demo_phase = phase;
+                preview->wall_variant = (phase - 1) % 8;
+                request_wall = 1;
+            }
+            held = within >= 700000000ULL ? (preview->wall_case >= 6 ? 2 : 0x20) : 0;
+            if (preview->air.player.handler == 0xd5f4U || preview->air.player.handler == 0xd7a3U) {
+                held = 1;
+            }
+        } else if (!preview->manual && preview->ledge_demo) {
             unsigned long long elapsed = lk_platform_time_ns() - preview->jump_begin;
             unsigned int phase = (unsigned int)(elapsed / 4000000000ULL) + 1;
             unsigned long long within = elapsed % 4000000000ULL;
@@ -536,6 +566,23 @@ static void update_player_preview(void *context)
             }
             lk_platform_log("Original supported-turn state selected; support is diagnostic.\n");
         }
+        if (request_wall) {
+            preview->wall_case = preview->wall_variant++ % 8;
+            int left_wall = !(preview->wall_case & 1);
+            preview->fixture_floor = 192;
+            preview->fixture_wall_contact = preview->wall_case < 2 ||
+                (preview->wall_case >= 4 && preview->wall_case < 6);
+            preview->air.player.body.node->pass_flags = (unsigned char)(
+                (preview->air.player.body.node->pass_flags & 0xf7) | (left_wall ? 8 : 0));
+            lk_platform_log(left_wall ?
+                "Original left wall grip selected; initial contact is diagnostic.\n" :
+                "Original right wall grip selected; initial contact is diagnostic.\n");
+            if (engine_player_begin_wall(&scene_objects, preview->object, &preview->air,
+                left_wall ? 0xdb06U : 0xd985U, preview->air.player.body.owner.x, 160) != 0) {
+                preview->failed = 1;
+                return;
+            }
+        }
         if (engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
             preview->failed = 1;
             return;
@@ -554,6 +601,20 @@ static void update_player_preview(void *context)
         if (preview->air.player.handler != before &&
             (before == 0xd40aU || before == 0xd4ffU)) {
             lk_platform_log("Original ledge climb completed; ground control resumed.\n");
+        }
+        if (preview->air.player.handler != before &&
+            (before == 0xdb06U || before == 0xd985U)) {
+            lk_platform_log(preview->air.player.handler == 0xdc42U ?
+                "Original left wall leap selected.\n" : preview->air.player.handler == 0xdeafU ?
+                "Original right wall leap selected.\n" : "Original wall detach selected.\n");
+        }
+        if (preview->air.player.handler != before &&
+            (before == 0xdc42U || before == 0xdeafU)) {
+            lk_platform_log(preview->air.player.handler == 0xdb06U ?
+                "Original wall leap caught left wall.\n" : preview->air.player.handler == 0xd985U ?
+                "Original wall leap caught right wall.\n" :
+                preview->air.player.handler == 0xd5f4U || preview->air.player.handler == 0xd7a3U ?
+                "Original wall leap caught ledge.\n" : "Original wall leap resumed flight.\n");
         }
         return;
     }
@@ -652,6 +713,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.ground_mode = mode >= 3;
     preview.contact_demo = mode == 4;
     preview.ledge_demo = mode == 5;
+    preview.wall_demo = mode == 6;
     preview.fixture_floor = 160;
     preview.air.player.body.render_pool = &render_pool;
     preview.air.player.body.node = render_acquire_node(&render_pool,
@@ -685,9 +747,12 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             "--contacts: automatic rebound both ways, launch and tether demonstration.\n"
             "K: ledge grab alternating sides; Up: climb; Down: drop; P: supported turn/jump.\n"
             "--ledges: automatic grabs, climbs and drops in both directions.\n"
+            "W: wall grip alternating sides; Space: leap; Down: detach after grab delay.\n"
+            "--walls: opposite catches, free leaps, ledge transfers and detaches.\n"
             "Ground Y=160, damage source, terrain, initial meters and camera are fixtures.\n"
             "Enemy response to roar, meter recharge/immunity ticking and map collision unported.\n");
-        lk_platform_log(preview.ledge_demo ?
+        lk_platform_log(preview.wall_demo ?
+            "Before input: both wall catches -> free leaps -> ledge climbs -> detaches.\n" : preview.ledge_demo ?
             "Before input: left/right ledge climb -> left/right ledge drop.\n" : preview.contact_demo ?
             "Before input: right/left rebounds -> thrown launch -> tether/release.\n" :
             "Before input: running/jumping/roaring/damage demo. --jump: previous jump fixture.\n");
@@ -729,7 +794,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 (api->Input.KeyPressed[0x15] ? 0x800 : 0) |
                 (api->Input.KeyPressed[0x09] ? 0x1000 : 0) |
                 (api->Input.KeyPressed[0x0e] ? 0x2000 : 0) |
-                (api->Input.KeyPressed[0x13] ? 0x4000 : 0);
+                (api->Input.KeyPressed[0x13] ? 0x4000 : 0) |
+                (api->Input.KeyPressed[0x1a] ? 0x8000 : 0);
             if (taps || api->Input.KeyDown[0x50] || api->Input.KeyDown[0x4f] ||
                 api->Input.KeyDown[0x2c] || api->Input.KeyDown[0x51] || api->Input.KeyDown[0x52] ||
                 api->Input.KeyDown[0xe0] || api->Input.KeyDown[0xe4]) {
@@ -922,6 +988,9 @@ static int run_preview(const DOS64_API *api)
     }
     if (argument_requested(api->Arguments, "--ledges")) {
         return run_deflection_preview(api, 5);
+    }
+    if (argument_requested(api->Arguments, "--walls")) {
+        return run_deflection_preview(api, 6);
     }
     if (!argument_requested(api->Arguments, "--idle") &&
         !argument_requested(api->Arguments, "--manual") &&

@@ -462,3 +462,30 @@ K/Up/Down/P umożliwiają ręczny test w scenie naziemnej. Wysokość=16,
 chwyt Y96 i płaszczyzny podparcia Y111/Y192 są jawnie testowe.
 Przeniesione handlery korzystają z tych samych callbacków przy przyszłej
 integracji rzeczywistej mapy.
+
+Blok ścian: chwyt `0x1d985/0x1db06` i odbicie `0x1dc42/0x1deaf`.
+`engine_player_begin_wall` udostępnia oryginalne wejście chwytem:
+X wyrównane do 16 (+15 dla `db06`), Y wyrównane do 16, Vx/Vy=0,
+counter=20, flaga 8 i strumień `62d0/62de`. Wejście animuje od razu,
+ale nie wykonuje jeszcze gałęzi sterowania. Selektory krawędzi wpuszczają
+kontakt f8 tylko z `dc42`, e8 tylko z `deaf`; nie rozszerzono tej reguły.
+
+Space po opóźnieniu wybiera odbicie. Inicjalizacja: counter=16, state=8,
+X=-45/+45, Y=-18/-39, Vx=-2.5/+2.5, Vy=-6.5, wyzerowane ułamki,
+flaga `0x8000`, skrypt `6236/6244` i oryginalne facing.
+Osiem kolejnych aktualizacji tylko animuje. State=0 przechodzi na -1,
+następnie zapytanie krawędzi poprzedza integrację X, grawitację `0x4e00`,
+animację i zmniejszenie counter. Counter<8 pozwala sterować kierunkiem.
+Zachowano zatrzymanie przez `boundary_controls` i kolejność Right/Left.
+
+Koniec odbicia przesuwa X o +13/-13, Y o +54, czyści `0x8000`
+i wybiera lot `613a/5928`. `level_variant` odpowiada górnemu słowu
+DS `173a8`: wartość 8 daje dodatkowe X=-16 po obu stronach.
+`level_id` odpowiada DS `173aa`: poziom 5 z `contact_source` w
+(0x390,0x5b0) wymusza Down tylko w chwycie `d985`.
+Obrażenia kończą aktualizację chwytu, lecz w oryginalnych odbiciach
+wykonanie kontynuuje; tę asymetrię zachowano.
+
+`--walls` łączy oba chwyty, odbicia, ponowne chwyty, przejścia na
+krawędź/podciąganie i odczepienie do lotu. W/Space/Down umożliwiają
+ręczny test. Kontakty/podparcie są jawnymi atrapami testowymi.

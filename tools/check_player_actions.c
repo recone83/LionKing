@@ -17,6 +17,8 @@ static unsigned short sample;
 static short touching;
 static unsigned int contact_queries;
 static short ledge_x, ledge_y;
+static short edge_hit, edge_kind;
+static unsigned int edge_queries;
 
 static int ledge_height(void *context, short x, short y, short *height)
 {
@@ -67,8 +69,17 @@ static int ground(void *context, short *kind, short *delta)
 static int edge(void *context, short *hit, short *kind, short *x, short *y)
 {
     assert(context == &player);
-    *hit = *kind = *x = *y = 0;
+    ++edge_queries;
+    *hit = edge_hit; *kind = edge_kind; *x = 173; *y = 103;
     return 0;
+}
+
+static int edge_transition(void *context, const ENGINE_PLAYER_CALL *call,
+    short kind, short x, short y)
+{
+    assert(context == &player);
+    if (call->handler != 0xe775U && call->handler != 0xe8dfU) return -1;
+    return engine_player_begin_ledge(&pool, object, &player, call->handler, kind, x, y);
 }
 
 static void setup(unsigned short form)
@@ -93,6 +104,7 @@ static void setup(unsigned short form)
     player.damage_source = &source;
     player.contact = contact;
     player.ledge_height = ledge_height;
+    player.transition = edge_transition;
     player.health = 10;
     player.roar_charge = 100;
     source = (RENDER_OWNER){144, 160};
@@ -101,6 +113,8 @@ static void setup(unsigned short form)
     supported = 1;
     touching = 0;
     contact_queries = 0;
+    edge_hit = edge_kind = 0;
+    edge_queries = 0;
 }
 
 static void tick(void)
@@ -334,7 +348,113 @@ int main(void)
     player.pressed = 1;
     tick();
     assert(player.player.handler == 0xd5f4U && player.player.body.animation.counter == 0xffff);
+    for (unsigned int form = 0; form < 2; ++form) {
+        for (unsigned int right = 0; right < 2; ++right) {
+            setup((unsigned short)form);
+            unsigned int grip = right ? 0xdb06U : 0xd985U;
+            unsigned int leap = right ? 0xdeafU : 0xdc42U;
+            assert(engine_player_begin_wall(&pool, object, &player, grip, 173, 167) == 0);
+            assert(player.player.handler == grip && player.player.body.animation.counter == 20 &&
+                player.player.body.owner.x == (right ? 175 : 160) &&
+                player.player.body.owner.y == 160 && (player.flags & 8));
+            player.pressed = 0x20;
+            for (unsigned int i = 0; i < 20; ++i) tick();
+            assert(player.player.handler == grip && player.player.body.animation.counter == 0);
+            tick();
+            assert(player.player.handler == leap && player.player.body.animation.counter == 16 &&
+                player.player.body.animation.state == 8 && !(player.flags & 8) &&
+                (player.flags & 0x8000) && player.player.body.motion.velocity_y == UINT32_C(0xfff98000) &&
+                player.player.body.owner.x == (right ? 220 : 115) &&
+                player.player.body.owner.y == (form ? 121 : 142) &&
+                (player.player.body.node->pass_flags & 8) == (right ? 8 : 0));
+            player.pressed = 0;
+            for (unsigned int i = 0; i < 8; ++i) tick();
+            assert(player.player.body.animation.state == 0 && player.player.body.animation.counter == 16 &&
+                !edge_queries && player.player.body.owner.y == (form ? 121 : 142));
+            tick();
+            assert(player.player.body.animation.state == 0xffff &&
+                player.player.body.animation.counter == 15 &&
+                player.player.body.motion.velocity_y == UINT32_C(0xfff9ce00) && edge_queries == 1);
+            for (unsigned int i = 0; i < 8; ++i) tick();
+            player.pressed = 12;
+            tick();
+            assert(player.player.body.motion.velocity_x == UINT32_C(0xfffd8000));
+            edge_hit = -1; edge_kind = right ? 0xe8 : 0xf8;
+            tick();
+            assert(player.player.handler == (right ? 0xd985U : 0xdb06U) &&
+                player.player.body.animation.counter == 20 && !(player.flags & 0x8000) &&
+                (player.flags & 8));
+
+            setup((unsigned short)form);
+            ENGINE_PLAYER_CALL call = {leap, 0, 0};
+            assert(engine_player_begin_action(&pool, object, &player, &call) == 0);
+            player.player.body.animation.state = 0xffff;
+            edge_hit = -1; edge_kind = right ? 0xf8 : 0xe8;
+            tick();
+            assert(player.player.handler == leap && player.player.body.animation.counter == 15);
+            edge_kind = 0xea;
+            tick();
+            assert(player.player.handler == (right ? 0xd7a3U : 0xd5f4U) &&
+                !(player.flags & 0x8000));
+
+            for (unsigned int variant = 0; variant < 2; ++variant) {
+                setup((unsigned short)form);
+                player.level_variant = variant ? 8 : 0;
+                assert(engine_player_begin_action(&pool, object, &player, &call) == 0);
+                player.player.body.animation.state = 0xffff;
+                player.player.body.animation.counter = 0;
+                player.player.body.motion.velocity_y = 0;
+                short x = player.player.body.owner.x, y = player.player.body.owner.y;
+                supported = 0;
+                tick();
+                assert(player.player.handler == (right ? 0xaa97U : 0xae53U) &&
+                    !(player.flags & 0x8000) &&
+                    player.player.body.owner.x == x + (right ? -13 : 13) - (variant ? 16 : 0) &&
+                    player.player.body.owner.y == y + 54);
+            }
+            setup((unsigned short)form);
+            assert(engine_player_begin_wall(&pool, object, &player, grip, 173, 167) == 0);
+            player.player.body.animation.counter = 0;
+            player.pressed = 2; supported = 0;
+            tick();
+            assert(player.player.handler == (right ? 0xaa97U : 0xae53U) && !(player.flags & 8));
+        }
+    }
     setup(0);
+    assert(engine_player_begin_wall(&pool, object, &player, 0xd985, 160, 160) == 0);
+    player.player.body.animation.counter = 0;
+    player.level_id = 5; source = (RENDER_OWNER){0x390, 0x5b0}; player.contact_source = &source;
+    player.pressed = 0x20; supported = 0;
+    tick();
+    assert(player.pressed == 2 && player.player.handler == 0xae53U);
+    for (unsigned int right = 0; right < 2; ++right) {
+        setup(0);
+        ENGINE_PLAYER_CALL leap = {right ? 0xdeafU : 0xdc42U, 0, 0};
+        assert(engine_player_begin_action(&pool, object, &player, &leap) == 0);
+        player.player.body.animation.state = 0xffff;
+        player.player.body.animation.counter = 8;
+        player.boundary_controls = right ? 8 : 4;
+        player.pressed = 12;
+        tick();
+        assert(!player.player.body.motion.velocity_x && player.player.body.animation.counter == 7);
+        tick();
+        assert(player.player.body.motion.velocity_x == UINT32_C(0xfffd8000));
+        setup(0);
+        assert(engine_player_begin_action(&pool, object, &player, &leap) == 0);
+        player.player.flags_high |= 4;
+        tick();
+        assert(sounds == 1 && player.health == 9 && player.player.immunity == 100 &&
+            player.player.body.animation.state == 7 &&
+            (player.player.handler == 0xf017U || player.player.handler == 0xf160U));
+    }
+    setup(0);
+    ENGINE_PLAYER_CALL leap = {0xdc42, 0, 0};
+    assert(engine_player_begin_action(&pool, object, &player, &leap) == 0);
+    player.player.body.animation.state = 0xffff;
+    player.edge = 0;
+    assert(engine_update_objects(&pool, &input) == -1);
+    setup(0);
+    assert(engine_player_begin_ledge(&pool, object, &player, 0xe775, 0xf8, 160, 96) == -1);
     player.ledge_height = 0;
     assert(engine_player_begin_ledge(&pool, object, &player, 0xe775, 0xea, 160, 96) == -1);
     setup(0);
@@ -346,6 +466,7 @@ int main(void)
     assert(engine_player_begin_action(&pool, object, &player, &call) == -1);
     puts("PASS: original roar pulse/timing/direction, damage masks/health, both recoil paths, "
         "adult form-bit asymmetry, stun, slides, contact rebound, thrown launch, "
-        "tether/release, ledge grabs/climbs/drops and supported turn/jump");
+        "tether/release, ledge grabs/climbs/drops, supported turn/jump, wall grips, "
+        "delayed leaps, steering, opposite catches, ledge transfers and detach");
     return 0;
 }

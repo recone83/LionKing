@@ -129,6 +129,8 @@ typedef struct {
     const RENDER_OWNER *contact_source;
     ENGINE_PLAYER_CONTACT contact;
     ENGINE_PLAYER_LEDGE_HEIGHT ledge_height;
+    unsigned int level_id;
+    short level_variant;
     ENGINE_PLAYER_GROUND ground;
     ENGINE_PLAYER_SUPPORT support;
     ENGINE_PLAYER_EDGE edge;
@@ -162,6 +164,8 @@ int engine_player_rebound(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, unsigned int handler);
 int engine_player_begin_ledge(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, unsigned int selector, short kind, short x, short y);
+int engine_player_begin_wall(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int handler, short x, short y);
 
 typedef struct {
     ENGINE_FALLING_OBJECT body;
