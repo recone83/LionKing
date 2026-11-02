@@ -325,7 +325,7 @@ reakcję, zamiast dopisywać rozgrywkę. [check_scene.c](../../tools/check_scene
 z argumentem `--deflection` sprawdza 20 sekund rzeczywistego wejścia:
 128064000 pikseli ARGB, 320 klatek z ruchem i 20 granic przejścia.
 
-Większy test domyślny łączy teraz odbicie, pełne ścieżki lotu `0x1aa97` /
+Test `--flight` łączy odbicie, pełne ścieżki lotu `0x1aa97` /
 `0x1ae53` oraz selektory lądowania `0x1b307` / `0x1b4a0`.
 Strzałki zmieniają kierunek w powietrzu przez oryginalne rozgałęzienia.
 Zachowano asymetrię sondy w górę, resetu skryptu, licznika i zerowania Y.
@@ -340,6 +340,31 @@ Ziemia na Y=160, wyniki sondy, brak krawędzi i ponowne uruchomienia są
 jawnym fixture; rzeczywiste sondy mapy i wybrane stany naziemne nie są
 zastąpione wymyśloną grą. Test zatrzymuje się na ich granicy.
 [check_player_air.c](../../tools/check_player_air.c) sprawdza pełne ścieżki
-i 2752512 lądowań, a [check_scene.c](../../tools/check_scene.c) bez argumentów
+i 2752512 lądowań, a [check_scene.c](../../tools/check_scene.c) z `--flight`
 sprawdza 20 sekund rzeczywistego wejścia, dziesięć pełnych łańcuchów
 i 128064000 pikseli. `--steering` sprawdza też wejście strzałek.
+
+Kolejny blok: skoki `0x1b604` / `0x1b7e7`, podtrzymanie `0x1b5ac`
+i regeneracja po lądowaniu `0x1b19f` / `0x1b253`. Argumenty z kodu
+maszynowego: start `6180/5944`, dalszy lot `612c/5928`, opóźnienie 4/10.
+Zachowano prędkości startowe, boost 8/6, bit `0x1000`, flagę pędu
+`0x2000`, zmianę kierunku bez ponownej inicjalizacji i wcześniejsze
+przejście dorosłego do lotu przy Vy >= -3. Prawe OR maski kolizji
+wykonuje się przed sondą, lewe po niej; początek skoku wykonuje AND `0xdf`.
+Regeneracja ustawia handler idle przed ostatnią animacją, nie wywołuje
+jeszcze jego pełnej logiki. Żądanie dźwięku 4/5 jest jawnym callbackiem.
+
+Domyślny podgląd demonstruje krótkie/długie skoki w obu kierunkach.
+Spacja przejmuje sterowanie, rozpoczyna skok na ziemi i podtrzymuje boost;
+strzałki zmieniają kierunek, Escape wychodzi. Zdarzenie Spacji jest
+zapamiętywane między odpytywaniem HID a tickiem gry. Po lądowaniu można
+skoczyć ponownie. Ziemia Y=160, idle/input i automatyczny demo-reset są
+nadal fixture, nie przeniesionym poziomem; manualny tryb nie teleportuje
+ani nie uruchamia skoków sam. `--flight` zachowuje wcześniejszy test.
+
+[check_player_jump.c](../../tools/check_player_jump.c) sprawdza 393210
+opóźnień, 393216 liczników regeneracji, 4608 kombinacji boost i 218
+niezależnych ticków trajektorii. Domyślny [check_scene.c](../../tools/check_scene.c)
+sprawdza dziewięć pełnych skoków i 128064000 pikseli; `--jump-steering`
+cztery skoki z klawiatury, osiem zmian kierunku, zdarzenia długiego idle
+i różnicę wysokości co najmniej 40 pikseli między krótkim i trzymanym skokiem.

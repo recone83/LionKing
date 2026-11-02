@@ -905,9 +905,9 @@ The player test also checks 1966080 gravity cases across all fractional Y
 values, signed overflow and the +7 cap. Native QEMU verification showed
 28624 changed viewport pixels and a successful Escape exit with code zero.
 
-### Larger default test: deflection, flight and landing
+### Deflection, flight and landing test (`--flight`)
 
-Run `bash build.sh`: the default entry now shows **Simba**, not the rock scene.
+Run `LIONKING.EXE --flight` for the earlier automatic Simba flight test.
 It chains the migrated deflection into the original right/left airborne
 handlers `0x1aa97` / `0x1ae53`, then the landing selectors
 `0x1b307` / `0x1b4a0`. Left/Right override the fixture's airborne direction.
@@ -939,7 +939,7 @@ callback boundaries, never silently fabricated gameplay.
 landing cases: all signed duration words, young/adult forms, signed velocity
 thresholds, gate precedence, exact edge operands, probes, anchors and errors.
 It also verifies 1966080 capped/uncapped player-gravity combinations.
-`build/check_scene` checks the actual default entry for 20 seconds:
+`build/check_scene --flight` checks the actual flight entry for 20 seconds:
 128064000 exact ARGB pixels, 2001 visible frames, 398 moving frames,
 460 airborne frames and ten complete deflection-to-landing chains.
 `build/check_scene --steering` additionally verifies two direction changes
@@ -949,3 +949,51 @@ player tests. Run `build/check_scene --deflection` and `--emitters` for the
 previous scene regressions.
 Real native QEMU verification produced 14724 changed viewport pixels and
 repeated landing-boundary logs; Escape returned exit code zero.
+
+### Larger default test: controlled jumps and repeated landings
+
+Run `bash build.sh`. The default preview now runs the original jump handlers
+`0x1b604` / `0x1b7e7`, jump-hold helper `0x1b5ac`, airborne handlers and
+landing selectors. Before keyboard takeover it demonstrates short and held
+jumps in both directions, starting a new case every two seconds.
+
+- Space takes control and starts a jump when ready on the ground.
+- Hold Space to prolong the original ascent boost; releasing it stops the boost.
+- Left/Right change facing on the ground fixture and direction while airborne.
+- After landing, Space starts another jump without restarting the executable.
+- Escape exits; `--flight`, `--deflection`, `--emitters`, `--idle` and `--manual`
+  preserve the earlier previews.
+
+The migration retains the original launch scripts (`6180/5944`), continuation
+scripts (`612c/5928`), young/adult startup delays (4/10), vertical velocity,
+8/6 boost ticks, hold flag `0x1000`, momentum flag `0x2000`, direction changes
+without reinitializing the jump, ceiling handling and adult early transition
+to the airborne handler at velocity -3. Collision-mask writes are bitwise
+AND/OR, not the decompiler's substituted constants.
+
+Landing recovery handlers `0x1b19f` / `0x1b253` are also migrated: exact
+16-bit countdown, surface-kind-3 interruption, damage gate, sound request
+4/5, and handler replacement before the final animation tick. The native
+fixture explicitly logs the unported audio request rather than pretending
+to play it. Ordinary jumps do not force recovery when the original selector
+chooses a different ground state.
+
+This is still a diagnostic stage, not a complete level: ground Y=160,
+no ceiling/edge hits, ground-idle/input handling and automatic repositioning
+are fixtures. Ground running, actual map collision and special states remain
+unported. Long idle events are explicitly logged without their gameplay
+side effects. Manual jumps are not automatically restarted or repositioned.
+
+`tools/check_player_jump.c` verifies 393210 nonzero delay cases, 393216
+recovery countdown cases, 4608 boost combinations and 218 independently
+traced ascent ticks, including adult/young forms, fractions, word wrapping,
+probe ordering, gates, same-handler continuation and dependency errors.
+Compile it with the same engine source list as `check_player_air.c`.
+
+`build/check_scene` checks 20 seconds of actual default entry: 128064000
+exact ARGB pixels, 2001 visible frames, 350 moving frames, 768 airborne frames,
+and nine complete jumps/landings. `build/check_scene --jump-steering` tests
+four manual jumps, eight direction transitions, sustained idle events and
+Space height control: held jumps rise at least 40 pixels higher than short
+jumps. Real QEMU showed Simba jumping, 13824 changed viewport pixels,
+manual keyboard takeover and an Escape exit with code zero.

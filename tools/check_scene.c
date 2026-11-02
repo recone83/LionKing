@@ -31,6 +31,20 @@ static unsigned int shake_frames, shake_pixels;
 static ENGINE_CLOCK clock;
 static int deflection_test, flight_test, player_completed, airborne;
 static int steering_test;
+static int jump_test, jump_manual, jump_steering;
+static int jump_requested;
+static unsigned long long jump_begin;
+static unsigned int jump_count, jump_logs, ready_logs;
+static short jump_min_y[16];
+static unsigned int idle_events, idle_logs;
+
+static int idle_event(void *context, unsigned int target)
+{
+    (void)context;
+    assert(target == 0x20bec || target == 0x20c70 || target == 0x20d55 || target == 0x20cf4);
+    ++idle_events;
+    return 0;
+}
 static ENGINE_PLAYER_AIR player_air;
 static ENGINE_PLAYER_DEFLECTION *player = &player_air.player;
 static ENGINE_OBJECT *player_object;
@@ -55,6 +69,13 @@ static void __attribute__((ms_abi)) log_text(const char *text)
     if (strstr(text, "Player flight landed through original selector")) {
         ++flight_logs;
     }
+    if (strstr(text, "Original player jump started.")) {
+        ++jump_logs;
+    }
+    if (strstr(text, "Player jump reached ground boundary")) {
+        ++ready_logs;
+    }
+    if (strstr(text, "Idle script event recorded")) ++idle_logs;
 }
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
 {
@@ -77,6 +98,17 @@ static void __attribute__((ms_abi)) poll(void)
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
+    if (jump_steering) {
+        unsigned int within = iteration % 250;
+        if (iteration <= 1000 && within >= 51 &&
+            within <= ((iteration / 250) & 1 ? 100U : 55U)) {
+            api.Input.KeyDown[0x2c] = 1;
+            api.Input.KeyPressed[0x2c] = within == 51;
+        }
+        if (iteration <= 1000 && within >= 51 && within <= 140) {
+            api.Input.KeyDown[within < 75 ? 0x4f : 0x50] = 1;
+        }
+    }
     if (steering_test && iteration >= 56 && iteration <= 75) {
         api.Input.KeyDown[0x50] = 1;
         api.Input.KeyPressed[0x50] = iteration == 56;
@@ -88,18 +120,61 @@ static void __attribute__((ms_abi)) poll(void)
     if (iteration == 2002) {
         api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
     }
+    if (jump_test && api.Input.KeyPressed[0x2c]) {
+        jump_manual = 1;
+        jump_requested = player_completed;
+    }
     assert(iteration <= 2002);
 }
 static void update_reference(void *context)
 {
     (void)context;
-    if (flight_test && airborne) {
+    if (jump_test) {
+        unsigned short directions = (api.Input.KeyDown[0x50] ? 4 : 0) |
+            (api.Input.KeyDown[0x4f] ? 8 : 0);
+        player_air.pressed = directions | (api.Input.KeyDown[0x2c] ? 0x20 : 0);
+        if (!jump_manual && airborne) {
+            if (!directions) player_air.pressed |= player_variant & 1 ? 4 : 8;
+            if (now - jump_begin < (player_variant & 2 ? 500000000ULL : 100000000ULL)) {
+                player_air.pressed |= 0x20;
+            }
+        }
+        if (player_completed) {
+            if (directions) {
+                player->body.node->pass_flags = (unsigned char)(
+                    (player->body.node->pass_flags & 0xf7) | (directions & 4 ? 8 : 0));
+            }
+            if (jump_requested || (!jump_manual && now - jump_begin >= 2000000000ULL)) {
+                jump_requested = 0;
+                if (!jump_manual) {
+                    player_variant = (player_variant + 1) & 3;
+                    player->body.owner.x = 160;
+                    player->body.node->pass_flags = (unsigned char)(
+                        (player->body.node->pass_flags & 0xf7) | (player_variant & 1 ? 8 : 0));
+                }
+                ENGINE_PLAYER_CALL call = {player->body.node->pass_flags & 8 ? 0xb7e7U : 0xb604U,
+                    0x6180, 4};
+                player_air.flags &= 0xdfffU;
+                jump_begin = now;
+                player_completed = 0; airborne = 1;
+                assert(jump_count < 16);
+                jump_min_y[jump_count++] = 160;
+                assert(engine_player_begin_jump(&objects, player_object, &player_air,
+                    &call, 0x612c) == 0);
+            }
+            assert(animation_program_step(&player->body.animation, player->body.node,
+                &player->body.owner, idle_event, 0) == 0);
+            return;
+        }
+    }
+    if (flight_test && !jump_test && airborne) {
         unsigned short directions = (api.Input.KeyDown[0x50] ? 4 : 0) |
             (api.Input.KeyDown[0x4f] ? 8 : 0);
         player_air.pressed = directions ? directions : (player_variant & 1 ? 4 : 8);
     }
     unsigned int before = player->handler;
-    int was_air = player_object && player_object->behavior == &engine_player_air_behavior;
+    int was_air = player_object && (player_object->behavior == &engine_player_air_behavior ||
+        player_object->behavior == &engine_player_jump_behavior);
     assert(engine_update_objects(&objects, &api.Input) == 0);
     direction_changes += was_air && player->handler != before;
 }
@@ -107,7 +182,7 @@ static int player_probe(void *context, short x, short y, short *hit)
 {
     (void)context;
     assert(x == player->body.owner.x && y == player->body.owner.y);
-    *hit = player_variant & 4 ? -1 : 0;
+    *hit = !jump_test && (player_variant & 4) ? -1 : 0;
     return 0;
 }
 static int player_transition(void *context, const ENGINE_PLAYER_CALL *call)
@@ -146,6 +221,16 @@ static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
         call->handler == 0xcdc2 || call->handler == 0xd108 ||
         call->handler == 0xb253 || call->handler == 0xb19f);
     assert(player->body.owner.y == 160);
+    if (jump_test) {
+        assert(call->handler != 0xb253 && call->handler != 0xb19f);
+        assert(animation_program_initialize(&player->body.animation, animation_movement_data,
+            ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, 0x6148,
+            animation_movement_data, ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE) == 0);
+        player->body.motion.velocity_x = 0;
+        airborne = 0;
+        assert(animation_program_step(&player->body.animation, player->body.node,
+            &player->body.owner, 0, 0) == 0);
+    }
     player_object->behavior = 0;
     player_completed = 1;
     ++flight_transitions;
@@ -153,6 +238,18 @@ static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
 }
 static void begin_reference_player(void)
 {
+    if (jump_test) {
+        player->body.owner = (RENDER_OWNER){160, 160};
+        player->body.motion = (ENGINE_MOTION){0};
+        player_completed = 1;
+        assert(animation_program_initialize(&player->body.animation, animation_movement_data,
+            ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, 0x6148,
+            animation_movement_data, ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE) == 0);
+        assert(animation_program_step(&player->body.animation, player->body.node,
+            &player->body.owner, 0, 0) == 0);
+        previous_player_position = player->body.owner;
+        return;
+    }
     ENGINE_PLAYER_CALL call;
     uint32_t position = UINT32_C(0x6c31) + (player_variant & 2 ? 2 : 0);
     assert((player_variant & 1 ? engine_player_reaction_e6ee(0, position, &call) :
@@ -167,7 +264,8 @@ static void begin_reference_player(void)
 }
 static void draw_reference_player(const DOS64_COLOR *image)
 {
-    if (player_completed && now - cycle_begin >= (flight_test ? 2000000000ULL : 1000000000ULL)) {
+    if (!jump_test && player_completed &&
+        now - cycle_begin >= (flight_test ? 2000000000ULL : 1000000000ULL)) {
         player_variant = (player_variant + 1) & 7;
         cycle_begin = now;
         begin_reference_player();
@@ -190,6 +288,9 @@ static void draw_reference_player(const DOS64_COLOR *image)
     moving_frames += player->body.owner.x != previous_player_position.x ||
         player->body.owner.y != previous_player_position.y;
     airborne_frames += airborne && !player_completed;
+    if (jump_test && jump_count && player->body.owner.y < jump_min_y[jump_count - 1]) {
+        jump_min_y[jump_count - 1] = player->body.owner.y;
+    }
     previous_player_position = player->body.owner;
     assert(engine_dispatch_ticks(&clock, now, update_reference, 0) >= 0);
 }
@@ -256,12 +357,16 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
 int main(int argc, char **argv)
 {
     assert(argc == 1 || (argc == 2 && (strcmp(argv[1], "--deflection") == 0 ||
-        strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0)));
+        strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0 ||
+        strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0)));
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
-    flight_test = argc == 1 || steering_test;
+    jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
+    jump_test = argc == 1 || jump_steering;
+    flight_test = jump_test || steering_test || (argc == 2 && strcmp(argv[1], "--flight") == 0);
     deflection_test = argc == 2 && strcmp(argv[1], "--deflection") == 0;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION;
-    api.Arguments = flight_test ? "" : deflection_test ? "--deflection" : "--emitters";
+    api.Arguments = jump_test ? "" : flight_test ? "--flight" :
+        deflection_test ? "--deflection" : "--emitters";
     api.Write = log_text; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
     api.Gfx.SelectLayer = select_layer; api.Gfx.Present = present; api.DrawImage = draw;
@@ -305,6 +410,29 @@ int main(int argc, char **argv)
     }
     engine_clock_reset(&clock, 0);
     assert(start(&api) == 0);
+    if (jump_test) {
+        assert(iteration == 2002 && shown == 2001 && jump_logs == jump_count &&
+            flight_transitions == jump_count && ready_logs == jump_count + 1 &&
+            player_completed && !player_transitions);
+        assert(object_frames > 1800 && moving_frames > 100 && airborne_frames > 200);
+        assert(jump_count == (jump_steering ? 4U : 9U));
+        assert(idle_events == idle_logs);
+        if (jump_steering) {
+            assert(idle_events > 0);
+            assert(jump_manual && direction_changes >= 4);
+            assert(jump_min_y[0] - jump_min_y[1] >= 40 &&
+                jump_min_y[2] - jump_min_y[3] >= 40);
+        } else {
+            assert(moving_frames == 350 && airborne_frames == 768 &&
+                jump_min_y[0] == 123 && jump_min_y[1] == 83);
+        }
+        printf("PASS: default jump%s, %llu exact ARGB pixels, %u visible/%u moving/"
+            "%u airborne frames, %u jumps/landings, %u direction transitions, "
+            "short/held minimum Y %d/%d, Escape\n", jump_steering ? " with manual keys" : " demo",
+            verified, object_frames, moving_frames, airborne_frames, jump_count,
+            direction_changes, jump_min_y[0], jump_min_y[1]);
+        return 0;
+    }
     if (flight_test) {
         assert(iteration == 2002 && shown == 2001 && player_transitions == 10 &&
             flight_transitions == 10 && flight_logs == flight_transitions && !player_logs);
@@ -317,7 +445,7 @@ int main(int argc, char **argv)
         for (unsigned int i = 0; i < 8; ++i) {
             assert(variant_frames[i] >= 190);
         }
-        printf("PASS: default player flight entry, %llu exact ARGB pixels, "
+        printf("PASS: --flight player entry, %llu exact ARGB pixels, "
             "%u visible/%u moving/%u airborne frames, %u direction changes, "
             "10 deflection->air->landing chains, Escape\n",
             verified, object_frames, moving_frames, airborne_frames, direction_changes);

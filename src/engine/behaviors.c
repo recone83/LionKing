@@ -422,6 +422,175 @@ int engine_player_begin_air(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     return step_player_air(state);
 }
 
+static int player_animation(ENGINE_PLAYER_AIR *state)
+{
+    ENGINE_FALLING_OBJECT *body = &state->player.body;
+    return animation_program_step(&body->animation, body->node, &body->owner, 0, 0);
+}
+
+static int step_player_jump(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state)
+{
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    ENGINE_FALLING_OBJECT *body = &player->body;
+    int right = player->handler == 0xb604U;
+    if (!player->immunity && (player->flags_high & 4)) {
+        return player_air_transition(state, 0xef04, 0, 0, 0, 0, 0);
+    }
+    if (body->animation.counter) {
+        --body->animation.counter;
+        return player_animation(state);
+    }
+    if ((state->pressed & 0x10) && player->form) {
+        return player_air_transition(state, 0x10bc6, 0x57c1, 0, 0, 0, 0);
+    }
+    if (state->jump_boost) {
+        --state->jump_boost;
+        if ((state->pressed & 0x20) || (state->flags & 0x1000)) {
+            body->motion.velocity_y -= player->form ? 0x9000U : 0x5000U;
+        } else {
+            state->jump_boost = 0;
+        }
+    }
+    if (right && !state->jump_boost) {
+        *player->collision_flags |= 0x20;
+    }
+    short hit;
+    if (!player->probe || player->probe(player->context,
+        body->owner.x, body->owner.y, &hit) != 0) {
+        return -1;
+    }
+    if (hit) {
+        body->motion.velocity_y = 0;
+        *player->collision_flags |= 0x20;
+    }
+    /* The left path writes this bit after the probe, the right path before. */
+    if (!right && !state->jump_boost) {
+        *player->collision_flags |= 0x20;
+    }
+    uint32_t vy = body->motion.velocity_y;
+    int64_t signed_y = vy < UINT32_C(0x80000000) ? vy :
+        (int64_t)vy - INT64_C(0x100000000);
+    if (signed_y >= (player->form ? -0x30000 : 0)) {
+        ENGINE_PLAYER_CALL call = {right ? 0xaa97U : 0xae53U,
+            state->jump_air_script, 0};
+        return engine_player_begin_air(pool, object, state, &call);
+    }
+    if (engine_motion_player_gravity(&body->motion, &body->owner, player->form) != 0 ||
+        player_animation(state) != 0) {
+        return -1;
+    }
+    if (state->pressed & (right ? 4 : 8)) {
+        state->flags &= 0xdfffU;
+        player->handler = right ? 0xb7e7U : 0xb604U;
+        player_facing(player, right);
+        return 0;
+    }
+    if (!(state->pressed & (right ? 8 : 4)) && !(state->flags & 0x2000)) {
+        body->motion.velocity_x = 0;
+        return 0;
+    }
+    return right ? engine_motion_right(&body->motion, &body->owner, player->flags_high) :
+        engine_motion_left(&body->motion, &body->owner);
+}
+
+static void update_player_jump(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_PLAYER_AIR *state = object->context;
+    if (!state || !valid_state(&state->player.body) || !state->player.collision_flags ||
+        (state->player.handler != 0xb604U && state->player.handler != 0xb7e7U) ||
+        step_player_jump(pool, object, state) != 0) {
+        pool->update_status = -1;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_player_jump_behavior = {update_player_jump};
+
+int engine_player_begin_jump(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call, unsigned int air_script)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->player.collision_flags || !call ||
+        (call->handler != 0xb604U && call->handler != 0xb7e7U)) {
+        return -1;
+    }
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    object->context = state;
+    object->behavior = &engine_player_jump_behavior;
+    if (player->handler == call->handler) {
+        return step_player_jump(pool, object, state);
+    }
+    if (player_air_script(player, call->script) != 0) {
+        return -1;
+    }
+    state->jump_air_script = air_script;
+    player->body.animation.counter = call->counter;
+    player->body.motion.velocity_y = player->form ? UINT32_C(0xfffb0000) :
+        UINT32_C(0xfffb2000);
+    state->jump_boost = player->form ? 6 : 8;
+    player->handler = call->handler;
+    player_facing(player, call->handler == 0xb7e7U);
+    *player->collision_flags &= 0xdf;
+    return 0;
+}
+
+static int step_player_recovery(ENGINE_PLAYER_AIR *state)
+{
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    if (!player->immunity && (player->flags_high & 4)) {
+        return player_air_transition(state, 0xef04, 0, 0, 0, 0, 0);
+    }
+    if (state->surface_kind == 3) {
+        player->body.animation.counter = 0;
+    }
+    int finished = !player->body.animation.counter;
+    if (finished) {
+        player->handler = player->handler == 0xb253U ? 0xc8d5U : 0xc2cdU;
+    } else {
+        --player->body.animation.counter;
+    }
+    if (player_animation(state) != 0) {
+        return -1;
+    }
+    /* Original recovery changes the handler, then animates; it does not call idle. */
+    return finished ? player_air_transition(state, player->handler,
+        player->body.animation.script.position, player->body.animation.counter, 0, 0, 0) : 0;
+}
+
+static void update_player_recovery(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_PLAYER_AIR *state = object->context;
+    if (!state || !valid_state(&state->player.body) ||
+        (state->player.handler != 0xb19fU && state->player.handler != 0xb253U) ||
+        step_player_recovery(state) != 0) {
+        pool->update_status = -1;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_player_recovery_behavior = {update_player_recovery};
+
+int engine_player_begin_recovery(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !call || (call->handler != 0xb19fU && call->handler != 0xb253U)) {
+        return -1;
+    }
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    object->context = state;
+    object->behavior = &engine_player_recovery_behavior;
+    if (player->handler == call->handler) {
+        return step_player_recovery(state);
+    }
+    if (!state->sound || player_air_script(player, call->script) != 0) {
+        return -1;
+    }
+    player->handler = call->handler;
+    player->body.animation.counter = call->counter;
+    player->flags_high &= 0xef;
+    return state->sound(player->context, player->form ? 5 : 4);
+}
+
 static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
 {
     ENGINE_FALLING_OBJECT *state = object->context;
