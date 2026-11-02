@@ -102,6 +102,7 @@ typedef int (*ENGINE_PLAYER_AIR_TRANSITION)(void *context,
 typedef int (*ENGINE_PLAYER_SOUND)(void *context, unsigned short sample);
 typedef int (*ENGINE_PLAYER_SUPPORT)(void *context, short *supported);
 typedef int (*ENGINE_PLAYER_CONTACT)(void *context, short *touching);
+typedef int (*ENGINE_PLAYER_LEDGE_HEIGHT)(void *context, short x, short y, short *height);
 
 typedef struct {
     ENGINE_PLAYER_DEFLECTION player;
@@ -127,6 +128,7 @@ typedef struct {
     RENDER_OWNER tether_target;
     const RENDER_OWNER *contact_source;
     ENGINE_PLAYER_CONTACT contact;
+    ENGINE_PLAYER_LEDGE_HEIGHT ledge_height;
     ENGINE_PLAYER_GROUND ground;
     ENGINE_PLAYER_SUPPORT support;
     ENGINE_PLAYER_EDGE edge;
@@ -158,6 +160,8 @@ int engine_player_begin_terrain(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, unsigned int handler, short side, uint32_t velocity);
 int engine_player_rebound(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, unsigned int handler);
+int engine_player_begin_ledge(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int selector, short kind, short x, short y);
 
 typedef struct {
     ENGINE_FALLING_OBJECT body;

@@ -1062,7 +1062,9 @@ static int player_action_handler(unsigned int handler)
     return handler == 0xec69U || handler == 0xee35U || handler == 0xee60U ||
         handler == 0xf017U || handler == 0xf160U || handler == 0xf80dU ||
         handler == 0xfe3cU || handler == 0xff83U || handler == 0xf2b1U ||
-        handler == 0xf3fbU || handler == 0xf6ccU;
+        handler == 0xf3fbU || handler == 0xf6ccU || handler == 0xd5f4U ||
+        handler == 0xd7a3U || handler == 0xd40aU || handler == 0xd4ffU ||
+        handler == 0x10075U;
 }
 
 static int player_terrain_fall(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
@@ -1079,6 +1081,74 @@ static int step_player_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_DEFLECTION *player = &state->player;
     ENGINE_FALLING_OBJECT *body = &player->body;
     unsigned int handler = player->handler;
+    if (handler == 0x10075U) {
+        if (player_word(body->animation.counter) == 1) {
+            player_facing(player, !(body->node->pass_flags & 8));
+            --body->animation.counter;
+        }
+        if (body->animation.counter) {
+            --body->animation.counter;
+            return player_ground_animation(state);
+        }
+        int left = (body->node->pass_flags & 8) != 0;
+        if (state->pressed & (left ? 8 : 4)) {
+            body->animation.counter = 6;
+            if (player_air_script(player, 0x5f9a) != 0) return -1;
+            /* Original sets the old facing; the final counter tick flips it. */
+            player_facing(player, left);
+        }
+        if (state->pressed & 0x20) {
+            state->flags &= 0xf7ffU;
+            body->animation.state = 0;
+            ENGINE_PLAYER_CALL jump = {left ? 0xb7e7U : 0xb604U, 0x6180,
+                player->form ? 10 : 4};
+            return engine_player_begin_jump(pool, object, state, &jump, 0x612c);
+        }
+        if (!(state->flags & 0x800)) {
+            ENGINE_PLAYER_CALL air = {left ? 0xae53U : 0xaa97U, 0x612c, 0};
+            return engine_player_begin_air(pool, object, state, &air);
+        }
+        return player_ground_animation(state);
+    }
+    if (handler == 0xd5f4U || handler == 0xd7a3U ||
+        handler == 0xd40aU || handler == 0xd4ffU) {
+        if (!player->immunity && (player->flags_high & 4)) {
+            return engine_player_damage(pool, object, state);
+        }
+        int right = handler == 0xd7a3U || handler == 0xd4ffU;
+        if (handler == 0xd40aU || handler == 0xd4ffU) {
+            if (player_word(body->animation.counter) > 0) {
+                --body->animation.counter;
+                return player_ground_animation(state);
+            }
+            unsigned int distance = player->form ? 19 : 9;
+            body->owner.x = player_word((unsigned short)body->owner.x +
+                (right ? distance : 0U - distance));
+            body->owner.y = player_word((unsigned short)body->owner.y +
+                (player->form ? 3U : UINT32_C(0xffffffff)));
+            return player_ground_call(pool, object, state, right ? 0xc8d5U : 0xc2cdU,
+                player->form ? 0x5856U : 0x5f84U);
+        }
+        if ((state->player_flags & 0x40) || (state->pressed & 2)) {
+            int forced = (state->player_flags & 0x40) != 0;
+            body->owner.x = player_word((unsigned short)body->owner.x + (right ? -12U : 12U));
+            body->owner.y = player_word((unsigned short)body->owner.y + 48U);
+            if (right || forced) state->player_flags &= 0xff7fU;
+            ENGINE_PLAYER_CALL air = {right && !forced ? 0xaa97U : 0xae53U,
+                player->form ? 0x5928U : 0x5fc6U, 0};
+            return engine_player_begin_air(pool, object, state, &air);
+        }
+        short counter = player_word(body->animation.counter);
+        if (counter > 0) {
+            --body->animation.counter;
+        } else if (!counter && (state->pressed & (right ? 9 : 5))) {
+            if (right) state->player_flags &= 0xff7fU;
+            ENGINE_PLAYER_CALL climb = {right ? 0xd4ffU : 0xd40aU,
+                player->form ? 0x61c6U : 0x61d4U, 0};
+            return engine_player_begin_action(pool, object, state, &climb);
+        }
+        return player_ground_animation(state);
+    }
     if (handler == 0xf6ccU) {
         int dx = (int)body->owner.x - state->tether_target.x;
         if (dx < -4) body->owner.x = player_word((unsigned short)body->owner.x + 4U);
@@ -1306,7 +1376,8 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         !state->player.collision_flags || !state->sound ||
         !call || (call->handler != 0xec69U && call->handler != 0xee35U &&
             call->handler != 0xee60U && call->handler != 0xf017U && call->handler != 0xf160U &&
-            call->handler != 0xf2b1U && call->handler != 0xf3fbU && call->handler != 0xf6ccU)) {
+            call->handler != 0xf2b1U && call->handler != 0xf3fbU && call->handler != 0xf6ccU &&
+            call->handler != 0xd40aU && call->handler != 0xd4ffU && call->handler != 0x10075U)) {
         return -1;
     }
     ENGINE_PLAYER_DEFLECTION *player = &state->player;
@@ -1321,6 +1392,8 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         return 0;
     }
     unsigned int script = call->handler == 0xec69U ? call->script :
+        call->handler == 0xd40aU || call->handler == 0xd4ffU ? call->script :
+        call->handler == 0x10075U ? 0x5f84U :
         call->handler == 0xee35U ? 0x5ff2U : call->handler == 0xee60U ? 0x589cU :
         call->handler == 0xf3fbU ? 0x58b8U :
         player->form ? 0x5864U : 0x621aU;
@@ -1328,6 +1401,15 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         return -1;
     }
     player->handler = call->handler;
+    if (call->handler == 0x10075U) {
+        player->flags_high &= 0xef;
+        body->animation.counter = 0;
+        return step_player_action(pool, object, state);
+    }
+    if (call->handler == 0xd40aU || call->handler == 0xd4ffU) {
+        body->animation.counter = player->form ? 39 : 31;
+        return 0;
+    }
     if (call->handler == 0xf3fbU) {
         body->motion.velocity_y = 0;
         body->animation.state = body->animation.counter = 0;
@@ -1385,6 +1467,51 @@ int engine_player_rebound(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_CALL air = {handler == 0xf618U ? 0xaa97U : 0xae53U,
         state->player.form ? 0x58b8U : 0x6228U, 0};
     return engine_player_begin_air(pool, object, state, &air);
+}
+
+int engine_player_begin_ledge(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int selector, short kind, short x, short y)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->player.collision_flags || !state->sound ||
+        (selector != 0xe775U && selector != 0xe8dfU)) {
+        return -1;
+    }
+    /* Other selector branches (swing/hang objects) remain explicit external boundaries. */
+    int ledge = (kind >= 0xeb && kind <= 0xee) || (kind >= 0xfb && kind <= 0xfe) ||
+        (kind >= 0x8c && kind <= 0x8f) || (kind >= 0x9c && kind <= 0x9f) || kind == 0xea;
+    if (!ledge || !state->ledge_height) {
+        return -1;
+    }
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    ENGINE_FALLING_OBJECT *body = &player->body;
+    unsigned int handler = selector == 0xe775U ? 0xd5f4U : 0xd7a3U;
+    object->context = state;
+    object->behavior = &engine_player_action_behavior;
+    player_facing(player, selector == 0xe775U);
+    player->flags_high &= 0xef;
+    state->contact_kind = (unsigned char)kind;
+    if (player->handler == handler) {
+        return step_player_action(pool, object, state);
+    }
+    body->motion.velocity_x = body->motion.velocity_y = 0;
+    body->owner.x = player_word(((unsigned short)x & 0xfff0U) +
+        (selector == 0xe775U ? 15 : 0));
+    short height;
+    if (state->ledge_height(player->context, body->owner.x, y, &height) != 0) {
+        return -1;
+    }
+    body->owner.y = player_word(((unsigned short)y & 0xfff0U) + (unsigned int)height);
+    if (player_air_script(player, player->form ? 0x58d4U : 0x618eU) != 0) {
+        return -1;
+    }
+    player->handler = handler;
+    body->animation.counter = 42;
+    if (player_ground_animation(state) != 0) {
+        return -1;
+    }
+    state->player_flags = (state->player_flags & 0xffbfU) | 0x80;
+    return 0;
 }
 
 int engine_player_begin_terrain(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,

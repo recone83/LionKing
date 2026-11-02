@@ -16,6 +16,15 @@ static unsigned int sounds;
 static unsigned short sample;
 static short touching;
 static unsigned int contact_queries;
+static short ledge_x, ledge_y;
+
+static int ledge_height(void *context, short x, short y, short *height)
+{
+    assert(context == &player);
+    ledge_x = x; ledge_y = y;
+    *height = 16;
+    return 0;
+}
 
 static int contact(void *context, short *result)
 {
@@ -83,6 +92,7 @@ static void setup(unsigned short form)
     player.edge = edge;
     player.damage_source = &source;
     player.contact = contact;
+    player.ledge_height = ledge_height;
     player.health = 10;
     player.roar_charge = 100;
     source = (RENDER_OWNER){144, 160};
@@ -252,7 +262,83 @@ int main(void)
     player.contact_source = &source;
     assert(engine_player_begin_action(&pool, object, &player, &hold) == 0);
     assert(contact_queries == 2 && player.player.handler == 0xc8d5U);
+    for (unsigned int form = 0; form < 2; ++form) {
+        for (unsigned int right = 0; right < 2; ++right) {
+            setup((unsigned short)form);
+            unsigned int selector = right ? 0xe8dfU : 0xe775U;
+            assert(engine_player_begin_ledge(&pool, object, &player, selector, 0xea, 173, 103) == 0);
+            assert(player.player.handler == (right ? 0xd7a3U : 0xd5f4U));
+            assert(player.player.body.owner.x == (right ? 160 : 175) &&
+                player.player.body.owner.y == 112 && ledge_x == player.player.body.owner.x &&
+                ledge_y == 103 && player.player.body.animation.counter == 42 &&
+                player.player_flags == 0x80);
+            player.pressed = 1;
+            for (unsigned int i = 0; i < 42; ++i) tick();
+            assert(player.player.body.animation.counter == 0 &&
+                player.player.handler == (right ? 0xd7a3U : 0xd5f4U));
+            tick();
+            assert(player.player.handler == (right ? 0xd4ffU : 0xd40aU) &&
+                player.player.body.animation.counter == (form ? 39 : 31));
+            player.pressed = 0;
+            for (unsigned int i = 0; i < (form ? 39U : 31U); ++i) tick();
+            tick();
+            assert(player.player.handler == (right ? 0xc8d5U : 0xc2cdU) &&
+                player.player.body.owner.x == (right ? 160 + (form ? 19 : 9) :
+                    175 - (form ? 19 : 9)) &&
+                player.player.body.owner.y == (form ? 115 : 111));
+
+            for (unsigned int forced = 0; forced < 2; ++forced) {
+                setup((unsigned short)form);
+                assert(engine_player_begin_ledge(&pool, object, &player, selector,
+                    0xea, 173, 103) == 0);
+                if (forced) player.player_flags |= 0x40;
+                else player.pressed = 2;
+                supported = 0;
+                tick();
+                assert(player.player.handler == (right && !forced ? 0xaa97U : 0xae53U));
+                assert((player.player_flags & 0x80) == (!right && !forced ? 0x80 : 0));
+                assert(player.player.body.owner.x == (right ? 148 : 187));
+            }
+        }
+    }
     setup(0);
+    player.flags = 0x800;
+    ENGINE_PLAYER_CALL perch = {0x10075, 0, 0};
+    assert(engine_player_begin_action(&pool, object, &player, &perch) == 0);
+    player.pressed = 4;
+    tick();
+    assert(player.player.body.animation.counter == 6 && !(player.player.body.node->pass_flags & 8));
+    player.pressed = 0;
+    for (unsigned int i = 0; i < 6; ++i) tick();
+    assert(player.player.body.node->pass_flags & 8);
+    player.pressed = 0x20;
+    tick();
+    assert(player.player.handler == 0xb7e7U && !(player.flags & 0x800) &&
+        player.player.body.animation.counter == 4);
+    setup(1);
+    player.flags = 0x800;
+    assert(engine_player_begin_action(&pool, object, &player, &perch) == 0);
+    player.pressed = 0x20;
+    tick();
+    assert(player.player.handler == 0xb604U && player.player.body.animation.counter == 10 &&
+        player.jump_air_script == 0x612cU);
+    setup(0);
+    player.flags = 0x800;
+    assert(engine_player_begin_action(&pool, object, &player, &perch) == 0);
+    player.flags = 0; supported = 0;
+    tick();
+    assert(player.player.handler == 0xaa97U);
+    setup(0);
+    assert(engine_player_begin_ledge(&pool, object, &player, 0xe775, 0xea, 160, 96) == 0);
+    player.player.body.animation.counter = 0xffff;
+    player.pressed = 1;
+    tick();
+    assert(player.player.handler == 0xd5f4U && player.player.body.animation.counter == 0xffff);
+    setup(0);
+    player.ledge_height = 0;
+    assert(engine_player_begin_ledge(&pool, object, &player, 0xe775, 0xea, 160, 96) == -1);
+    setup(0);
+    assert(engine_player_begin_ledge(&pool, object, &player, 0xe775, 0xaf, 160, 96) == -1);
     player.damage_source = 0;
     assert(engine_player_damage(&pool, object, &player) == -1 && !sounds);
     player.sound = 0;
@@ -260,6 +346,6 @@ int main(void)
     assert(engine_player_begin_action(&pool, object, &player, &call) == -1);
     puts("PASS: original roar pulse/timing/direction, damage masks/health, both recoil paths, "
         "adult form-bit asymmetry, stun, slides, contact rebound, thrown launch, "
-        "tether/release and adult contact escape");
+        "tether/release, ledge grabs/climbs/drops and supported turn/jump");
     return 0;
 }

@@ -442,3 +442,23 @@ B/R/F wybierają odbicie/wyrzut/punkt także w domyślnym podglądzie.
 Aktywacje, punkt +80/Y100 i zwolnienie po 45 tickach są fixture;
 nie zastępują detekcji kolizji ani przeciwników. Diagnostyka pozostaje
 wyłącznie w `LIONKING.LOG`.
+
+Blok krawędzi przenosi wiszenie `0x1d5f4/0x1d7a3`, podciąganie
+`0x1d40a/0x1d4ff` i podparcie/obrót `0x20075`. Powiązano krawędziowe
+gałęzie selektorów `0x1e775/0x1e8df` z callbackiem wysokości odpowiadającym
+granicy `0x17515`; pozostałe rodzaje kontaktu nie są podmieniane na chwyt.
+Inicjalizacja chwyta komórkę X co 16 pikseli, dodaje 15 po lewej,
+wykonuje jedną animację, ustawia counter=42 i maski `player_flags`.
+
+Podciąganie ma counter=31/39 i końcowe przesunięcia X=-9/+9 lub
+-19/+19 oraz Y=-1/+3. Puszczenie ma X=+12/-12, Y=+48 i zachowaną
+asymetrię lewej flagi `0x80` oraz wymuszonego kierunku lotu.
+`0x20075` obraca z counter=6, przełącza facing przy counter=1, wybiera
+skok po wyczyszczeniu flagi `0x800` lub spadanie po utracie podparcia.
+Nie zastąpiono oryginalnych skryptów `6180/612c` wariantem dorosłego.
+
+`--ledges` prezentuje oba chwyty, oba podciągnięcia i oba puszczenia.
+K/Up/Down/P umożliwiają ręczny test w scenie naziemnej. Wysokość=16,
+chwyt Y96 i płaszczyzny podparcia Y111/Y192 są jawnie testowe.
+Przeniesione handlery korzystają z tych samych callbacków przy przyszłej
+integracji rzeczywistej mapy.

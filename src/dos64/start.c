@@ -200,6 +200,10 @@ typedef struct {
     unsigned int contact_demo_phase;
     unsigned int tether_ticks;
     int fixture_touching;
+    int ledge_demo;
+    unsigned int ledge_demo_phase;
+    unsigned int ledge_variant;
+    short fixture_floor;
     unsigned long long jump_begin;
 } DEFLECTION_PREVIEW;
 
@@ -210,13 +214,20 @@ static int preview_player_contact(void *context, short *touching)
     return 0;
 }
 
+static int preview_ledge_height(void *context, short x, short y, short *height)
+{
+    (void)context; (void)x; (void)y;
+    *height = 16;
+    return 0;
+}
+
 static int preview_player_support(void *context, short *supported)
 {
     DEFLECTION_PREVIEW *preview = context;
     ENGINE_FALLING_OBJECT *body = &preview->air.player.body;
-    *supported = body->owner.y >= 160;
+    *supported = body->owner.y >= preview->fixture_floor;
     if (*supported) {
-        body->owner.y = 160;
+        body->owner.y = preview->fixture_floor;
     }
     preview->air.contact_kind = preview->fixture_terrain;
     preview->air.surface_kind = 0;
@@ -298,8 +309,8 @@ static int preview_player_transition(void *context, const ENGINE_PLAYER_CALL *ca
 static int preview_player_ground(void *context, short *kind, short *delta_y)
 {
     DEFLECTION_PREVIEW *preview = context;
-    *kind = preview->air.player.body.owner.y >= 160 ? 1 : 0;
-    *delta_y = (short)(160 - preview->air.player.body.owner.y);
+    *kind = preview->air.player.body.owner.y >= preview->fixture_floor ? 1 : 0;
+    *delta_y = (short)(preview->fixture_floor - preview->air.player.body.owner.y);
     return 0;
 }
 
@@ -321,9 +332,14 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
         }
         if (call->handler == 0xec69U || call->handler == 0xee35U ||
             call->handler == 0xee60U || call->handler == 0xf017U || call->handler == 0xf160U ||
-            call->handler == 0xf2b1U || call->handler == 0xf3fbU || call->handler == 0xf6ccU) {
+            call->handler == 0xf2b1U || call->handler == 0xf3fbU || call->handler == 0xf6ccU ||
+            call->handler == 0x10075U || call->handler == 0xd40aU || call->handler == 0xd4ffU) {
             lk_platform_log("Original player action handler selected.\n");
             return engine_player_begin_action(&scene_objects, preview->object, &preview->air, call);
+        }
+        if (call->handler == 0xe775U || call->handler == 0xe8dfU) {
+            return engine_player_begin_ledge(&scene_objects, preview->object, &preview->air,
+                call->handler, kind, x, y);
         }
         if (call->handler == 0xf5f1U || call->handler == 0xf618U || call->handler == 0xf672U) {
             return engine_player_rebound(&scene_objects, preview->object, &preview->air, call->handler);
@@ -397,11 +413,26 @@ static void update_player_preview(void *context)
             (preview->api->Input.KeyDown[0x4f] ? 8 : 0) |
             (preview->api->Input.KeyDown[0x2c] ? 0x20 : 0) |
             (preview->api->Input.KeyDown[0x51] ? 2 : 0) |
+            (preview->api->Input.KeyDown[0x52] ? 1 : 0) |
             (preview->api->Input.KeyDown[0xe0] || preview->api->Input.KeyDown[0xe4] ? 0x40 : 0);
         int request_hit = preview->input_taps & 0x100;
         int request_terrain = preview->input_taps & 0x200;
         unsigned short contact_actions = preview->input_taps & 0x1c00;
-        if (!preview->manual && preview->contact_demo) {
+        int request_ledge = preview->input_taps & 0x2000;
+        int request_perch = preview->input_taps & 0x4000;
+        if (!preview->manual && preview->ledge_demo) {
+            unsigned long long elapsed = lk_platform_time_ns() - preview->jump_begin;
+            unsigned int phase = (unsigned int)(elapsed / 4000000000ULL) + 1;
+            unsigned long long within = elapsed % 4000000000ULL;
+            unsigned int action = (phase - 1) % 4;
+            held = within >= 900000000ULL && within < 2100000000ULL ?
+                (action < 2 ? 1 : 2) : 0;
+            if (phase != preview->ledge_demo_phase) {
+                preview->ledge_demo_phase = phase;
+                preview->ledge_variant = action;
+                request_ledge = 1;
+            }
+        } else if (!preview->manual && preview->contact_demo) {
             unsigned int phase = (unsigned int)((lk_platform_time_ns() - preview->jump_begin) /
                 3000000000ULL) + 1;
             held = 0;
@@ -434,6 +465,10 @@ static void update_player_preview(void *context)
         preview->air.pressed = held | (preview->input_taps & 0x60);
         preview->air.player.controls = (unsigned char)preview->input_taps;
         preview->input_taps = 0;
+        if ((held & 2) && (preview->air.player.handler == 0xd5f4U ||
+            preview->air.player.handler == 0xd7a3U)) {
+            preview->fixture_floor = 192;
+        }
         if (preview->tether_ticks && !--preview->tether_ticks) {
             preview->air.flags &= 0xfffbU;
         }
@@ -479,6 +514,28 @@ static void update_player_preview(void *context)
             }
         }
         unsigned int before = preview->air.player.handler;
+        if (request_ledge) {
+            int right = preview->ledge_variant++ & 1;
+            preview->fixture_floor = 111;
+            ENGINE_PLAYER_CALL call = {right ? 0xe8dfU : 0xe775U, 0, 0};
+            lk_platform_log(right ?
+                "Original right ledge grab selected; geometry/support are fixtures.\n" :
+                "Original left ledge grab selected; geometry/support are fixtures.\n");
+            if (preview_player_landed(preview, &call, 0xea,
+                preview->air.player.body.owner.x, 96) != 0) {
+                preview->failed = 1;
+                return;
+            }
+        }
+        if (request_perch) {
+            preview->air.flags |= 0x800;
+            ENGINE_PLAYER_CALL call = {0x10075, 0, 0};
+            if (preview_player_landed(preview, &call, 0, 0, 0) != 0) {
+                preview->failed = 1;
+                return;
+            }
+            lk_platform_log("Original supported-turn state selected; support is diagnostic.\n");
+        }
         if (engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
             preview->failed = 1;
             return;
@@ -488,6 +545,15 @@ static void update_player_preview(void *context)
         if (preview->air.player.handler != before &&
             preview->object->behavior == &engine_player_jump_behavior) {
             lk_platform_log("Original running/standing jump selected.\n");
+        }
+        if (preview->air.player.handler != before &&
+            (before == 0xd5f4U || before == 0xd7a3U)) {
+            lk_platform_log(held & 2 ?
+                "Original ledge drop selected.\n" : "Original ledge climb selected.\n");
+        }
+        if (preview->air.player.handler != before &&
+            (before == 0xd40aU || before == 0xd4ffU)) {
+            lk_platform_log("Original ledge climb completed; ground control resumed.\n");
         }
         return;
     }
@@ -585,6 +651,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.jump = mode == 2;
     preview.ground_mode = mode >= 3;
     preview.contact_demo = mode == 4;
+    preview.ledge_demo = mode == 5;
+    preview.fixture_floor = 160;
     preview.air.player.body.render_pool = &render_pool;
     preview.air.player.body.node = render_acquire_node(&render_pool,
         &preview.air.player.body.owner, 0, 0,
@@ -602,6 +670,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.air.animation_event = record_player_idle_event;
     preview.air.damage_source = &preview.damage_source;
     preview.air.contact = preview_player_contact;
+    preview.air.ledge_height = preview_ledge_height;
     preview.air.health = 100;
     preview.air.roar_charge = 100;
     if (!preview.air.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
@@ -614,9 +683,12 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             "H: diagnostic hit/recoil; T: diagnostic terrain contact (6/9/5/8).\n"
             "B: contact rebound; R: thrown launch; F: tether target then release (fixtures).\n"
             "--contacts: automatic rebound both ways, launch and tether demonstration.\n"
+            "K: ledge grab alternating sides; Up: climb; Down: drop; P: supported turn/jump.\n"
+            "--ledges: automatic grabs, climbs and drops in both directions.\n"
             "Ground Y=160, damage source, terrain, initial meters and camera are fixtures.\n"
             "Enemy response to roar, meter recharge/immunity ticking and map collision unported.\n");
-        lk_platform_log(preview.contact_demo ?
+        lk_platform_log(preview.ledge_demo ?
+            "Before input: left/right ledge climb -> left/right ledge drop.\n" : preview.contact_demo ?
             "Before input: right/left rebounds -> thrown launch -> tether/release.\n" :
             "Before input: running/jumping/roaring/damage demo. --jump: previous jump fixture.\n");
     } else if (preview.jump) {
@@ -649,14 +721,17 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 (api->Input.KeyPressed[0x4f] ? 8 : 0) |
                 (api->Input.KeyPressed[0x2c] ? 0x20 : 0) |
                 (api->Input.KeyPressed[0x51] ? 2 : 0) |
+                (api->Input.KeyPressed[0x52] ? 1 : 0) |
                 (api->Input.KeyPressed[0xe0] || api->Input.KeyPressed[0xe4] ? 0x40 : 0) |
                 (api->Input.KeyPressed[0x0b] ? 0x100 : 0) |
                 (api->Input.KeyPressed[0x17] ? 0x200 : 0) |
                 (api->Input.KeyPressed[0x05] ? 0x400 : 0) |
                 (api->Input.KeyPressed[0x15] ? 0x800 : 0) |
-                (api->Input.KeyPressed[0x09] ? 0x1000 : 0);
+                (api->Input.KeyPressed[0x09] ? 0x1000 : 0) |
+                (api->Input.KeyPressed[0x0e] ? 0x2000 : 0) |
+                (api->Input.KeyPressed[0x13] ? 0x4000 : 0);
             if (taps || api->Input.KeyDown[0x50] || api->Input.KeyDown[0x4f] ||
-                api->Input.KeyDown[0x2c] || api->Input.KeyDown[0x51] ||
+                api->Input.KeyDown[0x2c] || api->Input.KeyDown[0x51] || api->Input.KeyDown[0x52] ||
                 api->Input.KeyDown[0xe0] || api->Input.KeyDown[0xe4]) {
                 preview.manual = 1;
             }
@@ -844,6 +919,9 @@ static int run_preview(const DOS64_API *api)
     }
     if (argument_requested(api->Arguments, "--contacts")) {
         return run_deflection_preview(api, 4);
+    }
+    if (argument_requested(api->Arguments, "--ledges")) {
+        return run_deflection_preview(api, 5);
     }
     if (!argument_requested(api->Arguments, "--idle") &&
         !argument_requested(api->Arguments, "--manual") &&
