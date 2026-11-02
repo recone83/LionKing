@@ -421,3 +421,24 @@ ticków. Źródło obrażeń, te kontakty i początkowe mierniki to fixture.
 Odnawianie ryku, odliczanie odporności i reakcje przeciwników pozostają
 nieprzeniesione. [check_player_actions.c](../../tools/check_player_actions.c)
 obejmuje kierunki, timingi, maski, odrzut, ogłuszenie i przejścia ślizgu.
+
+Blok kontaktowy dodaje selektor odbicia `0x1f5f1`, wejścia
+`0x1f618/0x1f672`, wyrzut `0x1f2b1` z helperem kierunku `0x202de`,
+zwolnienie kontaktu dorosłego `0x1f3fb` i ruch do punktu `0x1f6cc`.
+Odbicia mają różne Vy=-4.5/-4 i oryginalny skrypt `6228/58b8`;
+wyrzut ma licznik 35, Vy=-4.5 i Vx=-1.5/+1.5. Zachowano kolejność
+grawitacji przed X, porównanie signed counter<26 i granice kierunkowe.
+
+Punkt zaczepienia jest polem stanu z oryginalnych wordów `0x22/0x24`.
+Ruch `0x1f6cc` nie animuje ani nie integruje ułamków: przesuwa X/Y
+o 4 przy różnicy większej niż 4. Zwolnienie flagi 4 instaluje handler
+lotu przed wywołaniem, pozostawiając bieżący strumień i facing.
+Kontakt dorosłego ma jawny callback overlap, próg state=70,
+licznik przy ataku i flagę zwolnienia do wyrzutu. Brak callbacka dla
+niepustego źródła jest błędem, nie wymyślonym trafieniem.
+
+`--contacts` pokazuje cały blok kontaktowy młodego Simby w pętli.
+B/R/F wybierają odbicie/wyrzut/punkt także w domyślnym podglądzie.
+Aktywacje, punkt +80/Y100 i zwolnienie po 45 tickach są fixture;
+nie zastępują detekcji kolizji ani przeciwników. Diagnostyka pozostaje
+wyłącznie w `LIONKING.LOG`.

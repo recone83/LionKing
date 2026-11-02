@@ -14,6 +14,16 @@ static unsigned char collision;
 static short supported;
 static unsigned int sounds;
 static unsigned short sample;
+static short touching;
+static unsigned int contact_queries;
+
+static int contact(void *context, short *result)
+{
+    assert(context == &player);
+    ++contact_queries;
+    *result = touching;
+    return 0;
+}
 
 static int support(void *context, short *result)
 {
@@ -72,12 +82,15 @@ static void setup(unsigned short form)
     player.ground = ground;
     player.edge = edge;
     player.damage_source = &source;
+    player.contact = contact;
     player.health = 10;
     player.roar_charge = 100;
     source = (RENDER_OWNER){144, 160};
     collision = 0;
     sounds = 0;
     supported = 1;
+    touching = 0;
+    contact_queries = 0;
 }
 
 static void tick(void)
@@ -178,12 +191,75 @@ int main(void)
             player.player.body.motion.velocity_x == UINT32_C(0xfffc0000));
     }
     setup(0);
+    for (unsigned int left = 0; left < 2; ++left) {
+        setup(0);
+        player.player.body.node->pass_flags = left ? 8 : 0;
+        player.player.flags_high = 0x20;
+        player.pressed = left ? 4 : 8;
+        assert(engine_player_rebound(&pool, object, &player, 0xf5f1) == 0);
+        assert(sounds == 1 && sample == 0 &&
+            player.player.handler == (left ? 0xae53U : 0xaa97U));
+        assert(!(player.player.flags_high & 0x20));
+        assert(player.player.body.motion.velocity_y ==
+            (left ? UINT32_C(0xfffc4e00) : UINT32_C(0xfffbce00)));
+
+        setup(0);
+        player.player.body.node->pass_flags = left ? 8 : 0;
+        ENGINE_PLAYER_CALL launch = {0xf2b1, 0, 0};
+        assert(engine_player_begin_action(&pool, object, &player, &launch) == 0);
+        assert(player.player.body.motion.velocity_x ==
+            (left ? UINT32_C(0x18000) : UINT32_C(0xfffe8000)));
+        assert(player.player.body.animation.counter == 35);
+        tick();
+        assert(player.player.body.animation.counter == 34);
+        player.boundary_controls = left ? 8 : 4;
+        tick();
+        assert(!player.player.body.motion.velocity_x);
+        player.player.body.animation.counter = 0;
+        tick();
+        assert(player.player.handler == (left ? 0xc2cdU : 0xc8d5U));
+
+        setup(0);
+        player.player.body.node->pass_flags = left ? 8 : 0;
+        ENGINE_PLAYER_CALL tether = {0xf6cc, 0, 0};
+        player.tether_target = (RENDER_OWNER){180, 140};
+        player.flags |= 4;
+        assert(engine_player_begin_action(&pool, object, &player, &tether) == 0);
+        assert(player.player.body.owner.x == 160 && player.player.body.owner.y == 160);
+        for (unsigned int i = 0; i < 5; ++i) tick();
+        assert(player.player.body.owner.x == 176 && player.player.body.owner.y == 144);
+        player.flags &= 0xfffbU;
+        player.pressed = left ? 4 : 8;
+        player.player.body.motion.velocity_y = 0;
+        supported = 0;
+        /* Tether release resumes the existing stream, not the operand's script. */
+        assert(animation_program_initialize(&player.player.body.animation, animation_movement_data,
+            ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, 0x6116,
+            animation_movement_data, ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE) == 0);
+        tick();
+        assert(player.player.handler == (left ? 0xae53U : 0xaa97U));
+    }
+    setup(1);
+    player.contact_source = &source;
+    touching = 1;
+    ENGINE_PLAYER_CALL hold = {0xf3fb, 0, 0};
+    assert(engine_player_begin_action(&pool, object, &player, &hold) == 0);
+    assert(player.player.handler == 0xf3fbU && player.player.body.animation.state == 1);
+    player.player_flags |= 1;
+    tick();
+    assert(player.player.handler == 0xf2b1U && !(player.player_flags & 1));
+    setup(1);
+    player.contact_source = &source;
+    assert(engine_player_begin_action(&pool, object, &player, &hold) == 0);
+    assert(contact_queries == 2 && player.player.handler == 0xc8d5U);
+    setup(0);
     player.damage_source = 0;
     assert(engine_player_damage(&pool, object, &player) == -1 && !sounds);
     player.sound = 0;
     ENGINE_PLAYER_CALL call = {0xec69, 0x61fe, 0};
     assert(engine_player_begin_action(&pool, object, &player, &call) == -1);
     puts("PASS: original roar pulse/timing/direction, damage masks/health, both recoil paths, "
-        "adult form-bit asymmetry, stun, passive animation, slides and airborne slope return");
+        "adult form-bit asymmetry, stun, slides, contact rebound, thrown launch, "
+        "tether/release and adult contact escape");
     return 0;
 }

@@ -1061,7 +1061,8 @@ static int player_action_handler(unsigned int handler)
 {
     return handler == 0xec69U || handler == 0xee35U || handler == 0xee60U ||
         handler == 0xf017U || handler == 0xf160U || handler == 0xf80dU ||
-        handler == 0xfe3cU || handler == 0xff83U;
+        handler == 0xfe3cU || handler == 0xff83U || handler == 0xf2b1U ||
+        handler == 0xf3fbU || handler == 0xf6ccU;
 }
 
 static int player_terrain_fall(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
@@ -1078,6 +1079,91 @@ static int step_player_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_DEFLECTION *player = &state->player;
     ENGINE_FALLING_OBJECT *body = &player->body;
     unsigned int handler = player->handler;
+    if (handler == 0xf6ccU) {
+        int dx = (int)body->owner.x - state->tether_target.x;
+        if (dx < -4) body->owner.x = player_word((unsigned short)body->owner.x + 4U);
+        dx = (int)body->owner.x - state->tether_target.x;
+        if (dx > 4) body->owner.x = player_word((unsigned short)body->owner.x - 4U);
+        int dy = (int)body->owner.y - state->tether_target.y;
+        if (dy < -4) body->owner.y = player_word((unsigned short)body->owner.y + 4U);
+        dy = (int)body->owner.y - state->tether_target.y;
+        if (dy > 4) body->owner.y = player_word((unsigned short)body->owner.y - 4U);
+        if (state->flags & 4) {
+            return 0;
+        }
+        /* 0x1f6cc installs air before calling it: no script/facing reinitialization. */
+        player->handler = body->node->pass_flags & 8 ? 0xae53U : 0xaa97U;
+        body->animation.counter = 0;
+        return player_ground_fall(pool, object, state, player->handler == 0xaa97U);
+    }
+    if (handler == 0xf2b1U || handler == 0xf3fbU) {
+        if (!player->immunity && (player->flags_high & 4)) {
+            return engine_player_damage(pool, object, state);
+        }
+        int left = (body->node->pass_flags & 8) != 0;
+        if (handler == 0xf2b1U) {
+            if (state->boundary_controls & (left ? 8 : 4)) {
+                body->motion.velocity_x = 0;
+            }
+            if (player_word(body->animation.counter) < 26) {
+                if (!body->animation.counter) {
+                    return player_ground_call(pool, object, state, left ? 0xc2cdU : 0xc8d5U,
+                        player->form ? 0x5856U : 0x5f84U);
+                }
+                short grounded;
+                if (player_supported_gravity(state, &grounded) != 0 ||
+                    engine_motion_x(&body->motion, &body->owner) != 0) {
+                    return -1;
+                }
+            }
+            if (player_ground_animation(state) != 0) {
+                return -1;
+            }
+            --body->animation.counter;
+            return 0;
+        }
+        body->animation.state = (body->animation.state + 1) & 0xffffU;
+        if (player_word(body->animation.state) != 70) {
+            if (state->pressed & 0x10) {
+                ++body->animation.counter;
+            }
+            short touching = 0;
+            if (state->contact_source) {
+                if (!state->contact || state->contact(player->context, &touching) != 0) {
+                    return -1;
+                }
+                if (touching) {
+                    if (!(state->player_flags & 1)) {
+                        short grounded;
+                        if (player_supported_gravity(state, &grounded) != 0) return -1;
+                        return player_ground_animation(state);
+                    }
+                    player->flags_high &= 0xcf;
+                    state->player_flags &= 0xfffeU;
+                    ENGINE_PLAYER_CALL launch = {0xf2b1, 0, 0};
+                    return engine_player_begin_action(pool, object, state, &launch);
+                }
+                /* Original calls the overlap query twice if the first one misses. */
+                if (!left && state->contact(player->context, &touching) != 0) {
+                    return -1;
+                }
+                if (!left && touching) {
+                    if (!(state->player_flags & 1)) {
+                        short grounded;
+                        if (player_supported_gravity(state, &grounded) != 0) return -1;
+                        return player_ground_animation(state);
+                    }
+                    player->flags_high &= 0xcf;
+                    state->player_flags &= 0xfffeU;
+                    ENGINE_PLAYER_CALL launch = {0xf2b1, 0, 0};
+                    return engine_player_begin_action(pool, object, state, &launch);
+                }
+            }
+        }
+        player->flags_high &= 0xcf;
+        return player_ground_call(pool, object, state, left ? 0xc2cdU : 0xc8d5U,
+            player->form ? 0x5856U : 0x5f84U);
+    }
     if (handler == 0xf80dU || handler == 0xfe3cU || handler == 0xff83U) {
         if (!player->immunity && (player->flags_high & 4)) {
             return engine_player_damage(pool, object, state);
@@ -1219,7 +1305,8 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
         !state->player.collision_flags || !state->sound ||
         !call || (call->handler != 0xec69U && call->handler != 0xee35U &&
-            call->handler != 0xee60U && call->handler != 0xf017U && call->handler != 0xf160U)) {
+            call->handler != 0xee60U && call->handler != 0xf017U && call->handler != 0xf160U &&
+            call->handler != 0xf2b1U && call->handler != 0xf3fbU && call->handler != 0xf6ccU)) {
         return -1;
     }
     ENGINE_PLAYER_DEFLECTION *player = &state->player;
@@ -1229,13 +1316,32 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     if (player->handler == call->handler) {
         return step_player_action(pool, object, state);
     }
+    if (call->handler == 0xf6ccU) {
+        player->handler = call->handler;
+        return 0;
+    }
     unsigned int script = call->handler == 0xec69U ? call->script :
         call->handler == 0xee35U ? 0x5ff2U : call->handler == 0xee60U ? 0x589cU :
+        call->handler == 0xf3fbU ? 0x58b8U :
         player->form ? 0x5864U : 0x621aU;
     if (player_air_script(player, script) != 0) {
         return -1;
     }
     player->handler = call->handler;
+    if (call->handler == 0xf3fbU) {
+        body->motion.velocity_y = 0;
+        body->animation.state = body->animation.counter = 0;
+        state->player_flags &= 0xfffeU;
+        /* 0x1510d is also an original RET. Initialization continues into the update. */
+        return step_player_action(pool, object, state);
+    }
+    if (call->handler == 0xf2b1U) {
+        body->motion.velocity_x = body->node->pass_flags & 8 ?
+            UINT32_C(0x18000) : UINT32_C(0xfffe8000);
+        body->motion.velocity_y = UINT32_C(0xfffb8000);
+        body->animation.counter = 35;
+        return 0;
+    }
     if (call->handler == 0xec69U) {
         player->age = 0;
         body->animation.counter = call->counter;
@@ -1255,6 +1361,30 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     body->motion.velocity_x = call->handler == 0xf017U ? UINT32_C(0x10000) :
         UINT32_C(0xffff0000);
     return 0;
+}
+
+int engine_player_rebound(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int handler)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->sound || !state->player.collision_flags ||
+        (handler != 0xf5f1U && handler != 0xf618U && handler != 0xf672U)) {
+        return -1;
+    }
+    if (handler == 0xf5f1U) {
+        if (state->sound(state->player.context, 0) != 0) {
+            return -1;
+        }
+        handler = state->player.body.node->pass_flags & 8 ? 0xf672U : 0xf618U;
+    }
+    ENGINE_FALLING_OBJECT *body = &state->player.body;
+    state->player.handler = 0xf618U;
+    body->motion.velocity_y = handler == 0xf618U ? UINT32_C(0xfffb8000) : UINT32_C(0xfffc0000);
+    body->motion.velocity_x = 0;
+    state->player.flags_high &= 0xdf;
+    ENGINE_PLAYER_CALL air = {handler == 0xf618U ? 0xaa97U : 0xae53U,
+        state->player.form ? 0x58b8U : 0x6228U, 0};
+    return engine_player_begin_air(pool, object, state, &air);
 }
 
 int engine_player_begin_terrain(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,

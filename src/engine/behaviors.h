@@ -101,6 +101,7 @@ typedef int (*ENGINE_PLAYER_AIR_TRANSITION)(void *context,
     const ENGINE_PLAYER_CALL *call, short kind, short x, short y);
 typedef int (*ENGINE_PLAYER_SOUND)(void *context, unsigned short sample);
 typedef int (*ENGINE_PLAYER_SUPPORT)(void *context, short *supported);
+typedef int (*ENGINE_PLAYER_CONTACT)(void *context, short *touching);
 
 typedef struct {
     ENGINE_PLAYER_DEFLECTION player;
@@ -123,6 +124,9 @@ typedef struct {
     unsigned short roar_pulse;
     short health;
     const RENDER_OWNER *damage_source;
+    RENDER_OWNER tether_target;
+    const RENDER_OWNER *contact_source;
+    ENGINE_PLAYER_CONTACT contact;
     ENGINE_PLAYER_GROUND ground;
     ENGINE_PLAYER_SUPPORT support;
     ENGINE_PLAYER_EDGE edge;
@@ -152,6 +156,8 @@ int engine_player_damage(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state);
 int engine_player_begin_terrain(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, unsigned int handler, short side, uint32_t velocity);
+int engine_player_rebound(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int handler);
 
 typedef struct {
     ENGINE_FALLING_OBJECT body;
