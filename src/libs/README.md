@@ -1,30 +1,5 @@
 # Wyodrębnione grupy bibliotek
 
-## Import biblioteki OPL
-
-Katalog [`opl/`](./opl/) zawiera niezmienioną kopię biblioteki z
-`/home/rafles/Desktop/HEXEN-DOS64/src/dos64`:
-
-- [`dos64_opl_core.c`](./opl/dos64_opl_core.c) emuluje OPL2/OPL3, przyjmuje
-  zapisy rejestrów i generuje signed 16-bit stereo PCM.
-- [`dos64_opl.c`](./opl/dos64_opl.c) zawiera sterownik instrumentów
-  MUS/GENMIDI z projektu HEXEN; korzysta z zewnętrznej funkcji `I_Error`.
-- [`dos64_opl.h`](./opl/dos64_opl.h) udostępnia interfejs obu części.
-- [`opl/dosbox/`](./opl/opl/dosbox/) zawiera emulator DOSBox-X, nagłówek
-  zgodności, informacje o pochodzeniu i licencje LGPL-2.1-or-later/GPL.
-
-Zachowano względny układ plików źródła, dlatego podkatalog `opl/dosbox`
-znajduje się wewnątrz importowanego katalogu `opl`. Emulator jest dołączany
-przez `dos64_opl_core.c`; nie należy osobno kompilować `opl/dosbox/opl.c`.
-Wskazówki budowania w importowanym `UPSTREAM.txt` dotyczą projektu źródłowego.
-
-Import nie jest jeszcze podłączony do budowania ani odtwarzania Lion King.
-Sam rdzeń nie wymaga banku instrumentów HEXEN, ale pełny sterownik wymaga
-GENMIDI i obsługi `I_Error`. Nie skopiowano zasobów gry ani banku GENMIDI.
-To osobna biblioteka natywna, nie część 753 zachowanych funkcji pseudokodu.
-
-## Pseudokod oryginalnych bibliotek
-
 Pliki `.c` w tym katalogu zawierają ciała funkcji skopiowane z pseudokodu `../../pseiudo.c.backup`. To materiał do analizy, nie kod źródłowy gotowy do kompilacji. Każda funkcja ma komentarz z numerem linii źródłowej i adresem po normalizacji o `+0x10000`.
 
 [`pseiudo.c.backup`](../../pseiudo.c.backup) to niezmieniony oryginał. Główny [`pseiudo.c`](../pseiudo.c) jest kopią modularną: dołącza pliki z tego katalogu przez `#include`, a funkcje przeniesione do bibliotek pomija w treści głównej. Nadal jest to pseudokod i nie stanowi kompilowalnego programu.
