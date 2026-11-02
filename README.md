@@ -810,7 +810,12 @@ The default build/run workflow always uses a fresh temporary image.
 Image creation requires mtools, dosfstools and util-linux. Running requires
 QEMU and OVMF; default firmware is `/usr/share/OVMF/OVMF_CODE.fd`.
 Set `OVMF_PATH` or `QEMU_DISPLAY=none` as needed. The bundled launcher uses TCG
-and silent audio, so it is not an audio-playback validation environment.
+and Intel HDA with PulseAudio output (also usable with PipeWire's PulseAudio
+server). The previous `none` backend discarded sound even when the game
+successfully submitted audio. Restart QEMU after updating the launcher.
+Set `QEMU_AUDIO_DRIVER=alsa` for direct ALSA output, or
+`QEMU_AUDIO_DRIVER=none` only for intentionally silent tests.
+Run `LIONKING.EXE --map` in DOS64 to hear LEVEL1 music; other previews are silent.
 
 ### Visible original emitter scene
 
