@@ -1011,6 +1011,12 @@ preview connects ten more original handlers:
 | Left/right crouching | `0x1b9ca`, `0x1bc80` |
 | Right/left rolling | `0x1ea46`, `0x1eb56` |
 
+All preview modes write diagnostics to `LIONKING.LOG` in the working
+directory, replacing the previous run's log. They do not render console
+text over the game. The file is closed on exit, including error exits.
+If logging fails, the preview stops and reports the failure after rendering
+has ended.
+
 The original ground reset `0x1c28e` and existing capped acceleration helper
 complete this block. Running accelerates by `+/-0x4000`, preserves signed
 `+/-0x20000` minimum and `+/-0x40000` maximum, turns through the original

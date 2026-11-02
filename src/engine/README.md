@@ -389,6 +389,10 @@ nie ma już atrapowej pauzy ani zerowania pędu przez podgląd. Fixture
 pozostały tylko płaska ziemia Y=160, sondy, wejście demo i polityka
 śledzenia X przez kamerę. Rzeczywiste kolizje mapy i specjalne stany
 nie zostały podmienione fikcyjnym poziomem.
+Diagnostyka wszystkich podglądów trafia do `LIONKING.LOG` w bieżącym
+katalogu, nadpisywanego przy starcie. Podczas gry nie jest renderowany
+tekst konsoli. Błąd zapisu kończy podgląd; komunikat konsoli pojawia się
+dopiero po zatrzymaniu renderowania.
 [check_player_ground.c](../../tools/check_player_ground.c) sprawdza
 bezpośrednio przeniesione gałęzie i trajektorie; domyślny
 [check_scene.c](../../tools/check_scene.c) sprawdza spięty blok.

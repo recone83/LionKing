@@ -77,7 +77,7 @@ static void load_reference_bank(unsigned int index)
     seen_banks |= 1U << index;
 }
 
-static void __attribute__((ms_abi)) write_text(const char *text)
+static void record_log(const char *text)
 {
     if (strstr(text, "Idle script event recorded;")) {
         ++logged_events;
@@ -86,12 +86,40 @@ static void __attribute__((ms_abi)) write_text(const char *text)
         ++failures;
     }
 }
+static int preview_started;
+static FILE *log_file;
+static void __attribute__((ms_abi)) write_text(const char *text)
+{
+    if (!preview_started) {
+        record_log(text);
+        return;
+    }
+    fputs(text, stderr);
+    assert(!"preview must not render console text");
+}
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
 {
+    if (strcmp(path, "LIONKING.LOG") == 0) {
+        assert(strcmp(mode, "w") == 0 && !log_file);
+        log_file = tmpfile();
+        assert(log_file);
+        return log_file;
+    }
     assert(strcmp(path, "LIONKING.EPF") == 0);
     return fopen("data/LIONKING.EPF", mode);
 }
-static int __attribute__((ms_abi)) close_file(void *file) { return fclose(file); }
+static int __attribute__((ms_abi)) close_file(void *file)
+{
+    if (file == log_file) log_file = 0;
+    return fclose(file);
+}
+static unsigned long long __attribute__((ms_abi)) write_file(const void *buffer,
+    unsigned long long size, unsigned long long count, void *file)
+{
+    assert(file == log_file && size == 1);
+    record_log(buffer);
+    return fwrite(buffer, (size_t)size, (size_t)count, file);
+}
 static int __attribute__((ms_abi)) seek_file(void *file, long long offset, int whence)
 {
     return fseek(file, (long)offset, whence);
@@ -327,6 +355,7 @@ int main(int argc, char **argv)
     api.DrawImage = draw_image;
     api.Fs.Open = open_file; api.Fs.Close = close_file;
     api.Fs.Read = read_file; api.Fs.Seek = seek_file; api.Fs.Tell = tell_file;
+    api.Fs.Write = write_file;
     FILE *dump = fopen("bin/obj2_data.bin", "rb");
     assert(dump && fseek(dump, ANIMATION_IDLE_BASE, SEEK_SET) == 0);
     assert(fread(original_idle, 1, sizeof(original_idle), dump) == sizeof(original_idle));
@@ -344,7 +373,9 @@ int main(int argc, char **argv)
         sizeof(sprite), &dictionary, &invalid_slot, &invalid_loaded) == -1);
     assert(failures == 1 && invalid_slot == 999 && invalid_loaded == 999);
     failures = 0;
+    preview_started = 1;
     assert(start(&api) == 0);
+    assert(!log_file);
     if (automatic_test) {
         assert(iteration == 202 && shown == 201 && failures == 0);
         assert(default_frame_changes >= 15 && expected_updates >= 100);

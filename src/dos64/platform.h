@@ -7,6 +7,7 @@
 #define LK_HEIGHT 200U
 
 int lk_platform_init(const DOS64_API *api);
+int lk_platform_finish(int result);
 void lk_platform_poll(void);
 int lk_platform_exit_requested(void);
 unsigned long long lk_platform_time_ns(void);

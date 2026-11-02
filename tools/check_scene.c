@@ -59,7 +59,7 @@ static unsigned int direction_changes;
 static unsigned int variant_frames[8];
 static unsigned char player_collision_flags, flip_sprites[ASSETS_YOUNG_BANK_COUNT][32768];
 static RENDER_OWNER previous_player_position;
-static void __attribute__((ms_abi)) log_text(const char *text)
+static void record_log(const char *text)
 {
     if (strstr(text, "failed") || strstr(text, "invalid") || strstr(text, "cannot")) {
         fputs(text, stderr);
@@ -84,12 +84,35 @@ static void __attribute__((ms_abi)) log_text(const char *text)
     if (strstr(text, "Original player ground handler selected")) ++ground_logs;
     if (strstr(text, "Original running/standing jump selected")) ++ground_jump_logs;
 }
+static void __attribute__((ms_abi)) log_text(const char *text)
+{
+    fputs(text, stderr);
+    assert(!"preview must not render console text");
+}
+static FILE *log_file;
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
 {
+    if (strcmp(path, "LIONKING.LOG") == 0) {
+        assert(strcmp(mode, "w") == 0 && !log_file);
+        log_file = tmpfile();
+        assert(log_file);
+        return log_file;
+    }
     assert(strcmp(path, "LIONKING.EPF") == 0);
     return fopen("data/LIONKING.EPF", mode);
 }
-static int __attribute__((ms_abi)) close_file(void *file) { return fclose(file); }
+static int __attribute__((ms_abi)) close_file(void *file)
+{
+    if (file == log_file) log_file = 0;
+    return fclose(file);
+}
+static unsigned long long __attribute__((ms_abi)) write_file(const void *buffer,
+    unsigned long long size, unsigned long long count, void *file)
+{
+    assert(file == log_file && size == 1);
+    record_log(buffer);
+    return fwrite(buffer, (size_t)size, (size_t)count, file);
+}
 static int __attribute__((ms_abi)) seek_file(void *file, long long offset, int whence)
 { return fseek(file, (long)offset, whence); }
 static long long __attribute__((ms_abi)) tell_file(void *file) { return ftell(file); }
@@ -477,7 +500,7 @@ int main(int argc, char **argv)
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
     api.Gfx.SelectLayer = select_layer; api.Gfx.Present = present; api.DrawImage = draw;
     api.Fs.Open = open_file; api.Fs.Close = close_file; api.Fs.Seek = seek_file;
-    api.Fs.Tell = tell_file; api.Fs.Read = read_file;
+    api.Fs.Tell = tell_file; api.Fs.Read = read_file; api.Fs.Write = write_file;
     assert(resources_load_entry(&api, "LIONKING.EPF",
         (deflection_test || flight_test) ? "LEVEL1.MAP" : "LEVEL6.MAP", packed,
         sizeof(packed), map, sizeof(map), &dictionary, &map_size) == 0);

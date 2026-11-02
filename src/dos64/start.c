@@ -26,6 +26,13 @@ static unsigned char player_sprites[ASSETS_YOUNG_BANK_COUNT][32768];
 static ENGINE_OBJECT_POOL scene_objects;
 static ENGINE_EMITTER_GROUP scene_emitters;
 static int scene_failed;
+/* Resource errors use the file logger; input keeps the live runtime table. */
+static DOS64_API resource_api;
+
+static void __attribute__((ms_abi)) log_resource_message(const char *text)
+{
+    lk_platform_log(text);
+}
 
 static void update_scene(void *context)
 {
@@ -442,7 +449,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
 {
     int flight = mode != 0;
     unsigned int map_size;
-    if (resources_load_entry(api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
+    if (resources_load_entry(&resource_api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
         map, sizeof(map), &dictionary, &map_size) != 0 ||
         vga_load_palette(map, map_size, palette) != 0) {
         lk_platform_log("Lion King: cannot load player reaction preview map.\n");
@@ -453,7 +460,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     for (unsigned int i = 0; i < count; ++i) {
         unsigned int slot, loaded;
         unsigned int index = flight ? i : 5 + i;
-        if (assets_load_named_bank(api, "LIONKING.EPF", assets_young_bank_list,
+        if (assets_load_named_bank(&resource_api, "LIONKING.EPF", assets_young_bank_list,
             sizeof(assets_young_bank_list), index, packed, sizeof(packed),
             player_sprites[i], sizeof(player_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
             slot != 6 + index) {
@@ -591,10 +598,10 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
 static int run_emitter_scene(const DOS64_API *api)
 {
     unsigned int map_size, loaded, slot;
-    if (resources_load_entry(api, "LIONKING.EPF", "LEVEL6.MAP", packed, sizeof(packed),
+    if (resources_load_entry(&resource_api, "LIONKING.EPF", "LEVEL6.MAP", packed, sizeof(packed),
         map, sizeof(map), &dictionary, &map_size) != 0 ||
         vga_load_palette(map, map_size, palette) != 0 ||
-        assets_load_named_bank(api, "LIONKING.EPF", animation_level6_bank_list,
+        assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_level6_bank_list,
             sizeof(animation_level6_bank_list), 0, packed, sizeof(packed),
             sprite, sizeof(sprite), &dictionary, &slot, &loaded) != 0) {
         lk_platform_log("Lion King: cannot load original emitter scene assets.\n");
@@ -691,11 +698,8 @@ static int run_emitter_scene(const DOS64_API *api)
     return 0;
 }
 
-int __attribute__((ms_abi)) start(const DOS64_API *api)
+static int run_preview(const DOS64_API *api)
 {
-    if (lk_platform_init(api) != 0) {
-        return 1;
-    }
     if (!api->Arguments) {
         lk_platform_log("Lion King: missing runtime argument string.\n");
         return 1;
@@ -718,12 +722,12 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
         return run_deflection_preview(api, 3);
     }
     LK_EPF_INFO archive;
-    if (resources_open_archive(api, "LIONKING.EPF", &archive) != 0) {
+    if (resources_open_archive(&resource_api, "LIONKING.EPF", &archive) != 0) {
         return 1;
     }
     lk_platform_log("Lion King: EPF index and payload bounds verified.\n");
     unsigned int loaded;
-    if (resources_load_entry(api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
+    if (resources_load_entry(&resource_api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
         map, sizeof(map), &dictionary, &loaded) != 0) {
         return 1;
     }
@@ -739,7 +743,7 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     unsigned char part[20] = {1, 0};
     RENDER_SPRITE_BANK banks[34] = {0};
     unsigned int bank_index = ASSETS_YOUNG_IDLE_INDEX, frames;
-    if (load_preview_bank(api, bank_index, banks, part, &frames) != 0) {
+    if (load_preview_bank(&resource_api, bank_index, banks, part, &frames) != 0) {
         return 1;
     }
     render_initialize_nodes(&render_pool);
@@ -755,7 +759,7 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     animation.node = node;
     animation.owner = &owner;
     if (!argument_requested(api->Arguments, "--manual") &&
-        start_idle_preview(api, banks, &animation) != 0) {
+        start_idle_preview(&resource_api, banks, &animation) != 0) {
         return 1;
     }
     lk_platform_log("Lion King DOS64 interactive asset test; not gameplay.\n"
@@ -790,12 +794,12 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
         }
         if (api->Input.KeyPressed[0x04]) {
             if (!animation.enabled) {
-                if (start_idle_preview(api, banks, &animation) != 0) {
+                if (start_idle_preview(&resource_api, banks, &animation) != 0) {
                     return 1;
                 }
             } else {
                 animation.enabled = 0;
-                if (load_preview_bank(api, bank_index, banks, part, &frames) != 0) {
+                if (load_preview_bank(&resource_api, bank_index, banks, part, &frames) != 0) {
                     return 1;
                 }
                 node->parts = part;
@@ -812,7 +816,7 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
             selected_bank = (selected_bank + 1) % ASSETS_YOUNG_BANK_COUNT;
         }
         if (selected_bank != bank_index) {
-            if (load_preview_bank(api, selected_bank, banks, part, &frames) != 0) {
+            if (load_preview_bank(&resource_api, selected_bank, banks, part, &frames) != 0) {
                 return 1;
             }
             bank_index = selected_bank;
@@ -835,7 +839,7 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
         if (input.pressed & 0x20) {
             if (animation.enabled) {
                 animation.enabled = 0;
-                if (load_preview_bank(api, bank_index, banks, part, &frames) != 0) {
+                if (load_preview_bank(&resource_api, bank_index, banks, part, &frames) != 0) {
                     return 1;
                 }
                 node->parts = part;
@@ -891,4 +895,14 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     }
     lk_platform_log("Lion King DOS64 platform test finished.\n");
     return 0;
+}
+
+int __attribute__((ms_abi)) start(const DOS64_API *api)
+{
+    if (lk_platform_init(api) != 0) {
+        return 1;
+    }
+    resource_api = *api;
+    resource_api.Write = log_resource_message;
+    return lk_platform_finish(run_preview(api));
 }
