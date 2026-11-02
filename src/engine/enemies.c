@@ -66,30 +66,34 @@ static int supported_gravity(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 
 static int walking(ENGINE_LIZARD *lizard)
 {
-    lizard->handler = lizard->marker_type == 10 ? 0x1181c : 0x1127e;
-    lizard->body.motion.velocity_y = 0;
+    int beetle = lizard->marker_type == 11;
+    lizard->handler = beetle ? 0x11e65 : lizard->marker_type == 10 ? 0x1181c : 0x1127e;
+    if (!beetle) lizard->body.motion.velocity_y = 0;
     lizard->timer = 100;
     lizard->pause = 0;
-    if (script(lizard, lizard->marker_type == 10 ? 0x13fef : 0x13ae0) != 0) return -1;
+    if (script(lizard, beetle ? 0x13ee4 :
+        lizard->marker_type == 10 ? 0x13fef : 0x13ae0) != 0) return -1;
     return animate(lizard);
 }
 
 static int turn(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard, int pause)
 {
     int porcupine = lizard->marker_type == 10;
-    uint32_t speed = porcupine ? 0xa000 : 0x8000;
+    int beetle = lizard->marker_type == 11;
+    uint32_t speed = beetle ? 0x10000 : porcupine ? 0xa000 : 0x8000;
     lizard->facing ^= 1;
     lizard->body.motion.velocity_x = lizard->facing ? 0U - speed : speed;
     lizard->body.node->pass_flags = (unsigned char)(
         (lizard->body.node->pass_flags & 0xf7) | (lizard->facing ? 8 : 0));
-    lizard->handler = porcupine ? 0x1181c : 0x1127e;
+    lizard->handler = beetle ? 0x11e65 : porcupine ? 0x1181c : 0x1127e;
     if (!porcupine) {
         lizard->timer = pause ? 100 : 30;
         lizard->pause = pause ? 20 : 0;
     }
     ++enemies->turns;
-    if (script(lizard, porcupine ? 0x13fe1 : 0x13ad2) != 0) return -1;
-    return porcupine ? animate(lizard) : 0;
+    if (script(lizard, beetle ? 0x13ef2 : porcupine ? 0x13fe1 : 0x13ad2) != 0)
+        return -1;
+    return porcupine || beetle ? animate(lizard) : 0;
 }
 
 static int dying(ENGINE_LIZARD *lizard)
@@ -294,8 +298,138 @@ static int update_porcupine(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
     return animate(enemy);
 }
 
+static int beetle_depart(ENGINE_LIZARD *enemy, int terminal, int roar)
+{
+    enemy->handler = 0x12064;
+    enemy->terminal = (unsigned char)terminal;
+    enemy->timer = roar ? 28 : 70;
+    enemy->pause = roar ? 0 : 30;
+    if (!roar) {
+        enemy->target = enemy->body.owner;
+        enemy->target.y = signed_word((unsigned short)enemy->target.y - 8U);
+        enemy->body.motion.velocity_x = 0x30000;
+        enemy->body.motion.velocity_y = UINT32_C(0xffff0000);
+    }
+    return script(enemy, roar ? 0x13f50 : 0x13f42);
+}
+
+static int beetle_roar(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
+{
+    int dx = enemy->body.owner.x - enemies->player->player.body.owner.x;
+    int dy = enemy->body.owner.y - enemies->player->player.body.owner.y;
+    int distance = dx < 0 ? -dx : dx;
+    int vertical = dy < 0 ? -dy : dy;
+    if (vertical > distance) distance = vertical;
+    int pulse = enemies->player->roar_pulse;
+    if (distance > 50) pulse -= (distance - 50) >> 3;
+    if (pulse > 10) {
+        ++enemies->stuns;
+        return beetle_depart(enemy, 1, 1);
+    }
+    return 0;
+}
+
+static int beetle_contact(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    player->damage_source = player->contact_source = &enemy->body.owner;
+    ++enemies->contacts;
+    if (!(player->player.flags_high & 0x18)) {
+        player->player.flags_high |= 4;
+        return 0;
+    }
+    if (!(player->player.flags_high & 8)) player->player.flags_high |= 0x20;
+    return beetle_depart(enemy, 1, 0);
+}
+
+static int update_beetle(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
+{
+    short hit;
+    if (enemy->handler == 0x12064) {
+        if (enemy->pause) {
+            --enemy->pause;
+            return animate(enemy);
+        }
+        if (enemy->timer <= 28) {
+            if (render_objects_hit(enemy->body.node,
+                enemies->player->player.body.node, &hit) != 0) return -1;
+            if (hit) {
+                enemies->player->damage_source = &enemy->body.owner;
+                enemies->player->player.flags_high |= 4;
+                ++enemies->contacts;
+            }
+            if (!enemy->terminal) enemy->timer = 0;
+            if (enemy->timer == 28 && (!enemies->player->sound ||
+                enemies->player->sound(enemies->player->player.context, 16) != 0)) return -1;
+            if (!enemy->timer) {
+                if (enemy->terminal) return remove_lizard(enemies, enemy, 1);
+                enemy->body.motion.velocity_x = enemy->facing ? 0U - 0x10000U : 0x10000;
+                enemy->body.motion.velocity_y = UINT32_C(0xfffe0000);
+                return walking(enemy);
+            }
+            enemy->cell_x = 0;
+        } else {
+            if (engine_motion_x(&enemy->body.motion, &enemy->body.owner) != 0 ||
+                engine_motion_y(&enemy->body.motion, &enemy->body.owner) != 0) return -1;
+            short dx = signed_word((unsigned short)enemy->target.x -
+                (unsigned short)enemy->body.owner.x);
+            short dy = signed_word((unsigned short)enemy->target.y -
+                (unsigned short)enemy->body.owner.y);
+            enemy->body.motion.velocity_x += (uint32_t)(int32_t)dx * 0x1000U;
+            enemy->body.motion.velocity_y += (uint32_t)(int32_t)dy * 0x800U;
+        }
+        if (animate(enemy) != 0) return -1;
+        --enemy->timer;
+        return 0;
+    }
+    if (enemy->handler == 0x11a51) {
+        if (enemies->player->roar_pulse && beetle_roar(enemies, enemy) != 0) return -1;
+        if (enemy->handler != 0x11a51) return 0;
+        if (render_objects_hit(enemy->body.node,
+            enemies->player->player.body.node, &hit) != 0) return -1;
+        if (hit) return beetle_contact(enemies, enemy);
+        if (engine_motion_brake_x(&enemy->body.motion,
+            enemy->facing ? 0U - 0xf00U : 0xf00) != 0) return -1;
+        if (enemy->timer) {
+            --enemy->timer;
+            if (engine_motion_x(&enemy->body.motion, &enemy->body.owner) != 0 ||
+                supported_gravity(enemies, enemy) != 0) return -1;
+            return animate(enemy);
+        }
+        enemy->body.motion.velocity_x = enemy->saved_velocity;
+        return enemy->turn_after_jump ? turn(enemies, enemy, 0) : walking(enemy);
+    }
+    if (enemy->handler != 0x11e65) return -1;
+    if (enemies->player->roar_pulse) return beetle_roar(enemies, enemy);
+    if (render_objects_hit(enemy->body.node,
+        enemies->player->player.body.node, &hit) != 0) return -1;
+    if (hit) return beetle_contact(enemies, enemy);
+    short cell = signed_word((unsigned short)enemy->body.owner.x >> 4);
+    int changed = cell != enemy->cell_x;
+    enemy->cell_x = cell;
+    for (unsigned int side = 0; side < 4; ++side) {
+        int level = obstacle_level(enemy->kind, side);
+        if (!level) continue;
+        unsigned int value = level == 5 ? 255 : random_byte(enemies);
+        if (!changed || (level != 5 && value <= (unsigned int)(255 - level * 51))) continue;
+        if (side >= 2) return beetle_depart(enemy, side == 3, 0);
+        enemy->handler = 0x11a51;
+        enemy->timer = side ? 30 : 120;
+        enemy->turn_after_jump = (unsigned char)side;
+        enemy->saved_velocity = enemy->body.motion.velocity_x;
+        ++enemies->jumps;
+        if (script(enemy, 0x13f29) != 0) return -1;
+        return animate(enemy);
+    }
+    if (blocked(enemy->kind, enemy->facing)) return turn(enemies, enemy, 0);
+    if (engine_motion_x(&enemy->body.motion, &enemy->body.owner) != 0 ||
+        supported_gravity(enemies, enemy) != 0) return -1;
+    return animate(enemy);
+}
+
 static int update_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 {
+    if (lizard->marker_type == 11) return update_beetle(enemies, lizard);
     if (lizard->marker_type == 10) return update_porcupine(enemies, lizard);
     if (lizard->handler == 0x11609) {
         if (!lizard->timer) return remove_lizard(enemies, lizard, 1);
@@ -384,6 +518,68 @@ static int update_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
     return animate(lizard);
 }
 
+static int leaf_spawn(ENGINE_ENEMIES *enemies, RENDER_OWNER position)
+{
+    ENGINE_LEAF *leaf = 0;
+    for (unsigned int i = 0; i < 32; ++i)
+        if (!enemies->leaves[i].object) { leaf = &enemies->leaves[i]; break; }
+    if (!leaf) return -1;
+    leaf->body.owner = position;
+    leaf->body.motion = (ENGINE_MOTION){0};
+    leaf->body.motion.velocity_x = (random_byte(enemies) << 9) - 0x14000U;
+    leaf->body.motion.velocity_y = 0U - 0x10000U - (random_byte(enemies) << 8);
+    leaf->body.node = render_acquire_node(enemies->renders, &leaf->body.owner,
+        0, 0, animation_enemy_data + 0xaa68 - ANIMATION_ENEMY_BASE, 20);
+    if (!leaf->body.node) return -1;
+    leaf->body.node->flags |= 0x40;
+    leaf->object = engine_acquire_object(enemies->objects, 0);
+    if (!leaf->object) {
+        if (render_release_node(enemies->renders, leaf->body.node) != 0) return -1;
+        leaf->body.node = 0;
+        return -1;
+    }
+    if (animation_program_initialize(&leaf->body.animation, animation_enemy_data,
+        ANIMATION_ENEMY_SIZE, ANIMATION_ENEMY_BASE, 0x138c8, animation_enemy_data,
+        ANIMATION_ENEMY_SIZE, ANIMATION_ENEMY_BASE) != 0 ||
+        animation_program_step(&leaf->body.animation, leaf->body.node,
+            &leaf->body.owner, 0, 0) != 0) return -1;
+    leaf->body.animation.visual.position += (random_byte(enemies) >> 5) * 10;
+    if (animation_program_step(&leaf->body.animation, leaf->body.node,
+        &leaf->body.owner, 0, 0) != 0) return -1;
+    leaf->remaining = 100;
+    ++enemies->leaves_spawned;
+    return 0;
+}
+
+static int leaf_release(ENGINE_ENEMIES *enemies, ENGINE_LEAF *leaf)
+{
+    if (render_release_node(enemies->renders, leaf->body.node) != 0 ||
+        engine_release_object(enemies->objects, leaf->object) != 0) return -1;
+    leaf->body.node = 0;
+    leaf->object = 0;
+    return 0;
+}
+
+static int leaves_tick(ENGINE_ENEMIES *enemies)
+{
+    for (unsigned int i = 0; i < 32; ++i) {
+        ENGINE_LEAF *leaf = &enemies->leaves[i];
+        if (!leaf->object) continue;
+        if (!leaf->remaining) {
+            if (leaf_release(enemies, leaf) != 0) return -1;
+            continue;
+        }
+        --leaf->remaining;
+        leaf->body.motion.velocity_y = engine_add_velocity(
+            leaf->body.motion.velocity_y, 0x1000, 0);
+        if (engine_motion_y(&leaf->body.motion, &leaf->body.owner) != 0 ||
+            engine_motion_x(&leaf->body.motion, &leaf->body.owner) != 0 ||
+            animation_program_step(&leaf->body.animation, leaf->body.node,
+                &leaf->body.owner, 0, 0) != 0) return -1;
+    }
+    return 0;
+}
+
 int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objects,
     RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player)
 {
@@ -399,12 +595,14 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
             unsigned int type;
             RENDER_OWNER marker;
             if (engine_map_marker(map, col, row, &type, &marker) != 0) return -1;
-            if (type != 14 && type != 10) continue;
+            if (type != 14 && type != 10 && type != 11 && type != 9) continue;
             if (enemies->count == ENGINE_LIZARD_CAPACITY) return -1;
             ENGINE_LIZARD *enemy = &enemies->lizards[enemies->count++];
             enemy->marker_type = (unsigned char)type;
             if (type == 14) ++enemies->lizard_count;
-            else ++enemies->porcupine_count;
+            else if (type == 10) ++enemies->porcupine_count;
+            else if (type == 11) ++enemies->beetle_count;
+            else ++enemies->leaf_marker_count;
             enemy->marker = marker;
         }
     }
@@ -431,7 +629,11 @@ int engine_enemies_restart(ENGINE_ENEMIES *enemies)
         ENGINE_LIZARD *enemy = &enemies->lizards[i];
         if (enemy->object && remove_lizard(enemies, enemy, 0) != 0) return -1;
         enemy->destroyed = 0;
+        enemy->entered = 0;
     }
+    for (unsigned int i = 0; i < 32; ++i)
+        if (enemies->leaves[i].object && leaf_release(enemies, &enemies->leaves[i]) != 0)
+            return -1;
     return 0;
 }
 
@@ -440,13 +642,31 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
     if (!enemies || !enemies->objects || !enemies->renders || !enemies->map ||
         !enemies->player) return -1;
     enemies->player->player.flags_high &= 0xdb;
+    if (leaves_tick(enemies) != 0) return -1;
     for (unsigned int i = 0; i < enemies->count; ++i) {
         ENGINE_LIZARD *lizard = &enemies->lizards[i];
+        if (lizard->marker_type == 9) {
+            if (!engine_map_activation_window(lizard->marker, camera)) {
+                lizard->entered = 0;
+                continue;
+            }
+            int dx = enemies->player->player.body.owner.x - lizard->marker.x;
+            int dy = enemies->player->player.body.owner.y - lizard->marker.y;
+            int inside = dx >= 0 && dx < 128 && dy >= 0 && dy < 16;
+            if (inside && !lizard->entered) {
+                RENDER_OWNER origin = {enemies->player->player.body.owner.x, lizard->marker.y};
+                for (unsigned int j = 0; j < 3; ++j)
+                    if (leaf_spawn(enemies, origin) != 0) return -1;
+            }
+            lizard->entered = (unsigned char)inside;
+            continue;
+        }
         if (lizard->destroyed) continue;
         if (!lizard->object) {
             if (!engine_map_activation_window(lizard->marker, camera)) continue;
             lizard->body.owner = lizard->marker;
             lizard->body.motion = (ENGINE_MOTION){0, 0,
+                lizard->marker_type == 11 ? 0x10000 :
                 lizard->marker_type == 10 ? 0xa000 : 0x8000, 0};
             lizard->body.render_pool = enemies->renders;
             lizard->body.animation = (ANIMATION_PROGRAM){0};
@@ -465,10 +685,12 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
             if (walking(lizard) != 0) return -1;
             ++enemies->spawned;
         } else if ((lizard->handler == 0x1127e || lizard->handler == 0x11a51 ||
-            lizard->marker_type == 10) &&
+            lizard->marker_type == 10 || lizard->marker_type == 11) &&
             !engine_map_activation_window(lizard->body.owner, camera)) {
             if (remove_lizard(enemies, lizard,
-                lizard->marker_type == 10 && lizard->handler == 0x11c81) != 0) return -1;
+                (lizard->marker_type == 10 && lizard->handler == 0x11c81) ||
+                (lizard->marker_type == 11 && lizard->handler == 0x12064 &&
+                    lizard->terminal)) != 0) return -1;
         } else if (update_lizard(enemies, lizard) != 0) {
             return -1;
         }

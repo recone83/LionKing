@@ -16,18 +16,31 @@ typedef struct {
     short pause;
     short cell_x;
     short stun_x;
+    RENDER_OWNER target;
     unsigned char kind;
     unsigned char facing;
     unsigned char turn_after_jump;
     unsigned char destroyed;
     unsigned char marker_type;
+    unsigned char terminal;
+    unsigned char entered;
 } ENGINE_LIZARD;
 
 typedef struct {
+    ENGINE_FALLING_OBJECT body;
+    ENGINE_OBJECT *object;
+    unsigned short remaining;
+} ENGINE_LEAF;
+
+typedef struct {
     ENGINE_LIZARD lizards[ENGINE_LIZARD_CAPACITY];
+    ENGINE_LEAF leaves[32];
     unsigned int count;
     unsigned int lizard_count;
     unsigned int porcupine_count;
+    unsigned int beetle_count;
+    unsigned int leaf_marker_count;
+    unsigned int leaves_spawned;
     unsigned int spawned;
     unsigned int culled;
     unsigned int attacks;

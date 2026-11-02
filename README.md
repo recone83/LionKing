@@ -1450,7 +1450,7 @@ route. Its counts are: 1:1, 3:2, 9:9, 10:5, 11:4, 14:14, 16:1, 17:3,
 18:4, 40:1, 41:1, 43:1, 49:1. Remaining work includes the other enemy
 type and hyena, proximity emitters and special objects, original sound
 effects/status HUD and the original level-completion transition.
-The implemented seven marker types cover 30 of the 47 positions.
+The implemented nine marker types cover 43 of the 47 positions.
 Unmigrated types are not
 substituted with generic enemy or pickup behavior.
 
@@ -1508,3 +1508,18 @@ completed one death/restart with two lives remaining, submitted 6384256
 PCM frames and returned exit code zero on Escape. Its closed log recorded
 all 11 pickup markers and 129 enemy contacts; pickup collection itself
 was validated by the real-resource host tests, not this native traversal.
+
+The four type-11 enemies now use their original `BOMBWLK`, `BOMBTURN`
+and `BOMBEXP` banks. Ground contact damages Simba; airborne contact starts
+the original delayed departure/explosion, rebounding descending Simba.
+Roar requires an attenuated pulse strictly greater than ten. Terrain
+markers select braking pauses, a returning spring trajectory or terminal
+departure; no generic lizard death is substituted. Every departure and
+explosion frame is rendered in the real-resource enemy tests.
+
+All nine type-9 proximity emitters now release three original `LEAF2`
+sprites on entering their exact 128-by-16 trigger region. They follow
+the original randomized velocities, 0x1000 gravity increment and 100
+movement ticks. Remaining inside does not emit repeatedly; exiting and
+returning rearms the emitter. Restart clears the live leaf objects.
+These effects do not damage Simba or alter map data.

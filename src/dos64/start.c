@@ -26,7 +26,7 @@ static MUSIC_PLAYER music_player;
 static MUSIC_OUTPUT music_output;
 static ENGINE_ENEMIES map_enemies;
 static ENGINE_PICKUPS map_pickups;
-static unsigned char enemy_sprites[7][32768];
+static unsigned char enemy_sprites[11][32768];
 static unsigned char pickup_sprites[3][131072];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
@@ -359,11 +359,14 @@ static int preview_player_ready(DEFLECTION_PREVIEW *preview)
 static int preview_player_sound(void *context, unsigned short sample)
 {
     (void)context;
-    if (sample != 0 && sample != 1 && sample != 10 && (sample < 2 || sample > 6)) {
+    if (sample != 0 && sample != 1 && sample != 10 && sample != 16 &&
+        (sample < 2 || sample > 6)) {
         lk_platform_log("Lion King: unexpected player sound.\n");
         return -1;
     }
-    lk_platform_log(sample == 1 || sample == 10 ?
+    lk_platform_log(sample == 16 ?
+        "Original beetle explosion sample requested; audio output unported.\n" :
+        sample == 1 || sample == 10 ?
         "Original pickup sample requested; audio output unported.\n" : sample == 0 ?
         "Original rebound sample 0 requested; audio output unported.\n" : sample <= 3 ?
         "Original roar sample requested; audio output unported.\n" : sample <= 5 ?
@@ -1003,8 +1006,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: cannot initialize map follow camera.\n");
             return 1;
         }
-        static const unsigned int indices[7] = {3, 12, 13, 14, 15, 16, 17};
-        for (unsigned int i = 0; i < 7; ++i) {
+        static const unsigned int indices[11] = {0, 1, 2, 3, 11, 12, 13, 14, 15, 16, 17};
+        for (unsigned int i = 0; i < 11; ++i) {
             unsigned int slot, loaded;
             if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_level1_bank_list,
                 sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
@@ -1199,6 +1202,9 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     if (preview.map_mode) {
         log_map_measurement("Lizard map markers: ", map_enemies.lizard_count);
         log_map_measurement("Porcupine map markers: ", map_enemies.porcupine_count);
+        log_map_measurement("Beetle map markers: ", map_enemies.beetle_count);
+        log_map_measurement("Leaf map markers: ", map_enemies.leaf_marker_count);
+        log_map_measurement("Leaves spawned: ", map_enemies.leaves_spawned);
         log_map_measurement("Enemy spawns: ", map_enemies.spawned);
         log_map_measurement("Enemy culls: ", map_enemies.culled);
         log_map_measurement("Lizard attacks: ", map_enemies.attacks);

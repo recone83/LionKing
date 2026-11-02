@@ -658,7 +658,7 @@ pełna zgodność oryginalnego skanera aktywacji nadal nie jest deklarowana.
 
 Inwentaryzacja LEVEL1: 47 znaczników, typy/count:
 1/1, 3/2, 9/9, 10/5, 11/4, 14/14, 16/1, 17/3, 18/4,
-40/1, 41/1, 43/1, 49/1. Typy 3, 10, 14, 16, 17, 18 i 49 są podłączone; pozostałe
+40/1, 41/1, 43/1, 49/1. Typy 3, 9, 10, 11, 14, 16, 17, 18 i 49 są podłączone; pozostałe
 nie otrzymały jeszcze zastępczych handlerów. Tablica dispatch
 base-zero `0x5c5c` wskazuje ich oryginalne definicje DS. Typy 17/18
 używają `BUGS` slot 81 (leczenie +4/do maksimum), 16/49 zwiększają
@@ -718,3 +718,24 @@ atrapy obrażeń mapy pozostają wyłączone. Kompilacje hostowego adaptera
 wymagają teraz także `pickups.c` i `lifecycle.c`; oba pliki są podłączone
 do `build.sh` i agregatora `pseiudo.c`. Eksportowane 753 oryginalne funkcje
 pozostają bez zmian.
+
+Typ 11 używa `BOMBEXP`/`BOMBTURN`/`BOMBWLK` w slotach 62..64.
+Przeniesiono `0x11d29`, `0x11d65`, `0x11dc1`, `0x11dff`,
+`0x11e65`, `0x11fe7`, `0x12064` i sprężynę `0x11cd8`.
+Patrol ma prędkość 0x10000, pauzy 120/30 i hamowanie 0xf00.
+Kontakt naziemny zadaje obrażenie, airborne wybiera terminalne odejście
+z pauzą 30 i timerem 70. Roar po tłumieniu `(distance-50)>>3` musi
+przekraczać 10; wybiera od razu 28-tickową eksplozję DS `0x13f50`.
+Znaczniki terenu o stronach 2/3 wybierają odpowiednio powrót/terminalne
+odejście. Sprężyna stosuje wrapujące 32-bitowe przyrosty X0x1000/Y0x800.
+Żądanie oryginalnej próbki 16 jest jawnie logowane; backend efektów
+dźwiękowych pozostaje do migracji.
+
+Typ 9 przenosi `0x141e0`/`0x142cf`: wejście w zakres
+player-minus-marker X[0,128), Y[0,16) emituje trzy liście w pozycji
+(playerX, markerY). Slot 73 to `LEAF2`. Wspólny oryginalny generator
+wyznacza VX=(random<<9)-0x14000, VY=-0x10000-(random<<8) i start
+strumienia wizualnego. Liście wykonują 100 aktualizacji ruchu z grawitacją
+0x1000, potem są zwalniane. Wejście ponownie uzbraja się dopiero po
+opuszczeniu prostokąta; restart zwalnia wszystkie liście i stan wejścia.
+`check_enemies` renderuje cały przebieg i sprawdza granice prostokąta.

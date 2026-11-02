@@ -141,6 +141,8 @@ static int __attribute__((ms_abi)) close_file(void *file)
         text[count] = 0;
         assert(map_counter(text, "Lizard map markers: ") == 14);
         assert(map_counter(text, "Porcupine map markers: ") == 5);
+        assert(map_counter(text, "Beetle map markers: ") == 4);
+        assert(map_counter(text, "Leaf map markers: ") == 9);
         assert(map_counter(text, "Pickup map markers: ") == 11);
         map_deaths = map_counter(text, "Player deaths: ");
         map_restarts = map_counter(text, "Player checkpoint restarts: ");

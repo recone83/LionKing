@@ -27,7 +27,7 @@ static RENDER_POOL renders;
 static ENGINE_PLAYER_AIR player;
 static ENGINE_OBJECT *player_object;
 static unsigned char collision_flags;
-static unsigned char original_map[580488], enemy_banks[6][32768], player_bank[32768];
+static unsigned char original_map[580488], enemy_banks[10][32768], player_bank[32768];
 static unsigned char pixels[64000], previous_pixels[64000];
 static RENDER_SPRITE_BANK banks[81];
 static const RENDER_OWNER camera = {0, 1080};
@@ -35,7 +35,7 @@ static unsigned int sound_requests;
 
 static int sound(void *context, unsigned short sample)
 {
-    assert(context == &player && sample == 4);
+    assert(context == &player && (sample == 4 || sample == 16));
     ++sound_requests;
     return 0;
 }
@@ -63,7 +63,8 @@ static void setup(void)
     player.roar_charge = 100;
     sound_requests = 0;
     assert(engine_enemies_initialize(&enemies, &pool, &renders, &collision, &player) == 0);
-    assert(enemies.count == 19 && enemies.lizard_count == 14 && enemies.porcupine_count == 5);
+    assert(enemies.count == 32 && enemies.lizard_count == 14 &&
+        enemies.porcupine_count == 5 && enemies.beetle_count == 4 && enemies.leaf_marker_count == 9);
     assert(engine_enemies_tick(&enemies, camera) == 0);
     assert(enemies.spawned == 1);
 }
@@ -309,6 +310,111 @@ static void check_porcupines(void)
     puts("PASS: five real porcupines, 0xa000 patrol, unsafe stomp, roll/roar inversion, timed contact and rendered fall");
 }
 
+static void check_beetles(void)
+{
+    RENDER_OWNER view = {350, 780};
+    for (unsigned int variant = 0; variant < 5; ++variant) {
+        setup();
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        ENGINE_LIZARD *enemy = 0;
+        for (unsigned int i = 0; i < enemies.count; ++i)
+            if (enemies.lizards[i].marker_type == 11 &&
+                enemies.lizards[i].marker.x == 464) enemy = &enemies.lizards[i];
+        assert(enemy && enemy->object && enemy->handler == 0x11e65);
+        assert(enemy->body.node->parts[19] == 64 &&
+            enemy->body.motion.velocity_x == 0x10000);
+        player.player.body.owner = (RENDER_OWNER){0, 1261};
+        short x = enemy->body.owner.x;
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(enemy->body.owner.x == x + 1);
+        enemy->kind = 0x11;
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(enemy->facing && enemy->body.node->parts[19] == 63);
+        enemy->kind = 0x10;
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(!enemy->facing && enemies.turns >= 2);
+        if (variant < 2) {
+            player.player.body.owner = enemy->body.owner;
+            player.player.flags_high = variant ? 0x10 : 0;
+            assert(engine_enemies_tick(&enemies, view) == 0);
+            if (!variant) {
+                assert(player.player.flags_high & 4);
+                assert(enemy->handler == 0x11e65);
+                continue;
+            }
+            assert(player.player.flags_high & 0x20);
+            assert(enemy->handler == 0x12064 && enemy->pause == 30 &&
+                enemy->timer == 70 && enemy->terminal);
+        } else if (variant == 2) {
+            player.player.body.owner = enemy->body.owner;
+            player.roar_pulse = 10;
+            assert(engine_enemies_tick(&enemies, view) == 0);
+            assert(enemy->handler == 0x11e65);
+            player.roar_pulse = 11;
+            assert(engine_enemies_tick(&enemies, view) == 0);
+            assert(enemy->handler == 0x12064 && enemy->timer == 28 && !enemy->pause);
+        } else {
+            enemy->cell_x = -1;
+            enemy->kind = variant == 3 ? 0x92 : 0x93;
+            assert(engine_enemies_tick(&enemies, view) == 0);
+            assert(enemy->handler == 0x12064 && enemy->terminal == (variant == 4));
+        }
+        player.roar_pulse = 0;
+        player.player.body.owner = (RENDER_OWNER){0, 1261};
+        unsigned int ticks = 0;
+        while (enemy->object && enemy->handler == 0x12064 && ticks < 120) {
+            assert(engine_enemies_tick(&enemies, view) == 0);
+            memset(pixels, 0, sizeof(pixels));
+            assert(render_object_pass(&renders, 0, -view.x, -view.y,
+                banks, 81, pixels) == 0);
+            ++ticks;
+        }
+        assert(ticks < 120);
+        if (variant == 3) {
+            assert(enemy->object && enemy->handler == 0x11e65 && !enemy->destroyed);
+            assert(enemy->body.motion.velocity_y == UINT32_C(0xfffe0000));
+        } else {
+            assert(!enemy->object && enemy->destroyed && sound_requests == 1);
+        }
+    }
+    puts("PASS: four original BOMB beetles, patrol/turn, unsafe body contact, stomp, roar threshold, return/terminal departure and all explosion frames");
+}
+
+static void check_leaves(void)
+{
+    setup();
+    RENDER_OWNER view = {100, 300};
+    player.player.body.owner = (RENDER_OWNER){224, 448};
+    assert(engine_enemies_tick(&enemies, view) == 0 && enemies.leaves_spawned == 3);
+    for (unsigned int i = 0; i < 3; ++i) {
+        ENGINE_LEAF *leaf = &enemies.leaves[i];
+        assert(leaf->object && leaf->remaining == 100 && leaf->body.node->parts[19] == 73);
+        assert(leaf->body.owner.x == 224 && leaf->body.owner.y == 448);
+        assert((int32_t)leaf->body.motion.velocity_x >= -0x14000 &&
+            (int32_t)leaf->body.motion.velocity_x <= 0xbe00);
+        assert((int32_t)leaf->body.motion.velocity_y <= -0x10000 &&
+            (int32_t)leaf->body.motion.velocity_y >= -0x1ff00);
+    }
+    for (unsigned int i = 0; i < 100; ++i) {
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        memset(pixels, 0, sizeof(pixels));
+        assert(render_object_pass(&renders, 0, -view.x, -view.y, banks, 81, pixels) == 0);
+        assert(enemies.leaves_spawned == 3 && enemies.leaves[0].object);
+    }
+    assert(engine_enemies_tick(&enemies, view) == 0 && !enemies.leaves[0].object);
+    static const RENDER_OWNER excluded[] = {{223,448},{352,448},{224,447},{224,464}};
+    for (unsigned int i = 0; i < 4; ++i) {
+        player.player.body.owner = excluded[i];
+        assert(engine_enemies_tick(&enemies, view) == 0 && enemies.leaves_spawned == 3);
+    }
+    player.player.body.owner = (RENDER_OWNER){351,463};
+    assert(engine_enemies_tick(&enemies, view) == 0 && enemies.leaves_spawned == 6);
+    assert(engine_enemies_restart(&enemies) == 0);
+    for (unsigned int i = 0; i < 32; ++i) assert(!enemies.leaves[i].object);
+    assert(engine_enemies_tick(&enemies, view) == 0 && enemies.leaves_spawned == 9);
+    puts("PASS: nine leaf markers, exact trigger boundaries, three randomized leaves per entry, all 100 motion frames and restart cleanup");
+}
+
 int main(void)
 {
     DOS64_API api = {0};
@@ -322,8 +428,8 @@ int main(void)
         packed, sizeof(packed), contours, sizeof(contours), &dictionary, &contour_size) == 0);
     assert(engine_map_collision_initialize(&collision, map, size, contours, contour_size) == 0);
     memcpy(original_map, map, size);
-    static const unsigned int indices[6] = {3, 12, 13, 14, 15, 16};
-    for (unsigned int i = 0; i < 6; ++i) {
+    static const unsigned int indices[10] = {0, 1, 2, 3, 11, 12, 13, 14, 15, 16};
+    for (unsigned int i = 0; i < 10; ++i) {
         unsigned int slot, loaded;
         assert(assets_load_named_bank(&api, "data/LIONKING.EPF", animation_level1_bank_list,
             sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
@@ -340,6 +446,8 @@ int main(void)
     check_attack_roar();
     check_attack_windows();
     check_porcupines();
+    check_beetles();
+    check_leaves();
     setup();
     assert(engine_enemies_tick(&enemies, (RENDER_OWNER){700, 0}) == 0);
     assert(enemies.culled == 1 && !lower_lizard()->object);
