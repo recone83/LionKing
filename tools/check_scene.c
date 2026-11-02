@@ -45,6 +45,13 @@ static short min_world_x = 160, max_world_x = 160;
 static RENDER_OWNER damage_source;
 static int demo_hit;
 static unsigned int action_frames, roar_sounds, damage_sounds;
+static int map_test;
+static unsigned int enemy_damage_logs, map_stuns, map_defeats, map_contacts;
+static unsigned int map_spawns, map_jumps;
+static unsigned long long audio_written, audio_energy, audio_queued, audio_time;
+static unsigned int audio_stops;
+static int audio_opened;
+static DOS64_COLOR previous_map_frame[64000];
 
 static int idle_event(void *context, unsigned int target)
 {
@@ -86,6 +93,8 @@ static void record_log(const char *text)
     if (strstr(text, "Idle script event recorded")) ++idle_logs;
     if (strstr(text, "Original player ground handler selected")) ++ground_logs;
     if (strstr(text, "Original running/standing jump selected")) ++ground_jump_logs;
+    if (strstr(text, "damage/recoil handler selected from a real enemy contact"))
+        ++enemy_damage_logs;
 }
 static void __attribute__((ms_abi)) log_text(const char *text)
 {
@@ -93,6 +102,13 @@ static void __attribute__((ms_abi)) log_text(const char *text)
     assert(!"preview must not render console text");
 }
 static FILE *log_file;
+static unsigned int map_counter(const char *text, const char *label)
+{
+    const char *value = strstr(text, label);
+    unsigned int counter;
+    assert(value && sscanf(value + strlen(label), "%u", &counter) == 1);
+    return counter;
+}
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
 {
     if (strcmp(path, "LIONKING.LOG") == 0) {
@@ -106,6 +122,18 @@ static void * __attribute__((ms_abi)) open_file(const char *path, const char *mo
 }
 static int __attribute__((ms_abi)) close_file(void *file)
 {
+    if (map_test && file == log_file) {
+        char text[32768];
+        assert(fseek(file, 0, SEEK_SET) == 0);
+        size_t count = fread(text, 1, sizeof(text) - 1, file);
+        assert(count < sizeof(text) - 1);
+        text[count] = 0;
+        map_spawns = map_counter(text, "Lizard spawns: ");
+        map_stuns = map_counter(text, "Lizard roar stuns: ");
+        map_defeats = map_counter(text, "Lizard defeats: ");
+        map_contacts = map_counter(text, "Lizard contacts: ");
+        map_jumps = map_counter(text, "Map landing transitions: ");
+    }
     if (file == log_file) log_file = 0;
     return fclose(file);
 }
@@ -126,11 +154,47 @@ static void __attribute__((ms_abi)) sleep_ms(unsigned int ms) { now += ms * 1000
 static unsigned long long __attribute__((ms_abi)) time_ns(void) { return now; }
 static int __attribute__((ms_abi)) select_layer(int layer) { assert(layer == 0); return 0; }
 static void __attribute__((ms_abi)) present(void) { ++shown; }
+static int __attribute__((ms_abi)) audio_open(unsigned int rate)
+{
+    assert(rate == 44100 && !audio_opened);
+    audio_opened = 1;
+    audio_time = now;
+    return 0;
+}
+static unsigned long long __attribute__((ms_abi)) queued_frames(void)
+{
+    unsigned long long consumed = (now - audio_time) * 44100 / 1000000000ULL;
+    audio_time = now;
+    audio_queued = consumed < audio_queued ? audio_queued - consumed : 0;
+    return audio_queued;
+}
+static unsigned long long __attribute__((ms_abi)) free_frames(void)
+{ return 8192 - queued_frames(); }
+static unsigned long long __attribute__((ms_abi)) audio_write(const short *frames,
+    unsigned long long count)
+{
+    assert(audio_opened && count <= free_frames());
+    for (unsigned long long i = 0; i < count * 2; ++i)
+        audio_energy += frames[i] < 0 ? -frames[i] : frames[i];
+    audio_queued += count;
+    audio_written += count;
+    return count;
+}
+static void __attribute__((ms_abi)) audio_stop(void)
+{ assert(audio_opened); audio_opened = 0; ++audio_stops; }
 static void __attribute__((ms_abi)) poll(void)
 {
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
+    if (map_test) {
+        api.Input.KeyDown[0x4f] = iteration < 280;
+        api.Input.KeyDown[0x50] = iteration >= 1000 && iteration < 1200;
+        api.Input.KeyDown[0x2c] = iteration >= 700 && iteration < 750;
+        api.Input.KeyPressed[0x2c] = iteration == 700;
+        api.Input.KeyDown[0xe0] = (iteration >= 450 && iteration < 462) ||
+            (iteration >= 900 && iteration < 912) || (iteration >= 1400 && iteration < 1412);
+    }
     if (ground_steering && iteration <= 1400) {
         unsigned int phase = iteration % 400;
         unsigned int key = phase < 200 ? 0x4f : 0x50;
@@ -446,6 +510,11 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
     unsigned int h, unsigned int stride, int x, int y, unsigned int dw, unsigned int dh)
 {
     assert(w == 320 && h == 200 && stride == 320 && x == 0 && y == 40 && dw == 640 && dh == 400);
+    if (map_test) {
+        if (shown && memcmp(previous_map_frame, image, sizeof(previous_map_frame)) != 0) ++changed;
+        memcpy(previous_map_frame, image, sizeof(previous_map_frame));
+        return;
+    }
     if (deflection_test || flight_test) {
         draw_reference_player(image);
         return;
@@ -507,7 +576,9 @@ int main(int argc, char **argv)
     assert(argc == 1 || (argc == 2 && (strcmp(argv[1], "--deflection") == 0 ||
         strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0 ||
         strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0 ||
-        strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0)));
+        strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0 ||
+        strcmp(argv[1], "--map") == 0)));
+    map_test = argc == 2 && strcmp(argv[1], "--map") == 0;
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
     jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
     ground_steering = argc == 2 && strcmp(argv[1], "--ground-steering") == 0;
@@ -517,13 +588,27 @@ int main(int argc, char **argv)
         (argc == 2 && strcmp(argv[1], "--flight") == 0);
     deflection_test = argc == 2 && strcmp(argv[1], "--deflection") == 0;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION;
-    api.Arguments = ground_test ? "" : jump_test ? "--jump" : flight_test ? "--flight" :
+    api.Arguments = map_test ? "--map" : ground_test ? "" : jump_test ? "--jump" : flight_test ? "--flight" :
         deflection_test ? "--deflection" : "--emitters";
     api.Write = log_text; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
     api.Gfx.SelectLayer = select_layer; api.Gfx.Present = present; api.DrawImage = draw;
     api.Fs.Open = open_file; api.Fs.Close = close_file; api.Fs.Seek = seek_file;
     api.Fs.Tell = tell_file; api.Fs.Read = read_file; api.Fs.Write = write_file;
+    if (map_test) {
+        api.Audio.Present = 1; api.Audio.Open = audio_open; api.Audio.Write = audio_write;
+        api.Audio.FreeFrames = free_frames; api.Audio.QueuedFrames = queued_frames;
+        api.Audio.Stop = audio_stop;
+        assert(start(&api) == 0);
+        printf("Map measurements: %u spawns/%u contacts/%u stuns/%u defeats, %u damage logs/"
+            "%u landings, %u changed frames, %llu audio frames\n", map_spawns, map_contacts,
+            map_stuns, map_defeats, enemy_damage_logs, map_jumps, changed, audio_written);
+        assert(iteration == 2002 && shown == 2001 && changed > 200 && map_spawns >= 2 &&
+            map_contacts > 0 && enemy_damage_logs > 0 && map_stuns > 0 && map_jumps > 0);
+        assert(audio_written > 800000 && audio_energy > 0 && audio_stops == 1 && !log_file);
+        puts("PASS: real map lizards, actual contacts/recoil, roar, jumping, music and Escape with file-only logs");
+        return 0;
+    }
     assert(resources_load_entry(&api, "LIONKING.EPF",
         (deflection_test || flight_test) ? "LEVEL1.MAP" : "LEVEL6.MAP", packed,
         sizeof(packed), map, sizeof(map), &dictionary, &map_size) == 0);

@@ -35,6 +35,7 @@
 #include "engine/physics.c"
 #include "engine/behaviors.c"
 #include "engine/music.c"
+#include "engine/enemies.c"
 
 // WARNING: Globals starting with '_' overlap smaller symbols at the same address
 

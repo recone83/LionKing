@@ -10,6 +10,7 @@
 #include "engine/animation_data.h"
 #include "engine/behaviors.h"
 #include "engine/music.h"
+#include "engine/enemies.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
@@ -21,6 +22,8 @@ static unsigned char animated_tiles[12800];
 static unsigned char level_music[49887];
 static MUSIC_PLAYER music_player;
 static MUSIC_OUTPUT music_output;
+static ENGINE_ENEMIES map_enemies;
+static unsigned char enemy_sprites[4][32768];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -245,8 +248,30 @@ typedef struct {
 static int preview_player_contact(void *context, short *touching)
 {
     DEFLECTION_PREVIEW *preview = context;
+    if (preview->map_mode) {
+        *touching = 0;
+        for (unsigned int i = 0; i < map_enemies.count; ++i) {
+            const ENGINE_LIZARD *lizard = &map_enemies.lizards[i];
+            if (&lizard->body.owner == preview->air.contact_source && lizard->body.node)
+                return render_objects_hit(preview->air.player.body.node, lizard->body.node, touching);
+        }
+        return 0;
+    }
     *touching = preview->fixture_touching;
     return 0;
+}
+
+static int preview_camera(const DEFLECTION_PREVIEW *preview, RENDER_OWNER *camera)
+{
+    *camera = (RENDER_OWNER){
+        preview->air.player.body.owner.x > 160 ?
+            (short)(preview->air.player.body.owner.x - 160) : 0,
+        preview->map_mode && preview->air.player.body.owner.y > 120 ?
+            (short)(preview->air.player.body.owner.y - 120) : 0};
+    RENDER_VIEWPORT viewport;
+    return render_prepare_viewport(camera,
+        (unsigned short)(map[8] | (unsigned int)map[9] << 8),
+        (unsigned short)(map[12] | (unsigned int)map[13] << 8), 0, &viewport);
 }
 
 static int preview_ledge_height(void *context, short x, short y, short *height)
@@ -421,11 +446,14 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
     DEFLECTION_PREVIEW *preview = context;
     if (preview->ground_mode) {
         if (call->handler == 0xef04U) {
-            if (preview->map_mode) {
+            if (preview->map_mode && (!preview->air.damage_source ||
+                !(preview->air.player.flags_high & 4))) {
                 lk_platform_log("Lion King: map hazard damage/source handling is not migrated.\n");
                 return -1;
             }
-            lk_platform_log("Original damage/recoil handler selected; source is a test fixture.\n");
+            lk_platform_log(preview->map_mode ?
+                "Original damage/recoil handler selected from a real enemy contact.\n" :
+                "Original damage/recoil handler selected; source is a test fixture.\n");
             return engine_player_damage(&scene_objects, preview->object, &preview->air);
         }
         if (call->handler == 0xec69U || call->handler == 0xee35U ||
@@ -677,6 +705,11 @@ static void update_player_preview(void *context)
             }
         }
         if (preview->map_mode) {
+            if (engine_enemies_player_clock(&map_enemies) != 0) {
+                lk_platform_log("Lion King: original enemy/player immunity clock failed.\n");
+                preview->failed = 1;
+                return;
+            }
             if (engine_map_lateral(&preview->collision, &preview->air.player.body.owner,
                 preview->air.flags, preview->air.player.flags_high,
                 &preview->air.boundary_controls) != 0) {
@@ -691,6 +724,15 @@ static void update_player_preview(void *context)
         if (engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
             preview->failed = 1;
             return;
+        }
+        if (preview->map_mode) {
+            RENDER_OWNER camera;
+            if (preview_camera(preview, &camera) != 0 ||
+                engine_enemies_tick(&map_enemies, camera) != 0) {
+                lk_platform_log("Lion King: original LEVEL1 enemy update failed.\n");
+                preview->failed = 1;
+                return;
+            }
         }
         preview->airborne = preview->object->behavior == &engine_player_jump_behavior ||
             preview->object->behavior == &engine_player_air_behavior;
@@ -795,7 +837,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         lk_platform_log("Lion King: cannot load player reaction preview map.\n");
         return 1;
     }
-    RENDER_SPRITE_BANK banks[34] = {0};
+    RENDER_SPRITE_BANK banks[81] = {0};
     unsigned int count = flight ? ASSETS_YOUNG_BANK_COUNT : 2;
     for (unsigned int i = 0; i < count; ++i) {
         unsigned int slot, loaded;
@@ -874,6 +916,25 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         lk_platform_log("Lion King: cannot initialize original player deflection.\n");
         return 1;
     }
+    if (preview.map_mode) {
+        static const unsigned int indices[4] = {4, 12, 13, 14};
+        for (unsigned int i = 0; i < 4; ++i) {
+            unsigned int slot, loaded;
+            if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_level1_bank_list,
+                sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
+                enemy_sprites[i], sizeof(enemy_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
+                slot != 62 + indices[i]) {
+                lk_platform_log("Lion King: cannot load original LEVEL1 lizard banks.\n");
+                return 1;
+            }
+            banks[slot] = (RENDER_SPRITE_BANK){enemy_sprites[i], loaded};
+        }
+        if (engine_enemies_initialize(&map_enemies, &scene_objects, &render_pool,
+            &preview.collision, &preview.air) != 0) {
+            lk_platform_log("Lion King: invalid LEVEL1 enemy marker plane.\n");
+            return 1;
+        }
+    }
     if (preview.ground_mode) {
         if (preview.map_mode) {
             lk_platform_log("Real LEVEL1.MAP collision and CONTOUR.CON are active.\n"
@@ -882,7 +943,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 "Starting X160 is a preview choice; Y is found on the real contour.\n"
                 "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
                 "Original LEVEL1 parallax and foreground/object layer order are active.\n"
-                "Dynamic map objects and hazards remain unported.\n"
+                "Original lizard markers, patrol/turn/attack/roar/contact/death are active.\n"
+                "Ctrl: roar. Other enemy types, sound effects and health HUD remain unported.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
         } else {
             lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
@@ -987,22 +1049,13 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         }
         unsigned short camera_x = 0, camera_y = 0;
         if (preview.ground_mode) {
-            RENDER_OWNER camera = {
-                preview.air.player.body.owner.x > 160 ?
-                    (short)(preview.air.player.body.owner.x - 160) : 0,
-                preview.map_mode && preview.air.player.body.owner.y > 120 ?
-                    (short)(preview.air.player.body.owner.y - 120) : 0
-            };
-            RENDER_VIEWPORT viewport;
-            if (render_prepare_viewport(&camera,
-                (unsigned short)(map[8] | (unsigned int)map[9] << 8),
-                (unsigned short)(map[12] | (unsigned int)map[13] << 8),
-                0, &viewport) != 0) {
+            RENDER_OWNER camera;
+            if (preview_camera(&preview, &camera) != 0) {
                 lk_platform_log("Lion King: cannot prepare player viewport.\n");
                 return 1;
             }
-            camera_x = viewport.x;
-            camera_y = viewport.y;
+            camera_x = (unsigned short)camera.x;
+            camera_y = (unsigned short)camera.y;
             preview.air.player.body.node->flags |= 0x40;
         }
         unsigned char *view = pixels + LK_WIDTH;
@@ -1015,11 +1068,11 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             (!preview.map_mode && render_map_tile_pass(map, map_size, 0,
                 camera_x, camera_y, 1, view) != 0) ||
             render_object_pass(&render_pool, 0, (short)-(int)camera_x, (short)-(int)camera_y,
-                banks, 34, view) != 0 ||
+                banks, 81, view) != 0 ||
             (preview.map_mode && (render_map_tile_pass(map, map_size, 0,
                 camera_x, camera_y, 1, view) != 0 ||
                 render_object_pass(&render_pool, 0x80, (short)-(int)camera_x,
-                    (short)-(int)camera_y, banks, 34, view) != 0)) ||
+                    (short)-(int)camera_y, banks, 81, view) != 0)) ||
             vga_present_frame(&frame) != 0) {
             lk_platform_log("Lion King: cannot render player deflection preview.\n");
             return 1;
@@ -1036,6 +1089,16 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         flight ? "Original player flight preview finished.\n" :
         "Original player deflection preview finished.\n");
     if (preview.map_mode) {
+        log_map_measurement("Lizard map markers: ", map_enemies.count);
+        log_map_measurement("Lizard spawns: ", map_enemies.spawned);
+        log_map_measurement("Lizard culls: ", map_enemies.culled);
+        log_map_measurement("Lizard attacks: ", map_enemies.attacks);
+        log_map_measurement("Lizard turns: ", map_enemies.turns);
+        log_map_measurement("Lizard obstacle jumps: ", map_enemies.jumps);
+        log_map_measurement("Lizard roar stuns: ", map_enemies.stuns);
+        log_map_measurement("Lizard contacts: ", map_enemies.contacts);
+        log_map_measurement("Lizard defeats: ", map_enemies.defeated);
+        log_map_measurement("Player health remaining: ", (unsigned int)preview.air.health);
         log_map_measurement("Music submitted frames: ", (unsigned int)music_output.submitted);
         log_map_measurement("Music tracker rows: ", music_player.rows_played);
         log_map_measurement("Music completed loops: ", music_player.loops);

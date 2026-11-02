@@ -581,3 +581,40 @@ zachowuje próbki przy częściowych zapisach i nie blokuje pętli gry.
 oryginalnych dekompilowanych funkcji sterownika muzyki; nieużywany import
 OPL usunięto. Test `check_music.c` obejmuje pełny utwór, efekty,
 buforowanie i błędy wejścia.
+
+Jaszczurki LEVEL1 (`enemies.c/h`, tylko `--map`) czytają typ 14 z plane 3:
+`table + 3 * width * height * 2 + row * width * 4 + column * 4`.
+Pozycja znacznika to `(column * 16, row * 16)`, a typ jest dekodowany jak
+w oryginalnym `0x1534c`. Tablica konstruktorów znajduje się w obiekcie
+kodu pod base-zero `0x5c5c`, nie w zrzucie DS: wpis 14 wskazuje
+`0x67fa` i definicję DS `0x13ab6` (`0x1109a`, parts `0xa8b0`).
+Zachowano wszystkie oryginalne eksporty bez zmian.
+
+Przeniesiono przebieg `0x1109a`/`0x1127e` (patrol 0x8000, timer 100),
+`0x110e2` (obrót), `0x1117a`/`0x11211` (ogłuszenie rykiem),
+`0x114ea` (atak, okna 48..50 i 52..54), `0x11609` (śmierć)
+oraz podzbiór `0x119e0`/`0x11a51` używany przez jaszczurki
+(pauzy przeszkód 70/10, hamowanie 0x1000, wznowienie patrolu).
+Wszystkie wizualne strumienie pochodzą z checksum-verified DS
+`0xa1fc..0x1405d`; sloty 66/74/75/76 są ładowane z oryginalnej listy.
+
+Kolizje korzystają z `render_objects_hit` i `render_local_rectangle_hit`,
+czyli bieżącej geometrii animacji i mirroringu, nie z przybliżonego promienia.
+`0x12315` rozróżnia obrażenia i kontakt opadający: signed velocity Y
+większe od 0x4000 oraz flags-high & 0x18 ustawiają kontakt 0x20,
+który prowadzi do istniejącego rebound Simby; pozostałe kontakty ustawiają
+0x04 i rzeczywiste źródło obrażeń. Odporność jest odliczana przed graczem,
+a nowe kontakty zbierane po jego aktualizacji. Adapter nie odrzuca już
+obrażeń z rozpoznanego przeciwnika jako nieprzeniesionego zagrożenia mapy.
+
+Aktywacja jest ograniczona do okna wokół kamery; żywe obiekty mogą zostać
+zwolnione i odtworzone ze znacznika, pokonane nie wracają w tym uruchomieniu.
+Przewijanie dotyczy również sprite'ów przeciwników. Pule i renderer są
+wspólne z Simbą, a oryginalna mapa pozostaje niezmieniona.
+Preview stosuje stały seed trzybajtowego generatora `0x8476`, zachowuje
+dotychczasowe początkowe metry i nie przenosi jeszcze HUD, śmierci gracza,
+efektów dźwiękowych ani pozostałych klas przeciwników.
+Seed wynosi `0x010101`; inicjalizacja generatora w oryginalnym startupie
+nie została jeszcze ustalona. Natywne okno aktywacji to X kamery −111..+415
+i Y −111..+304: jest oparte na `0x552b`, ale nie odwzorowuje jeszcze
+dokładnego wyrównania i przycinania granic oryginalnego skanera.

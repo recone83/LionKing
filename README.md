@@ -1356,3 +1356,47 @@ pass. A native DOS64 HDA capture contains over three million nonzero
 samples while map movement/jumping continues; Escape exits with zero.
 Host checks that link `src/dos64/start.c` now also need
 `src/engine/music.c`; the normal build already includes it.
+
+### LEVEL1 lizards and real player contacts
+
+`LIONKING.EXE --map` now activates the 14 original lizard markers (type 14)
+from LEVEL1's fourth map plane. The first two on the lower route start at
+X352/Y1248 and X592/Y1248. Walk right from the preview start to meet them.
+Left/Right move, Space jumps, Down crouches/rolls, Ctrl roars, and Escape
+exits. Music continues during combat; diagnostics stay in `LIONKING.LOG`.
+
+The connected block includes half-pixel patrol, contour support, directional
+turns, terrain-tag obstacle pauses, the original attack sequence and its two
+short hit windows, distance-scaled roar stun, body contact damage, recoil,
+100-tick immunity, and the lizard death animation/removal. A contact while
+Simba is descending faster than 0x4000 in 16.16 velocity and has the original
+air/roll flags selects the existing rebound and defeats the lizard.
+Walking into it instead costs one health point. Defeated lizards do not
+respawn during the current run; live ones culled by scrolling can return at
+their original marker.
+
+Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `HYENADIE` banks and DS
+animation streams are used, including the original shared death bank.
+Map graphics, contour/tag planes and markers are not modified. Only
+lizards are active in this block: hyenas, porcupines, pickups, world hazards,
+enemy sound effects, health HUD and player death/restart are still pending.
+The preview still starts with its existing 100 health/roar values rather
+than a migrated level-start/status system. Roar recharge now follows the
+original one increment per 32 logic ticks; random enemy choices use the
+original three-byte generator with a fixed preview seed. The original
+startup seed has not yet been traced.
+
+`tools/check_enemies.c` checks real-map positions/support, visible changing
+enemy pixels, both turn directions, damage/immunity, the strict stomp
+threshold, both mirrored attack windows and their excluded boundary ticks,
+stun timing, obstacle braking/resume, culling, death and
+unchanged map bytes. It passes Address/UndefinedBehavior sanitizer checks.
+`tools/check_scene.c --map` runs the actual DOS64 adapter with movement,
+roar, jumping and audio mocks: six spawns, 241 contacts, one stun, six
+damage transitions, one landing and 886410 PCM frames in its 20-second
+fixture, with clean Escape/audio/log shutdown. The unchanged default demo
+still matches 128064000 ARGB pixels. Host scene builds now also need
+`src/engine/enemies.c`.
+Native QEMU also showed Simba and a real lizard together, accepted movement,
+roar and jumping, recorded seven damage/recoil events with 93 health left,
+one stun and one landing, and returned exit code zero on Escape.
