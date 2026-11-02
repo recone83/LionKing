@@ -11,6 +11,8 @@
 #include "engine/behaviors.h"
 #include "engine/music.h"
 #include "engine/enemies.h"
+#include "engine/pickups.h"
+#include "engine/lifecycle.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
@@ -23,7 +25,9 @@ static unsigned char level_music[49887];
 static MUSIC_PLAYER music_player;
 static MUSIC_OUTPUT music_output;
 static ENGINE_ENEMIES map_enemies;
-static unsigned char enemy_sprites[6][32768];
+static ENGINE_PICKUPS map_pickups;
+static unsigned char enemy_sprites[7][32768];
+static unsigned char pickup_sprites[3][131072];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -235,6 +239,7 @@ typedef struct {
     int map_mode;
     RENDER_FOLLOW_CAMERA camera;
     ENGINE_MAP_COLLISION collision;
+    ENGINE_LEVEL_LIFE life;
     short map_spawn_y;
     unsigned int map_contacts;
     unsigned int map_height_changes;
@@ -354,11 +359,12 @@ static int preview_player_ready(DEFLECTION_PREVIEW *preview)
 static int preview_player_sound(void *context, unsigned short sample)
 {
     (void)context;
-    if (sample != 0 && (sample < 2 || sample > 6)) {
+    if (sample != 0 && sample != 1 && sample != 10 && (sample < 2 || sample > 6)) {
         lk_platform_log("Lion King: unexpected player sound.\n");
         return -1;
     }
-    lk_platform_log(sample == 0 ?
+    lk_platform_log(sample == 1 || sample == 10 ?
+        "Original pickup sample requested; audio output unported.\n" : sample == 0 ?
         "Original rebound sample 0 requested; audio output unported.\n" : sample <= 3 ?
         "Original roar sample requested; audio output unported.\n" : sample <= 5 ?
         "Original recovery sample 4 requested; audio output unported.\n" :
@@ -450,6 +456,10 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
 {
     DEFLECTION_PREVIEW *preview = context;
     if (preview->ground_mode) {
+        if (preview->map_mode && call->handler == 0xc884U) {
+            lk_platform_log("LEVEL1: original lethal-fall countdown selected.\n");
+            return engine_level_life_fall(&preview->life, call);
+        }
         if (call->handler == 0xef04U) {
             if (preview->map_mode && (!preview->air.damage_source ||
                 !(preview->air.player.flags_high & 4))) {
@@ -541,10 +551,60 @@ static int begin_player_preview(DEFLECTION_PREVIEW *preview)
     return engine_player_begin_deflection(preview->object, &preview->air.player, &call);
 }
 
+static int preview_map_life(DEFLECTION_PREVIEW *preview)
+{
+    int result = engine_level_life_tick(&preview->life, preview->camera.position);
+    if (result == ENGINE_LIFE_RESTART) {
+        if (engine_enemies_restart(&map_enemies) != 0 ||
+            engine_pickups_restart(&map_pickups) != 0) return -1;
+        ENGINE_PLAYER_AIR *air = &preview->air;
+        air->player.body.owner = map_pickups.checkpoint;
+        air->player.body.motion = (ENGINE_MOTION){0};
+        air->player.body.node->flags = 0x40;
+        air->player.body.node->pass_flags = 0;
+        air->player.immunity = 100;
+        air->player.flags_high = 0;
+        air->player.age = air->player.controls = 0;
+        air->flags = air->player_flags = air->pressed = 0;
+        air->anchor_x = air->anchor_y = 0;
+        air->contact_kind = air->landing_flags = air->surface_kind = air->jump_boost = 0;
+        air->jump_air_script = air->auxiliary_controls = air->boundary_controls = 0;
+        air->action_timer = 0;
+        air->progress = air->progress_limit = 0;
+        preview->collision_flags = 0;
+        preview->airborne = 0;
+        preview->input_taps = 0;
+        air->player.handler = 0;
+        ENGINE_PLAYER_CALL call = {0xc8d5, 0x6148, 0};
+        if (preview_ground_ready(preview, &call) != 0) return -1;
+        preview->camera.horizontal_offset = 128;
+        preview->camera.position = (RENDER_OWNER){
+            (short)(air->player.body.owner.x - 128),
+            (short)(air->player.body.owner.y - 128)};
+        RENDER_VIEWPORT viewport;
+        if (render_prepare_viewport(&preview->camera.position, preview->collision.width,
+            preview->collision.height, 0, &viewport) != 0) return -1;
+        lk_platform_log("LEVEL1: restored health and restarted at the saved checkpoint.\n");
+    } else if (result == ENGINE_LIFE_GAME_OVER) {
+        lk_platform_log("LEVEL1: no lives remaining; game over.\n");
+        preview->completed = 1;
+    }
+    return result;
+}
+
 static void update_player_preview(void *context)
 {
     DEFLECTION_PREVIEW *preview = context;
     if (preview->ground_mode) {
+        if (preview->map_mode) {
+            int life = preview_map_life(preview);
+            if (life < 0) {
+                lk_platform_log("Lion King: LEVEL1 death/restart failed.\n");
+                preview->failed = 1;
+                return;
+            }
+            if (life != ENGINE_LIFE_PLAYING) return;
+        }
         unsigned short held = (preview->api->Input.KeyDown[0x50] ? 4 : 0) |
             (preview->api->Input.KeyDown[0x4f] ? 8 : 0) |
             (preview->api->Input.KeyDown[0x2c] ? 0x20 : 0) |
@@ -715,6 +775,8 @@ static void update_player_preview(void *context)
                 preview->failed = 1;
                 return;
             }
+            if (preview->air.roar_charge > map_pickups.max_roar)
+                preview->air.roar_charge = map_pickups.max_roar;
             if (engine_map_lateral(&preview->collision, &preview->air.player.body.owner,
                 preview->air.flags, preview->air.player.flags_high,
                 &preview->air.boundary_controls) != 0) {
@@ -739,6 +801,11 @@ static void update_player_preview(void *context)
                 preview_camera(preview, &camera) != 0 ||
                 engine_enemies_tick(&map_enemies, camera) != 0) {
                 lk_platform_log("Lion King: original LEVEL1 enemy update failed.\n");
+                preview->failed = 1;
+                return;
+            }
+            if (engine_pickups_tick(&map_pickups, camera) != 0) {
+                lk_platform_log("Lion King: original LEVEL1 pickup update failed.\n");
                 preview->failed = 1;
                 return;
             }
@@ -846,7 +913,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         lk_platform_log("Lion King: cannot load player reaction preview map.\n");
         return 1;
     }
-    RENDER_SPRITE_BANK banks[81] = {0};
+    RENDER_SPRITE_BANK banks[95] = {0};
     unsigned int count = flight ? ASSETS_YOUNG_BANK_COUNT : 2;
     for (unsigned int i = 0; i < count; ++i) {
         unsigned int slot, loaded;
@@ -919,8 +986,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.air.damage_source = preview.map_mode ? 0 : &preview.damage_source;
     preview.air.contact = preview_player_contact;
     preview.air.ledge_height = preview_ledge_height;
-    preview.air.health = 100;
-    preview.air.roar_charge = 100;
+    preview.air.health = preview.map_mode ? 4 : 100;
+    preview.air.roar_charge = preview.map_mode ? 0 : 100;
     if (!preview.air.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
         lk_platform_log("Lion King: cannot initialize original player deflection.\n");
         return 1;
@@ -936,8 +1003,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: cannot initialize map follow camera.\n");
             return 1;
         }
-        static const unsigned int indices[6] = {3, 12, 13, 14, 15, 16};
-        for (unsigned int i = 0; i < 6; ++i) {
+        static const unsigned int indices[7] = {3, 12, 13, 14, 15, 16, 17};
+        for (unsigned int i = 0; i < 7; ++i) {
             unsigned int slot, loaded;
             if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_level1_bank_list,
                 sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
@@ -948,22 +1015,43 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             }
             banks[slot] = (RENDER_SPRITE_BANK){enemy_sprites[i], loaded};
         }
+        static const unsigned int common_indices[3] = {0, 12, 13};
+        for (unsigned int i = 0; i < 3; ++i) {
+            unsigned int slot, loaded;
+            if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_common_bank_list,
+                sizeof(animation_common_bank_list), common_indices[i], packed, sizeof(packed),
+                pickup_sprites[i], sizeof(pickup_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
+                slot != 81 + common_indices[i]) {
+                lk_platform_log("Lion King: cannot load original LEVEL1 pickup/checkpoint banks.\n");
+                return 1;
+            }
+            banks[slot] = (RENDER_SPRITE_BANK){pickup_sprites[i], loaded};
+        }
         if (engine_enemies_initialize(&map_enemies, &scene_objects, &render_pool,
             &preview.collision, &preview.air) != 0) {
             lk_platform_log("Lion King: invalid LEVEL1 enemy marker plane.\n");
+            return 1;
+        }
+        if (engine_pickups_initialize(&map_pickups, &scene_objects, &render_pool,
+            &preview.collision, &preview.air, preview.air.health,
+            16) != 0 ||
+            engine_level_life_initialize(&preview.life, &preview.air, preview.object, 3) != 0) {
+            lk_platform_log("Lion King: invalid LEVEL1 pickup marker plane.\n");
             return 1;
         }
     }
     if (preview.ground_mode) {
         if (preview.map_mode) {
             lk_platform_log("Real LEVEL1.MAP collision and CONTOUR.CON are active.\n"
-                "Left/Right: move; Space: jump; Down: crouch/roll; Escape: exit.\n"
+                "Left/Right: move; Space: jump; Down: crouch/roll; Ctrl: roar; Escape: exit.\n"
                 "Floor, slopes, landing and edge queries use map planes, not a fixed Y.\n"
                 "Starting X160 is a preview choice; Y is found on the real contour.\n"
                 "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
                 "Original LEVEL1 parallax and foreground/object layer order are active.\n"
                 "Original lizard and porcupine markers, movement/roar/contact/removal are active.\n"
-                "Ctrl: roar. Other enemy types, sound effects and health HUD remain unported.\n"
+                "Original healing/upgrades/checkpoint markers and animations are active.\n"
+                "Normal starting health 4, roar capacity 16 and 3 lives; roar recharges from zero.\n"
+                "Checkpoint/death/restart are active; HUD and remaining enemy types are unported.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
         } else {
             lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
@@ -1087,11 +1175,11 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             (!preview.map_mode && render_map_tile_pass(map, map_size, 0,
                 camera_x, camera_y, 1, view) != 0) ||
             render_object_pass(&render_pool, 0, (short)-(int)camera_x, (short)-(int)camera_y,
-                banks, 81, view) != 0 ||
+                banks, 95, view) != 0 ||
             (preview.map_mode && (render_map_tile_pass(map, map_size, 0,
                 camera_x, camera_y, 1, view) != 0 ||
                 render_object_pass(&render_pool, 0x80, (short)-(int)camera_x,
-                    (short)-(int)camera_y, banks, 81, view) != 0)) ||
+                    (short)-(int)camera_y, banks, 95, view) != 0)) ||
             vga_present_frame(&frame) != 0) {
             lk_platform_log("Lion King: cannot render player deflection preview.\n");
             return 1;
@@ -1101,6 +1189,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: original player deflection preview failed.\n");
             return 1;
         }
+        if (preview.map_mode && preview.life.game_over) break;
         lk_platform_sleep(10);
     }
     lk_platform_log(preview.ground_mode ? "Original player ground preview finished.\n" :
@@ -1118,6 +1207,13 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         log_map_measurement("Enemy roar stuns: ", map_enemies.stuns);
         log_map_measurement("Enemy contacts: ", map_enemies.contacts);
         log_map_measurement("Enemy defeats: ", map_enemies.defeated);
+        log_map_measurement("Pickup map markers: ", map_pickups.count);
+        log_map_measurement("Pickups collected: ", map_pickups.collected);
+        log_map_measurement("Pickup upgrades completed: ", map_pickups.upgrades);
+        log_map_measurement("Checkpoints activated: ", map_pickups.checkpoints);
+        log_map_measurement("Player lives remaining: ", preview.life.lives);
+        log_map_measurement("Player deaths: ", preview.life.deaths);
+        log_map_measurement("Player checkpoint restarts: ", preview.life.restarts);
         log_map_measurement("Player health remaining: ", (unsigned int)preview.air.health);
         log_map_measurement("Music submitted frames: ", (unsigned int)music_output.submitted);
         log_map_measurement("Music tracker rows: ", music_player.rows_played);

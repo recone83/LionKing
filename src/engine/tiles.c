@@ -50,6 +50,24 @@ static int collision_cell(const ENGINE_MAP_COLLISION *collision, int x, int row,
     return 0;
 }
 
+int engine_map_marker(const ENGINE_MAP_COLLISION *collision, unsigned int column,
+    unsigned int row, unsigned int *type, RENDER_OWNER *position)
+{
+    if (!collision || !type || !position || column >= collision->width / 2 ||
+        row >= collision->height / 2) return -1;
+    unsigned int tile;
+    if (collision_cell(collision, (int)column * 16, (int)row, 3, &tile) != 0) return -1;
+    *type = map_shape(tile);
+    *position = (RENDER_OWNER){(short)(column * 16), (short)(row * 16)};
+    return 0;
+}
+
+int engine_map_activation_window(RENDER_OWNER position, RENDER_OWNER camera)
+{
+    return position.x >= camera.x - 111 && position.x <= camera.x + 415 &&
+        position.y >= camera.y - 111 && position.y <= camera.y + 304;
+}
+
 int engine_map_ground(const ENGINE_MAP_COLLISION *collision, short x, short y,
     ENGINE_MAP_GROUND *ground)
 {

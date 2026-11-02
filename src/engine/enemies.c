@@ -45,12 +45,6 @@ static int remove_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard, int def
     return 0;
 }
 
-static int near_window(RENDER_OWNER owner, RENDER_OWNER camera)
-{
-    return owner.x >= camera.x - 111 && owner.x <= camera.x + 415 &&
-        owner.y >= camera.y - 111 && owner.y <= camera.y + 304;
-}
-
 static int supported_gravity(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 {
     ENGINE_FALLING_OBJECT *body = &lizard->body;
@@ -402,19 +396,16 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
     enemies->random = 0x010101;
     for (unsigned int row = 0; row < map->height / 2; ++row) {
         for (unsigned int col = 0; col < map->width / 2; ++col) {
-            unsigned int offset = map->table + 3 * map->plane_size +
-                row * map->width * 4 + col * 4;
-            if (offset + 2 > map->size) return -1;
-            unsigned int tile = word(map->map + offset);
-            unsigned int type = ((tile & 0xfe0) >> 2) + ((tile & 0x1f) >> 1);
+            unsigned int type;
+            RENDER_OWNER marker;
+            if (engine_map_marker(map, col, row, &type, &marker) != 0) return -1;
             if (type != 14 && type != 10) continue;
             if (enemies->count == ENGINE_LIZARD_CAPACITY) return -1;
             ENGINE_LIZARD *enemy = &enemies->lizards[enemies->count++];
             enemy->marker_type = (unsigned char)type;
             if (type == 14) ++enemies->lizard_count;
             else ++enemies->porcupine_count;
-            enemy->marker = (RENDER_OWNER){
-                (short)(col * 16), (short)(row * 16)};
+            enemy->marker = marker;
         }
     }
     return 0;
@@ -433,6 +424,17 @@ int engine_enemies_player_clock(ENGINE_ENEMIES *enemies)
     return 0;
 }
 
+int engine_enemies_restart(ENGINE_ENEMIES *enemies)
+{
+    if (!enemies || !enemies->objects || !enemies->renders) return -1;
+    for (unsigned int i = 0; i < enemies->count; ++i) {
+        ENGINE_LIZARD *enemy = &enemies->lizards[i];
+        if (enemy->object && remove_lizard(enemies, enemy, 0) != 0) return -1;
+        enemy->destroyed = 0;
+    }
+    return 0;
+}
+
 int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
 {
     if (!enemies || !enemies->objects || !enemies->renders || !enemies->map ||
@@ -442,7 +444,7 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
         ENGINE_LIZARD *lizard = &enemies->lizards[i];
         if (lizard->destroyed) continue;
         if (!lizard->object) {
-            if (!near_window(lizard->marker, camera)) continue;
+            if (!engine_map_activation_window(lizard->marker, camera)) continue;
             lizard->body.owner = lizard->marker;
             lizard->body.motion = (ENGINE_MOTION){0, 0,
                 lizard->marker_type == 10 ? 0xa000 : 0x8000, 0};
@@ -464,7 +466,7 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
             ++enemies->spawned;
         } else if ((lizard->handler == 0x1127e || lizard->handler == 0x11a51 ||
             lizard->marker_type == 10) &&
-            !near_window(lizard->body.owner, camera)) {
+            !engine_map_activation_window(lizard->body.owner, camera)) {
             if (remove_lizard(enemies, lizard,
                 lizard->marker_type == 10 && lizard->handler == 0x11c81) != 0) return -1;
         } else if (update_lizard(enemies, lizard) != 0) {

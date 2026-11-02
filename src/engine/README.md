@@ -633,9 +633,9 @@ Aktywacja jest ograniczona do okna wokół kamery; żywe obiekty mogą zostać
 zwolnione i odtworzone ze znacznika, pokonane nie wracają w tym uruchomieniu.
 Przewijanie dotyczy również sprite'ów przeciwników. Pule i renderer są
 wspólne z Simbą, a oryginalna mapa pozostaje niezmieniona.
-Preview stosuje stały seed trzybajtowego generatora `0x8476`, zachowuje
-dotychczasowe początkowe metry i nie przenosi jeszcze HUD, śmierci gracza,
-efektów dźwiękowych ani pozostałych klas przeciwników.
+Preview stosuje stały seed trzybajtowego generatora `0x8476`.
+HUD, efekty dźwiękowe i pozostałe klasy przeciwników nie są jeszcze
+przeniesione; bieżące metry, przedmioty i restart opisano poniżej.
 Seed wynosi `0x010101`; inicjalizacja generatora w oryginalnym startupie
 nie została jeszcze ustalona. Natywne okno aktywacji to X kamery −111..+415
 i Y −111..+304: jest oparte na `0x552b`, ale nie odwzorowuje jeszcze
@@ -658,10 +658,63 @@ pełna zgodność oryginalnego skanera aktywacji nadal nie jest deklarowana.
 
 Inwentaryzacja LEVEL1: 47 znaczników, typy/count:
 1/1, 3/2, 9/9, 10/5, 11/4, 14/14, 16/1, 17/3, 18/4,
-40/1, 41/1, 43/1, 49/1. Typy 10 i 14 są podłączone; pozostałe
+40/1, 41/1, 43/1, 49/1. Typy 3, 10, 14, 16, 17, 18 i 49 są podłączone; pozostałe
 nie otrzymały jeszcze zastępczych handlerów. Tablica dispatch
 base-zero `0x5c5c` wskazuje ich oryginalne definicje DS. Typy 17/18
 używają `BUGS` slot 81 (leczenie +4/do maksimum), 16/49 zwiększają
 metry po locie do HUD, a typ 3 zapisuje pozycję checkpointu.
-Pełny HUD, checkpoint/restart, hiena i zakończenie poziomu nadal
+Pełny HUD, hiena i zakończenie poziomu nadal
 pozostają częścią niezakończonej migracji LEVEL1.
+
+`pickups.c/h` podłącza wszystkie 11 znaczników leczenia/ulepszeń/checkpointów.
+`engine_map_marker` współdzieli odczyt płaszczyzny 3 ze skanerem przeciwników,
+a `engine_map_activation_window` wspólny zakres aktywacji/cullingu.
+DS `0xb01c` jest listą 14 wspólnych banków od slotu 81; dane są generowane
+z checksum-verified zrzutu przez `extract_animation.pl`. Wymagane banki:
+81 `BUGS`, 93 `SYMORPH`, 94 `SYDSTYBG`, oraz 79 `SPARKLE2` z listy LEVEL1.
+Deskryptor efektu `0xadec` używa 79, nie 62.
+
+Przeniesiono base-zero `0x1443a`/`0x1447d` (+4/do maksimum),
+`0x144c4`/`0x1457c` (zebranie ulepszeń), `0x1474c`/`0x145e7`
+(lot do lewej/prawej strony HUD) i `0x148bc` (zbieżność X krokami ±3).
+Oryginalny strumień ruchu `0x137fd`/`0x13813` zachowuje sprite przedmiotu;
+metry zmieniają się dopiero przy Y20 i odległości X <8.
+Efekt `0x14e87`, definicja `0x13796`, strumień `0x137a4`, trwa 36 ticków;
+natywnie wykorzystuje ten sam obiekt/węzeł co zebrane ulepszenie.
+W natywnym rendererze screen-space oznacza wyczyszczenie flags 0x40,
+odwrotnie do znaczenia tej flagi w oryginalnym `0xa945`; przebieg 0x80
+z `0x133db` pozostaje osobną flagą. Kamera nie przesuwa zebranych ulepszeń.
+Dzielenie w `0x6780` dla Y21 dałoby zerowy dzielnik: ta legalna pozycja
+korzysta z bezpiecznej zbieżności przy HUD, zamiast wywracać grę.
+
+Typ 3 (`0x14a27`, DS `0x1393e`) zapisuje pozycję znacznika jak
+DS `0x173ae/0x173b0` i uruchamia `0x139b2`. Animacja i stan aktywacji
+są zachowane podczas cullingu; zebrania nie są powtarzane.
+Natywna polityka zachowuje zużyte znaczniki także przy restarcie.
+Pełna zgodność z oryginalnym resetem bitsetu skanera nie jest deklarowana;
+przerwany lot ulepszenia nie daje nagrody.
+
+Normalny start: max health 4, max roar 16, lives 3 według `0x4867..0x4882`.
+Zdrowie jest wypełnione do maksimum; roar charge zaczyna od 0 jak `0x4665`.
+Ładowane są dotychczasowe banki Simby, w tym `SYDIE` slot 8.
+`lifecycle.c/h` przenosi normalny przebieg `0x3fbb`/`0x407f..0x4189`:
+po śmiertelnym kontakcie odejmuje życie, wstrzymuje logikę świata,
+animuje DS `0x5ff2` i zbliża sprite do screen (160,128) o 1 px/tick.
+Licznik `0x5011` startuje od 220 i kończy przy wartości ujemnej,
+czyli po 221 aktualizacjach. Restart używa zapisanego checkpointu,
+uzupełnia zdrowie i daje 100 ticków odporności. Wspólny helper
+`engine_enemies_restart` zwalnia instancje, zachowuje liczniki diagnostyczne
+i pozwala ponownie aktywować przeciwników. Nie skopiowano oryginalnych
+przejść ekranowych, menu GAMEOVER ani specjalnych śmierci od zagrożeń;
+wyczerpanie żyć kończy natywną scenę poprawnym powrotem do launchera.
+Osobno podłączono czasowy śmiertelny selektor utraty podparcia `0xc884`: niewidoczny
+strumień `0x5e35` odlicza 100 ticków przed wyzerowaniem zdrowia i normalną
+śmiercią. Nie jest już odrzucany jako nieprzeniesiony selektor.
+
+`check_pickups.c` sprawdza rzeczywiste banki/deskryptory i każdą klatkę
+lotu, poświaty, checkpointu i trzech śmierci. `check_scene --map-lifecycle`
+przechodzi śmierć i restart wyłącznie przez rzeczywiste kontakty w adapterze;
+atrapy obrażeń mapy pozostają wyłączone. Kompilacje hostowego adaptera
+wymagają teraz także `pickups.c` i `lifecycle.c`; oba pliki są podłączone
+do `build.sh` i agregatora `pseiudo.c`. Eksportowane 753 oryginalne funkcje
+pozostają bez zmian.

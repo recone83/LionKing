@@ -47,5 +47,6 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
     RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player);
 int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera);
 int engine_enemies_player_clock(ENGINE_ENEMIES *enemies);
+int engine_enemies_restart(ENGINE_ENEMIES *enemies);
 
 #endif

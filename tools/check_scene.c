@@ -47,6 +47,8 @@ static int demo_hit;
 static unsigned int action_frames, roar_sounds, damage_sounds;
 static int map_test;
 static int map_animation;
+static int map_lifecycle;
+static unsigned int map_deaths, map_restarts, map_lives, map_collected;
 static unsigned int stomp_jump;
 static unsigned int enemy_damage_logs, map_stuns, map_defeats, map_contacts;
 static unsigned int rebound_logs;
@@ -139,6 +141,11 @@ static int __attribute__((ms_abi)) close_file(void *file)
         text[count] = 0;
         assert(map_counter(text, "Lizard map markers: ") == 14);
         assert(map_counter(text, "Porcupine map markers: ") == 5);
+        assert(map_counter(text, "Pickup map markers: ") == 11);
+        map_deaths = map_counter(text, "Player deaths: ");
+        map_restarts = map_counter(text, "Player checkpoint restarts: ");
+        map_lives = map_counter(text, "Player lives remaining: ");
+        map_collected = map_counter(text, "Pickups collected: ");
         map_spawns = map_counter(text, "Enemy spawns: ");
         map_stuns = map_counter(text, "Enemy roar stuns: ");
         map_defeats = map_counter(text, "Enemy defeats: ");
@@ -220,6 +227,11 @@ static void __attribute__((ms_abi)) poll(void)
             api.Input.KeyDown[0x51] = (iteration >= 400 && iteration < 420) ||
                 (iteration >= 800 && iteration < 820);
         }
+        if (map_lifecycle) {
+            memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
+            memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
+            api.Input.KeyDown[0x4f] = 1;
+        }
     }
     if (ground_steering && iteration <= 1400) {
         unsigned int phase = iteration % 400;
@@ -252,7 +264,7 @@ static void __attribute__((ms_abi)) poll(void)
         api.Input.KeyDown[0x4f] = 1;
         api.Input.KeyPressed[0x4f] = iteration == 41;
     }
-    if (iteration == 2002) {
+    if (iteration == (map_lifecycle ? 6002U : 2002U)) {
         api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
     }
     if (jump_test && api.Input.KeyPressed[0x2c]) {
@@ -269,7 +281,7 @@ static void __attribute__((ms_abi)) poll(void)
         }
         ground_taps |= taps;
     }
-    assert(iteration <= 2002);
+    assert(iteration <= (map_lifecycle ? 6002U : 2002U));
 }
 static void update_reference(void *context)
 {
@@ -609,10 +621,12 @@ int main(int argc, char **argv)
         strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0 ||
         strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0 ||
         strcmp(argv[1], "--map") == 0 || strcmp(argv[1], "--map-stomp") == 0 ||
-        strcmp(argv[1], "--map-animation") == 0)));
+        strcmp(argv[1], "--map-animation") == 0 || strcmp(argv[1], "--map-lifecycle") == 0)));
+    map_lifecycle = argc == 2 && strcmp(argv[1], "--map-lifecycle") == 0;
     map_animation = argc == 2 && strcmp(argv[1], "--map-animation") == 0;
     stomp_jump = argc == 2 && strcmp(argv[1], "--map-stomp") == 0 ? 60 : 0;
-    map_test = map_animation || stomp_jump || (argc == 2 && strcmp(argv[1], "--map") == 0);
+    map_test = map_lifecycle || map_animation || stomp_jump ||
+        (argc == 2 && strcmp(argv[1], "--map") == 0);
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
     jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
     ground_steering = argc == 2 && strcmp(argv[1], "--ground-steering") == 0;
@@ -637,9 +651,16 @@ int main(int argc, char **argv)
         printf("Map measurements: %u spawns/%u contacts/%u stuns/%u defeats, %u damage logs/"
             "%u landings, %u changed frames, %llu audio frames\n", map_spawns, map_contacts,
             map_stuns, map_defeats, enemy_damage_logs, map_jumps, changed, audio_written);
-        assert(iteration == 2002 && shown == 2001);
+        if (map_lifecycle) {
+            printf("Lifecycle measurements: %u deaths/%u restarts/%u lives/%u pickups\n",
+                map_deaths, map_restarts, map_lives, map_collected);
+            assert(map_deaths > 0 && map_restarts > 0 && map_lives == 3 - map_deaths);
+            assert(shown > 2001 && iteration <= 6002);
+        } else assert(iteration == 2002 && shown == 2001 && !map_deaths);
         assert(audio_written > 800000 && audio_energy > 0 && audio_stops == 1 && !log_file);
-        if (map_animation) {
+        if (map_lifecycle) {
+            puts("PASS: actual native adapter fatal enemy damage, death animation and restored gameplay without fixture hits");
+        } else if (map_animation) {
             assert(stable_background_frames == 2000 && changed > 100 &&
                 animation_roar_logs == 3 && enemy_damage_logs == 0);
             puts("PASS: repeated idle/roar/crouch transitions keep distant background exactly stationary");
@@ -649,8 +670,8 @@ int main(int argc, char **argv)
             puts("PASS: real-map stomp, rendered lizard death, Simba rebound, continued gameplay/music and Escape");
         } else {
             assert(changed > 200 && map_spawns >= 2 && map_contacts > 0 &&
-                map_jumps > 0 && enemy_damage_logs > 0 && map_stuns > 0);
-            puts("PASS: real map lizards, actual contacts/recoil, roar, jumping, music and Escape with file-only logs");
+                map_jumps > 0 && enemy_damage_logs > 0 && !map_stuns && animation_roar_logs > 0);
+            puts("PASS: real map contacts/recoil, initially uncharged roar, jumping, music and Escape with file-only logs");
         }
         return 0;
     }

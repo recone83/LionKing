@@ -346,6 +346,11 @@ int main(void)
     assert(engine_enemies_tick(&enemies, camera) == 0);
     assert(enemies.spawned > 1 && lower_lizard()->body.owner.x == 352);
     assert(memcmp(map, original_map, size) == 0);
+    assert(engine_enemies_restart(&enemies) == 0);
+    for (unsigned int i = 0; i < enemies.count; ++i)
+        assert(!enemies.lizards[i].object && !enemies.lizards[i].destroyed);
+    assert(engine_enemies_tick(&enemies, camera) == 0);
+    assert(lower_lizard()->object && lower_lizard()->body.owner.x == 352);
     unsigned int table = dword(map + 16);
     ENGINE_MAP_COLLISION truncated = collision;
     truncated.size = table;

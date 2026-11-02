@@ -44,5 +44,6 @@ extern const unsigned char animation_level6_bank_list[188];
 #define ANIMATION_ENEMY_SIZE (0x1405dU - ANIMATION_ENEMY_BASE)
 extern const unsigned char animation_enemy_data[ANIMATION_ENEMY_SIZE];
 extern const unsigned char animation_level1_bank_list[156];
+extern const unsigned char animation_common_bank_list[116];
 
 #endif

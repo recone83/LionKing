@@ -21,6 +21,13 @@ while (@level1_banks) {
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";
+print "const unsigned char animation_common_bank_list[116] = {\n";
+my @common_banks = unpack 'C*', substr($data, 0xb01c, 116);
+while (@common_banks) {
+    my @row = splice @common_banks, 0, 16;
+    print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+}
+print "};\n";
 print "const unsigned char animation_enemy_data[ANIMATION_ENEMY_SIZE] = {\n";
 my @enemies = unpack 'C*', substr($data, 0xa1fc, 0x1405d - 0xa1fc);
 while (@enemies) {

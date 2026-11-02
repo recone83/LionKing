@@ -1378,11 +1378,13 @@ their original marker.
 Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `DUST` banks and DS
 animation streams are used, including the original shared death effect.
 Map graphics, contour/tag planes and markers are not modified. Lizards and
-porcupines are active: hyenas, the other enemy type, pickups, world hazards,
-enemy sound effects, health HUD and player death/restart are still pending.
-The preview still starts with its existing 100 health/roar values rather
-than a migrated level-start/status system. Roar recharge now follows the
-original one increment per 32 logic ticks; random enemy choices use the
+porcupines are active, along with the healing/upgrades/checkpoints described
+below. Hyenas, the other enemy type, special objects, world hazards,
+sound effects and the status HUD remain pending.
+Map mode starts with normal-difficulty health/capacity 4, roar capacity 16
+and three lives; roar recharges from zero by one increment per 32 logic
+ticks, capped at its current capacity. Non-map fixtures retain their
+previous 100 health/roar choices. Random enemy choices use the
 original three-byte generator with a fixed preview seed. The original
 startup seed has not yet been traced.
 
@@ -1392,11 +1394,13 @@ threshold, both mirrored attack windows and their excluded boundary ticks,
 stun timing, obstacle braking/resume, culling, death and
 unchanged map bytes. It passes Address/UndefinedBehavior sanitizer checks.
 `tools/check_scene.c --map` runs the actual DOS64 adapter with movement,
-roar, jumping and audio mocks: four spawns, 124 contacts, two stuns, two
+roar, jumping and audio mocks: nine spawns, 19 contacts, two
 damage transitions, one landing and 886410 PCM frames in its 20-second
 fixture, with clean Escape/audio/log shutdown. The unchanged default demo
-still matches 128064000 ARGB pixels. Host scene builds now also need
-`src/engine/enemies.c`.
+still matches 128064000 ARGB pixels. This input fixture now verifies that
+its initially uncharged roar does not stun enemies; the exact strong-roar
+thresholds remain covered by the enemy tests. Host scene builds also need
+`src/engine/enemies.c`, `src/engine/pickups.c` and `src/engine/lifecycle.c`.
 `tools/check_scene.c --map-stomp` exercises a real descending contact:
 one lizard defeat, Simba's rebound, all subsequent death frames, continued
 movement/roar/jumping and music, then clean Escape. The enemy test also renders
@@ -1444,7 +1448,63 @@ LEVEL1 is **not complete yet**. The authoritative fourth-plane inventory
 contains 47 nonzero markers of 13 types, not just the enemies on the lower
 route. Its counts are: 1:1, 3:2, 9:9, 10:5, 11:4, 14:14, 16:1, 17:3,
 18:4, 40:1, 41:1, 43:1, 49:1. Remaining work includes the other enemy
-type and hyena, proximity emitters, pickups/upgrades, checkpoints and
-special objects, original sound effects/status HUD, death/restart and
-the original level-completion transition. Unmigrated types are not
+type and hyena, proximity emitters and special objects, original sound
+effects/status HUD and the original level-completion transition.
+The implemented seven marker types cover 30 of the 47 positions.
+Unmigrated types are not
 substituted with generic enemy or pickup behavior.
+
+### LEVEL1 pickups, checkpoint state and lives
+
+Eleven additional map markers are connected: three small healing items
+(type 17), four full-heal items (18), one roar-capacity upgrade (16), one
+health-capacity upgrade (49), and two checkpoints (3). They use `BUGS`,
+`SYMORPH` and `SYDSTYBG` from the original shared bank list; upgrade arrival
+uses the original `SPARKLE2` effect. Collection is decided by current
+animation bounds, not a radius or key shortcut.
+
+Small healing adds four health points, bounded by the current capacity;
+full healing restores that capacity. Upgrades retain their own sprite
+while following the original motion stream in screen space towards
+(16,20) or (300,20). Only arrival increases roar capacity/charge by eight
+or health capacity by two and fully heals Simba. The arrival glow lasts
+36 logic ticks and reuses the collected object's render node. The status
+artwork itself is not implemented yet.
+
+Checkpoints record their marker position and play the original activation
+sequence. Scrolling away and back does not repeatedly activate them.
+Consumed items stay consumed during this native run, including restarts;
+an upgrade interrupted by death before reaching the HUD is not awarded.
+This persistence policy is tested, but full original scanner/restart
+fidelity is not claimed.
+
+Fatal enemy damage removes a life and plays the original young Simba
+`SYDIE` sequence for 221 ticks. World updates pause while the death sprite
+converges on screen position (160,128). With lives left, Simba restarts at
+the saved checkpoint (or the preview spawn), with health restored, empty
+roar charge and 100 ticks of immunity. Enemy instances are reset; their
+diagnostic counters remain cumulative. At zero lives the native scene
+returns cleanly to the launcher. The original game-over/menu artwork,
+death screen transitions, non-normal difficulty and special hazard-death
+branches are not migrated by this block.
+The timed fatal support branch `0xc884` is connected separately: its
+original invisible `0x5e35` sequence delays zero health by exactly 100
+ticks before the normal death sequence. It no longer fails as an
+unsupported selector.
+
+`tools/check_pickups.c` uses real map markers and EPF banks to test healing,
+collection persistence, both complete upgrade flights/glows, every
+checkpoint animation frame, sound/query error propagation, three lives
+and all 221 ticks of each death. It also covers upgrade collection at Y21,
+where the original half-height slope divisor would be zero; the native
+flight safely converges along the HUD instead.
+`tools/check_scene.c --map-lifecycle` runs 60 seconds of genuine movement
+and enemy contacts through the actual adapter, without synthetic hits:
+one death, one restored run, two remaining lives, six damage transitions
+and 2650410 submitted PCM frames. All scene regression modes, the unchanged
+default exact-pixel output, and focused sanitizer tests pass.
+An isolated native DOS64/QEMU run also crossed genuine enemy contacts,
+completed one death/restart with two lives remaining, submitted 6384256
+PCM frames and returned exit code zero on Escape. Its closed log recorded
+all 11 pickup markers and 129 enemy contacts; pickup collection itself
+was validated by the real-resource host tests, not this native traversal.

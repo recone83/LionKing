@@ -31,6 +31,9 @@ int engine_map_ground(const ENGINE_MAP_COLLISION *collision, short x, short y,
     ENGINE_MAP_GROUND *ground);
 int engine_map_kind(const ENGINE_MAP_COLLISION *collision, short x, short y,
     unsigned short *kind);
+int engine_map_marker(const ENGINE_MAP_COLLISION *collision, unsigned int column,
+    unsigned int row, unsigned int *type, RENDER_OWNER *position);
+int engine_map_activation_window(RENDER_OWNER position, RENDER_OWNER camera);
 int engine_map_ledge_height(const ENGINE_MAP_COLLISION *collision,
     short x, short y, short *height);
 int engine_map_edge(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
