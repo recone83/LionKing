@@ -11,10 +11,13 @@ static short pickup_word(int value)
 static unsigned int pickup_parts(unsigned int type)
 {
     switch (type) {
+    case 1: return 0xb89c;
     case 3: return 0xbbe4;
     case 16: return 0xb0cc;
     case 17: return 0xb090;
     case 18: return 0xb0a4;
+    case 40: return 0xb284;
+    case 41: return 0xb144;
     case 49: return 0xb0b8;
     default: return 0;
     }
@@ -22,6 +25,10 @@ static unsigned int pickup_parts(unsigned int type)
 
 static int pickup_script(ENGINE_PICKUP *item, unsigned int entry)
 {
+    if (item->type == 1 || item->type == 40)
+        return animation_program_initialize(&item->body.animation, animation_movement_data,
+            ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, entry, animation_movement_data,
+            ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE);
     return animation_program_initialize(&item->body.animation, animation_enemy_data,
         ANIMATION_ENEMY_SIZE, ANIMATION_ENEMY_BASE, entry, animation_enemy_data,
         ANIMATION_ENEMY_SIZE, ANIMATION_ENEMY_BASE);
@@ -58,6 +65,8 @@ static int pickup_spawn(ENGINE_PICKUPS *pickups, ENGINE_PICKUP *item)
         return -1;
     }
     if (item->activated && pickup_script(item, 0x139b2) != 0) return -1;
+    if (item->type == 1 && pickup_script(item, 0x4ac2) != 0) return -1;
+    if (item->type == 40 && pickup_script(item, 0x4b53) != 0) return -1;
     ++pickups->spawned;
     return 0;
 }
@@ -119,11 +128,11 @@ static int pickup_update_flight(ENGINE_PICKUPS *pickups, ENGINE_PICKUP *item)
 
 int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objects,
     RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player,
-    short max_health, unsigned short max_roar)
+    short max_health, unsigned short max_roar, unsigned char *lives)
 {
     if (!pickups || !objects || !renders || !map || !player ||
         !player->player.body.node || !player->player.body.node->active ||
-        !player->sound || max_health <= 0 || !max_roar) return -1;
+        !player->sound || max_health <= 0 || !max_roar || !lives || *lives > 9) return -1;
     *pickups = (ENGINE_PICKUPS){0};
     pickups->objects = objects;
     pickups->renders = renders;
@@ -131,6 +140,7 @@ int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objec
     pickups->player = player;
     pickups->max_health = max_health;
     pickups->max_roar = max_roar;
+    pickups->lives = lives;
     pickups->checkpoint = player->player.body.owner;
     for (unsigned int row = 0; row < map->height / 2; ++row) {
         for (unsigned int column = 0; column < map->width / 2; ++column) {
@@ -150,7 +160,7 @@ int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objec
 int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
 {
     if (!pickups || !pickups->objects || !pickups->renders || !pickups->map ||
-        !pickups->player || !pickups->player->sound) return -1;
+        !pickups->player || !pickups->player->sound || !pickups->lives) return -1;
     for (unsigned int i = 0; i < pickups->count; ++i) {
         ENGINE_PICKUP *item = &pickups->items[i];
         if (!item->object) {
@@ -184,6 +194,14 @@ int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
             if (pickup_animate(item) != 0) return -1;
             continue;
         }
+        if (item->type == 1 || item->type == 40) {
+            if (pickup_animate(item) != 0) return -1;
+            if (item->type == 1 && *pickups->lives == 9) {
+                item->collected = 1;
+                if (pickup_release(pickups, item) != 0) return -1;
+                continue;
+            }
+        }
         short hit;
         if (render_objects_hit(item->body.node, pickups->player->player.body.node, &hit) != 0)
             return -1;
@@ -199,7 +217,12 @@ int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
         }
         item->collected = 1;
         ++pickups->collected;
-        if (item->type == 16 || item->type == 49) {
+        if (item->type == 1 || item->type == 40 || item->type == 41) {
+            if (item->type == 1) ++*pickups->lives;
+            else if (item->type == 40) ++pickups->bonus_count;
+            else pickups->bonus_selected = 65535;
+            if (pickup_release(pickups, item) != 0) return -1;
+        } else if (item->type == 16 || item->type == 49) {
             if (pickup_flight(item, camera) != 0) return -1;
         } else {
             int health = item->type == 17 ? pickups->player->health + 4 : pickups->max_health;

@@ -658,7 +658,7 @@ pełna zgodność oryginalnego skanera aktywacji nadal nie jest deklarowana.
 
 Inwentaryzacja LEVEL1: 47 znaczników, typy/count:
 1/1, 3/2, 9/9, 10/5, 11/4, 14/14, 16/1, 17/3, 18/4,
-40/1, 41/1, 43/1, 49/1. Typy 3, 9, 10, 11, 14, 16, 17, 18 i 49 są podłączone; pozostałe
+40/1, 41/1, 43/1, 49/1. Typy 1, 3, 9, 10, 11, 14, 16, 17, 18, 40, 41 i 49 są podłączone; pozostałe
 nie otrzymały jeszcze zastępczych handlerów. Tablica dispatch
 base-zero `0x5c5c` wskazuje ich oryginalne definicje DS. Typy 17/18
 używają `BUGS` slot 81 (leczenie +4/do maksimum), 16/49 zwiększają
@@ -739,3 +739,31 @@ strumienia wizualnego. Liście wykonują 100 aktualizacji ruchu z grawitacją
 0x1000, potem są zwalniane. Wejście ponownie uzbraja się dopiero po
 opuszczeniu prostokąta; restart zwalnia wszystkie liście i stan wejścia.
 `check_enemies` renderuje cały przebieg i sprawdza granice prostokąta.
+
+Typy 1/40/41 domykają znaczniki przedmiotów: `0x14942` zwiększa życie
+do limitu 9, `0x14bc6` zwiększa licznik bonusowy jak `0x6b5d`,
+`0x14d4f` ustawia wybór bonusu jak DS `0x19369=0xffff`.
+DS `0x4ac2`/`0x4b53` są w zakresie movement; wymagają wspólnych banków
+89 `UP1` i 83 `CIRCLE`. Limit dziewięciu żyć usuwa UP1 bez nagrody.
+Animacje, niepowtarzanie zebrania i stan po restarcie sprawdza `check_pickups`.
+Przejście do minigry bonusowej nie jest jeszcze przeniesione.
+
+`hud.c` odtwarza overlay `0x9ca3`, `0x9d2e`, `0x9fc8` z `BARS.MCH`:
+zdrowie X272/Y12 (frame 0/2), roar X16/Y12 (frame 0/1),
+portret X16/Y160 (frame 3), życia X36/Y164 (frame 5+lives).
+Prawa krawędź wypełnienia to baseX+2+26*current/max.
+`render_draw_sprite_clipped` współdzieli walidację/run decoder ze zwykłym
+blitterem; zwykłe wywołania zachowują dokładnie dotychczasowy wynik.
+Test weryfikuje dokładne piksele pustego/połowicznego/pełnego metra i wszystkie
+cyfry żyć. Scena rysuje HUD po warstwach świata i obiektów.
+
+Listy próbek DS `0x12f30` (11 wspólnych) i `0x12f8c` (4 LEVEL1,
+sloty 15..18) są generowane z tego samego checksum-verified zrzutu.
+`assets_slot_list_name` zwraca surową nazwę; sprite entry nadal dopisuje
+`.MCH`. Surowe próbki bez nagłówka są unsigned 8-bit PCM.
+`music_effect_play` odtwarza dwa kanały efektów jak `0x8f31`,
+z częstotliwością 0x313c=12604 i głośnością 64, miksowane do stereo
+44100 Hz z muzyką. Nowa próbka zastępuje poprzednią na tym samym kanale.
+Żądanie jaszczurki przy timerze 32 używa kanału 1/próbki 15;
+reszta podłączonych żądań używa kanału 0. Nie zastąpiono oryginalnych próbek
+syntezą. `check_music` porównuje dokładne próbki i fragmentację wyjścia.

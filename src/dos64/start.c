@@ -13,6 +13,7 @@
 #include "engine/enemies.h"
 #include "engine/pickups.h"
 #include "engine/lifecycle.h"
+#include "engine/hud.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
@@ -27,7 +28,10 @@ static MUSIC_OUTPUT music_output;
 static ENGINE_ENEMIES map_enemies;
 static ENGINE_PICKUPS map_pickups;
 static unsigned char enemy_sprites[11][32768];
-static unsigned char pickup_sprites[3][131072];
+static unsigned char pickup_sprites[5][131072];
+static unsigned char hud_sprites[32768];
+static unsigned char effect_samples[19][65536];
+static unsigned int effect_sizes[19];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -358,11 +362,24 @@ static int preview_player_ready(DEFLECTION_PREVIEW *preview)
 
 static int preview_player_sound(void *context, unsigned short sample)
 {
-    (void)context;
+    DEFLECTION_PREVIEW *preview = context;
     if (sample != 0 && sample != 1 && sample != 10 && sample != 16 &&
         (sample < 2 || sample > 6)) {
         lk_platform_log("Lion King: unexpected player sound.\n");
         return -1;
+    }
+    if (preview->map_mode) {
+        if (sample >= 19 || !effect_sizes[sample] ||
+            music_effect_play(&music_player, 0, effect_samples[sample],
+                effect_sizes[sample]) != 0) {
+            lk_platform_log("Lion King: cannot play original LEVEL1 sound effect.\n");
+            return -1;
+        }
+        lk_platform_log(sample == 0 ?
+            "Original rebound sample 0 requested; PCM output active.\n" : sample == 2 || sample == 3 ?
+            "Original roar sample requested; PCM output active.\n" :
+            "Original LEVEL1 sample requested; PCM output active.\n");
+        return 0;
     }
     lk_platform_log(sample == 16 ?
         "Original beetle explosion sample requested; audio output unported.\n" :
@@ -372,6 +389,18 @@ static int preview_player_sound(void *context, unsigned short sample)
         "Original roar sample requested; audio output unported.\n" : sample <= 5 ?
         "Original recovery sample 4 requested; audio output unported.\n" :
         "Original roll sample 6 requested; audio output unported.\n");
+    return 0;
+}
+
+static int preview_enemy_sound(void *context, unsigned short channel, unsigned short sample)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    if (!preview || !preview->map_mode || sample >= 19 || !effect_sizes[sample] ||
+        music_effect_play(&music_player, channel, effect_samples[sample],
+            effect_sizes[sample]) != 0) {
+        lk_platform_log("Lion King: cannot play original enemy sound effect.\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -942,6 +971,30 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.wall_demo = mode == 6;
     preview.map_mode = mode == 7;
     if (preview.map_mode) {
+        unsigned int loaded_hud;
+        if (resources_load_entry(&resource_api, "LIONKING.EPF", "BARS.MCH",
+            packed, sizeof(packed), hud_sprites, sizeof(hud_sprites),
+            &dictionary, &loaded_hud) != 0) {
+            lk_platform_log("Lion King: cannot load original status artwork.\n");
+            return 1;
+        }
+        banks[1] = (RENDER_SPRITE_BANK){hud_sprites, loaded_hud};
+        for (unsigned int index = 0; index < 15; ++index) {
+            const unsigned char *list = index < 11 ? animation_common_sound_list :
+                animation_level1_sound_list;
+            unsigned int size = index < 11 ? sizeof(animation_common_sound_list) :
+                sizeof(animation_level1_sound_list);
+            unsigned int slot;
+            char name[13];
+            if (assets_slot_list_name(list, size, index < 11 ? index : index-11,
+                &slot, name) != 0 || slot >= 19 ||
+                resources_load_entry(&resource_api, "LIONKING.EPF", name, packed,
+                    sizeof(packed), effect_samples[slot], sizeof(effect_samples[slot]),
+                    &dictionary, &effect_sizes[slot]) != 0) {
+                lk_platform_log("Lion King: cannot load original LEVEL1 sound samples.\n");
+                return 1;
+            }
+        }
         unsigned int contour_size;
         if (resources_load_entry(&resource_api, "LIONKING.EPF", "CONTOUR.CON",
             packed, sizeof(packed), map_contours, sizeof(map_contours),
@@ -1018,8 +1071,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             }
             banks[slot] = (RENDER_SPRITE_BANK){enemy_sprites[i], loaded};
         }
-        static const unsigned int common_indices[3] = {0, 12, 13};
-        for (unsigned int i = 0; i < 3; ++i) {
+        static const unsigned int common_indices[5] = {0, 2, 8, 12, 13};
+        for (unsigned int i = 0; i < 5; ++i) {
             unsigned int slot, loaded;
             if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_common_bank_list,
                 sizeof(animation_common_bank_list), common_indices[i], packed, sizeof(packed),
@@ -1035,10 +1088,11 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: invalid LEVEL1 enemy marker plane.\n");
             return 1;
         }
-        if (engine_pickups_initialize(&map_pickups, &scene_objects, &render_pool,
+        map_enemies.sound = preview_enemy_sound;
+        if (engine_level_life_initialize(&preview.life, &preview.air, preview.object, 3) != 0 ||
+            engine_pickups_initialize(&map_pickups, &scene_objects, &render_pool,
             &preview.collision, &preview.air, preview.air.health,
-            16) != 0 ||
-            engine_level_life_initialize(&preview.life, &preview.air, preview.object, 3) != 0) {
+            16, &preview.life.lives) != 0) {
             lk_platform_log("Lion King: invalid LEVEL1 pickup marker plane.\n");
             return 1;
         }
@@ -1051,10 +1105,10 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 "Starting X160 is a preview choice; Y is found on the real contour.\n"
                 "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
                 "Original LEVEL1 parallax and foreground/object layer order are active.\n"
-                "Original lizard and porcupine markers, movement/roar/contact/removal are active.\n"
-                "Original healing/upgrades/checkpoint markers and animations are active.\n"
+                "Original lizard/porcupine/beetle movement/roar/contact/removal and leaf markers are active.\n"
+                "Original healing/upgrades/checkpoint and special collectible markers are active.\n"
                 "Normal starting health 4, roar capacity 16 and 3 lives; roar recharges from zero.\n"
-                "Checkpoint/death/restart are active; HUD and remaining enemy types are unported.\n"
+                "Checkpoint/death/restart, BARS HUD and PCM effects are active; hyena/completion remain unported.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
         } else {
             lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
@@ -1183,6 +1237,9 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 camera_x, camera_y, 1, view) != 0 ||
                 render_object_pass(&render_pool, 0x80, (short)-(int)camera_x,
                     (short)-(int)camera_y, banks, 95, view) != 0)) ||
+            (preview.map_mode && engine_hud_draw(hud_sprites, banks[1].size,
+                preview.air.health, map_pickups.max_health, preview.air.roar_charge,
+                map_pickups.max_roar, preview.life.lives, view) != 0) ||
             vga_present_frame(&frame) != 0) {
             lk_platform_log("Lion King: cannot render player deflection preview.\n");
             return 1;
@@ -1217,6 +1274,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         log_map_measurement("Pickups collected: ", map_pickups.collected);
         log_map_measurement("Pickup upgrades completed: ", map_pickups.upgrades);
         log_map_measurement("Checkpoints activated: ", map_pickups.checkpoints);
+        log_map_measurement("Bonus collectibles: ", map_pickups.bonus_count);
+        log_map_measurement("Bonus selected: ", map_pickups.bonus_selected);
         log_map_measurement("Player lives remaining: ", preview.life.lives);
         log_map_measurement("Player deaths: ", preview.life.deaths);
         log_map_measurement("Player checkpoint restarts: ", preview.life.restarts);

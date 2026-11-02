@@ -38,6 +38,7 @@
 #include "engine/enemies.c"
 #include "engine/pickups.c"
 #include "engine/lifecycle.c"
+#include "engine/hud.c"
 
 // WARNING: Globals starting with '_' overlap smaller symbols at the same address
 

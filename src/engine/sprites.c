@@ -12,8 +12,14 @@ static unsigned int sprite_u16(const unsigned char *p)
 int render_draw_sprite(const unsigned char *asset, unsigned int size,
     unsigned short frame, int x, int y, unsigned char *pixels)
 {
+    return render_draw_sprite_clipped(asset, size, frame, x, y, LK_WIDTH, pixels);
+}
+
+int render_draw_sprite_clipped(const unsigned char *asset, unsigned int size,
+    unsigned short frame, int x, int y, unsigned short right, unsigned char *pixels)
+{
     if (!asset || !pixels || size < 2 || x < -65536 || x > 65536 ||
-        y < -65536 || y > 65536) {
+        y < -65536 || y > 65536 || right > LK_WIDTH) {
         return -1;
     }
     unsigned int index = frame & 0x1fff;
@@ -46,7 +52,7 @@ int render_draw_sprite(const unsigned char *asset, unsigned int size,
         for (unsigned int i = 0; i < length; ++i) {
             int px = x + ((frame & 0x8000) ?
                 (int)width - (int)column - (int)i : (int)column + (int)i);
-            if (px >= 0 && px < (int)LK_WIDTH && py >= 0 && py < (int)LK_HEIGHT) {
+            if (px >= 0 && px < right && py >= 0 && py < (int)LK_HEIGHT) {
                 pixels[(unsigned int)py * LK_WIDTH + (unsigned int)px] = asset[offset + i];
             }
         }

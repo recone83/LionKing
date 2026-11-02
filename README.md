@@ -1378,9 +1378,9 @@ their original marker.
 Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `DUST` banks and DS
 animation streams are used, including the original shared death effect.
 Map graphics, contour/tag planes and markers are not modified. Lizards and
-porcupines are active, along with the healing/upgrades/checkpoints described
-below. Hyenas, the other enemy type, special objects, world hazards,
-sound effects and the status HUD remain pending.
+porcupines, beetles and leaves are active, along with all collectible
+markers, healing/upgrades/checkpoints, original PCM effects and HUD described
+below. Hyenas, full world hazards and level transitions remain pending.
 Map mode starts with normal-difficulty health/capacity 4, roar capacity 16
 and three lives; roar recharges from zero by one increment per 32 logic
 ticks, capped at its current capacity. Non-map fixtures retain their
@@ -1447,10 +1447,10 @@ now use `Enemy` labels; marker counts remain separate for each class.
 LEVEL1 is **not complete yet**. The authoritative fourth-plane inventory
 contains 47 nonzero markers of 13 types, not just the enemies on the lower
 route. Its counts are: 1:1, 3:2, 9:9, 10:5, 11:4, 14:14, 16:1, 17:3,
-18:4, 40:1, 41:1, 43:1, 49:1. Remaining work includes the other enemy
-type and hyena, proximity emitters and special objects, original sound
-effects/status HUD and the original level-completion transition.
-The implemented nine marker types cover 43 of the 47 positions.
+18:4, 40:1, 41:1, 43:1, 49:1. Remaining work includes the hyena boss,
+complete world hazards, bonus-game transitions, difficulty/starting setup
+and the original level-completion/game-over presentation.
+The implemented twelve marker types cover 46 of the 47 positions.
 Unmigrated types are not
 substituted with generic enemy or pickup behavior.
 
@@ -1523,3 +1523,37 @@ the original randomized velocities, 0x1000 gravity increment and 100
 movement ticks. Remaining inside does not emit repeatedly; exiting and
 returning rearms the emitter. Restart clears the live leaf objects.
 These effects do not damage Simba or alter map data.
+
+The remaining collectible markers (1, 40, 41) use original `UP1`, `CIRCLE`
+and `BUGS` art. Type 1 grants a life, capped at nine; at nine it disappears
+without awarding another life or playing the collection sound. Type 40
+increments the original bonus collectible counter, and type 41 selects
+the original bonus flag. The bonus-game transition itself is not yet
+migrated. Collected states and bonus counters survive native life restarts.
+
+Map mode now draws the original `BARS.MCH` health, roar, Simba portrait and
+life digit artwork at the original LEVEL1 screen positions. Meter fills
+use the original 26-pixel integer ratio and right-edge clipping, not
+replacement colored rectangles. The exact-background camera test excludes
+only the changing meter areas; all remaining upper-background pixels
+still match over 2000 comparisons.
+
+Sound requests now play the original unsigned PCM samples, including
+roar, recoil, rebound, collection, lizard attack and beetle explosion.
+The two original effect channels mix at 12604 Hz with the ongoing 44100 Hz
+AMF music. Lizard attacks use channel 1 at attack tick 32; player/pickup
+requests use channel 0. Starting another sample on a channel interrupts
+its prior sample. Native output retains its bounded queue and partial-write
+handling. `check_music` verifies all 15 loaded sample resources, exact
+resampling/conversion, channel replacement and chunk-invariant output.
+Host builds of the pickup/scene tests now also require `src/engine/hud.c`;
+the extended music test also uses the generated animation data and its
+animation/render dependencies.
+
+An isolated native QEMU run confirmed actual map contacts (56), three
+lizard attacks, one death, two remaining lives, 1838586 submitted PCM
+frames and a clean Escape exit 0 with a nonempty closed game log.
+This input/lifecycle run used the `none` host backend; it verifies native
+PCM submission, not audibility. A separate WAV HDA capture contained
+nonzero PCM and showed the original HUD, but its Escape exit was not
+confirmed, so it is not counted as a clean lifecycle test.

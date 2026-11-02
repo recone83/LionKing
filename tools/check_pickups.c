@@ -6,9 +6,11 @@
 #include "engine/assets.h"
 #include "engine/animation_data.h"
 #include "engine/lifecycle.h"
+#include "engine/hud.h"
+#include "engine/sprites.h"
 
 static unsigned char packed[79311], map[580488], original_map[580488], contours[4096];
-static unsigned char sprites[6][131072], pixels[64000];
+static unsigned char sprites[8][131072], pixels[64000];
 static RESOURCE_DICTIONARY dictionary;
 static ENGINE_MAP_COLLISION collision;
 static ENGINE_OBJECT_POOL objects;
@@ -18,6 +20,9 @@ static ENGINE_OBJECT *player_object;
 static ENGINE_PICKUPS pickups;
 static RENDER_SPRITE_BANK banks[95];
 static unsigned int requests[11], map_size;
+static unsigned char lives;
+static unsigned char bars[32768], full_hud[64000], empty_hud[64000];
+static unsigned int bars_size;
 
 static void __attribute__((ms_abi)) log_message(const char *text) { fputs(text, stderr); }
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
@@ -58,9 +63,10 @@ static void setup(void)
     player.sound = sound;
     player.health = 8;
     player.roar_charge = 16;
+    lives = 3;
     assert(engine_pickups_initialize(&pickups, &objects, &renders, &collision,
-        &player, 8, 16) == 0);
-    assert(pickups.count == 11 && pickups.max_health == 8 && pickups.max_roar == 16);
+        &player, 8, 16, &lives) == 0);
+    assert(pickups.count == 14 && pickups.max_health == 8 && pickups.max_roar == 16);
 }
 
 static ENGINE_PICKUP *find_item(unsigned int type)
@@ -303,12 +309,75 @@ static void check_restart_and_errors(void)
     ENGINE_MAP_COLLISION invalid = collision;
     invalid.size = collision.table;
     assert(engine_pickups_initialize(&pickups, &objects, &renders, &invalid,
-        &player, 8, 16) == -1);
+        &player, 8, 16, &lives) == -1);
     unsigned int type;
     RENDER_OWNER position;
     assert(engine_map_marker(&collision, collision.width / 2, 0, &type, &position) == -1);
     assert(memcmp(map, original_map, map_size) == 0);
     puts("PASS: restart preserves consumed markers; sound/query errors propagate without collecting or modifying map bytes");
+}
+
+static void check_specials(void)
+{
+    static const unsigned int types[] = {1, 40, 41};
+    for (unsigned int i = 0; i < 3; ++i) {
+        setup();
+        ENGINE_PICKUP *item = find_item(types[i]);
+        RENDER_OWNER camera = activate(item);
+        for (unsigned int j = 0; j < 140; ++j) {
+            assert(engine_pickups_tick(&pickups, camera) == 0);
+            draw(camera);
+        }
+        assert(!item->collected && lives == 3 && !pickups.bonus_count &&
+            !pickups.bonus_selected);
+        overlap(item);
+        assert(engine_pickups_tick(&pickups, camera) == 0);
+        assert(item->collected && !item->object && requests[1] == 1);
+        assert(lives == (i == 0 ? 4 : 3));
+        assert(pickups.bonus_count == (i == 1 ? 1 : 0));
+        assert(pickups.bonus_selected == (i == 2 ? 65535 : 0));
+        assert(engine_pickups_restart(&pickups) == 0);
+        assert(engine_pickups_tick(&pickups, camera) == 0 && !item->object);
+    }
+    setup();
+    lives = 9;
+    ENGINE_PICKUP *item = find_item(1);
+    RENDER_OWNER camera = activate(item);
+    assert(engine_pickups_tick(&pickups, camera) == 0);
+    assert(item->collected && !item->object && lives == 9 && !requests[1]);
+    puts("PASS: original UP1/CIRCLE animations, extra-life limit nine, bonus counters/selection and single collection across restart");
+}
+
+static void check_hud(void)
+{
+    memset(full_hud, 0, sizeof(full_hud));
+    memset(empty_hud, 0, sizeof(empty_hud));
+    assert(engine_hud_draw(bars, bars_size, 4, 4, 16, 16, 3, full_hud) == 0);
+    assert(engine_hud_draw(bars, bars_size, 0, 4, 0, 16, 3, empty_hud) == 0);
+    unsigned int health_pixels = 0, roar_pixels = 0;
+    for (unsigned int y = 0; y < 200; ++y)
+        for (unsigned int x = 0; x < 320; ++x) {
+            if (full_hud[y*320+x] == empty_hud[y*320+x]) continue;
+            assert(y >= 12 && y < 40);
+            if (x >= 274 && x < 300) ++health_pixels;
+            else { assert(x >= 18 && x < 44); ++roar_pixels; }
+        }
+    assert(health_pixels && roar_pixels);
+    memset(pixels, 0, sizeof(pixels));
+    assert(engine_hud_draw(bars, bars_size, 2, 4, 8, 16, 3, pixels) == 0);
+    for (unsigned int y = 12; y < 40; ++y)
+        for (unsigned int x = 18; x < 300; ++x) {
+            if (x < 44) assert(pixels[y*320+x] ==
+                (x < 31 ? full_hud[y*320+x] : empty_hud[y*320+x]));
+            if (x >= 274) assert(pixels[y*320+x] ==
+                (x < 287 ? full_hud[y*320+x] : empty_hud[y*320+x]));
+        }
+    for (unsigned int life = 0; life <= 9; ++life)
+        assert(engine_hud_draw(bars, bars_size, 6, 6, 24, 24, (unsigned char)life, pixels) == 0);
+    assert(engine_hud_draw(bars, bars_size, 4, 0, 16, 16, 3, pixels) == -1);
+    assert(engine_hud_draw(bars, bars_size, 4, 4, 16, 0, 3, pixels) == -1);
+    assert(engine_hud_draw(bars, 2, 4, 4, 16, 16, 3, pixels) == -1);
+    puts("PASS: original BARS.MCH health/roar art, exact zero/half/full clipping, portrait and all life digits");
 }
 
 int main(void)
@@ -321,6 +390,8 @@ int main(void)
     api.Fs.Tell = tell_file;
     api.Fs.Read = read_file;
     unsigned int loaded;
+    assert(resources_load_entry(&api, "data/LIONKING.EPF", "BARS.MCH",
+        packed, sizeof(packed), bars, sizeof(bars), &dictionary, &bars_size) == 0);
     assert(resources_load_entry(&api, "data/LIONKING.EPF", "LEVEL1.MAP",
         packed, sizeof(packed), map, sizeof(map), &dictionary, &map_size) == 0);
     memcpy(original_map, map, map_size);
@@ -349,6 +420,13 @@ int main(void)
         sizeof(assets_young_bank_list), 2, packed, sizeof(packed), sprites[5],
         sizeof(sprites[5]), &dictionary, &slot, &loaded) == 0 && slot == 8);
     banks[slot] = (RENDER_SPRITE_BANK){sprites[5], loaded};
+    static const unsigned int special_indices[2] = {2, 8};
+    for (unsigned int i = 0; i < 2; ++i) {
+        assert(assets_load_named_bank(&api, "data/LIONKING.EPF", animation_common_bank_list,
+            sizeof(animation_common_bank_list), special_indices[i], packed, sizeof(packed),
+            sprites[6+i], sizeof(sprites[6+i]), &dictionary, &slot, &loaded) == 0);
+        banks[slot] = (RENDER_SPRITE_BANK){sprites[6+i], loaded};
+    }
     check_healing();
     check_upgrades(16, 120);
     check_upgrades(49, 120);
@@ -358,5 +436,7 @@ int main(void)
     check_lives();
     check_lethal_fall();
     check_restart_and_errors();
+    check_specials();
+    check_hud();
     return 0;
 }

@@ -457,6 +457,8 @@ static int update_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
     if (lizard->handler == 0x11609) return 0;
     if (lizard->handler == 0x114ea) {
         short timer = lizard->timer;
+        if (timer == 32 && (!enemies->sound ||
+            enemies->sound(enemies->player->player.context, 1, 15) != 0)) return -1;
         if ((timer > 47 && timer < 51) || (timer > 51 && timer < 55)) {
             RENDER_BOUNDS attack = timer < 51 ? (RENDER_BOUNDS){14, -9, 32, -4} :
                 (RENDER_BOUNDS){18, -10, 50, -7};

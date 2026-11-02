@@ -197,6 +197,14 @@ static void music_tick(MUSIC_PLAYER *player)
     }
 }
 
+int music_effect_play(MUSIC_PLAYER *player, unsigned int channel,
+    const unsigned char *data, unsigned int size)
+{
+    if (!player || channel >= 2 || !data || !size) return -1;
+    player->effects[channel] = (MUSIC_EFFECT){data, size, 0};
+    return 0;
+}
+
 int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames)
 {
     if (!player || !stereo || !player->speed || player->tempo < 33 ||
@@ -223,6 +231,19 @@ int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames)
             int pan = (int)player->pan[ch];
             left += value * (256 - pan) / 256; right += value * pan / 256;
             voice->phase += voice->step;
+        }
+        for (unsigned int channel = 0; channel < 2; ++channel) {
+            MUSIC_EFFECT *effect = &player->effects[channel];
+            if (!effect->data) continue;
+            unsigned long long position = effect->phase >> 32;
+            if (position >= effect->length) {
+                effect->data = 0;
+                continue;
+            }
+            int value = ((int)effect->data[position] - 128) * 128;
+            left += value;
+            right += value;
+            effect->phase += (12604ULL << 32) / MUSIC_RATE;
         }
         stereo[frame * 2] = (short)(left < -32768 ? -32768 : left > 32767 ? 32767 : left);
         stereo[frame * 2 + 1] = (short)(right < -32768 ? -32768 : right > 32767 ? 32767 : right);

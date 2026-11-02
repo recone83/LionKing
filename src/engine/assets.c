@@ -45,7 +45,7 @@ int assets_slot_list_count(const unsigned char *list, unsigned int size,
     return 0;
 }
 
-int assets_slot_list_entry(const unsigned char *list, unsigned int size,
+int assets_slot_list_name(const unsigned char *list, unsigned int size,
     unsigned int index, unsigned int *slot, char name[13])
 {
     unsigned int count;
@@ -61,11 +61,21 @@ int assets_slot_list_entry(const unsigned char *list, unsigned int size,
     for (unsigned int i = 0; i < length; ++i) {
         name[i] = (char)entry[i];
     }
+    name[length] = 0;
+    *slot = ((unsigned int)list[0] | (unsigned int)list[1] << 8) + index;
+    return 0;
+}
+
+int assets_slot_list_entry(const unsigned char *list, unsigned int size,
+    unsigned int index, unsigned int *slot, char name[13])
+{
+    if (assets_slot_list_name(list, size, index, slot, name) != 0) return -1;
+    unsigned int length = 0;
+    while (name[length]) ++length;
     const char suffix[] = ".MCH";
     for (unsigned int i = 0; i < sizeof(suffix); ++i) {
         name[length + i] = suffix[i];
     }
-    *slot = ((unsigned int)list[0] | (unsigned int)list[1] << 8) + index;
     return 0;
 }
 

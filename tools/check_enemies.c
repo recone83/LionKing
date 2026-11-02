@@ -32,11 +32,19 @@ static unsigned char pixels[64000], previous_pixels[64000];
 static RENDER_SPRITE_BANK banks[81];
 static const RENDER_OWNER camera = {0, 1080};
 static unsigned int sound_requests;
+static unsigned int lizard_sound_requests;
 
 static int sound(void *context, unsigned short sample)
 {
     assert(context == &player && (sample == 4 || sample == 16));
     ++sound_requests;
+    return 0;
+}
+
+static int enemy_sound(void *context, unsigned short channel, unsigned short sample)
+{
+    assert(context == &player && channel == 1 && sample == 15);
+    ++lizard_sound_requests;
     return 0;
 }
 
@@ -62,7 +70,9 @@ static void setup(void)
     player.health = 10;
     player.roar_charge = 100;
     sound_requests = 0;
+    lizard_sound_requests = 0;
     assert(engine_enemies_initialize(&enemies, &pool, &renders, &collision, &player) == 0);
+    enemies.sound = enemy_sound;
     assert(enemies.count == 32 && enemies.lizard_count == 14 &&
         enemies.porcupine_count == 5 && enemies.beetle_count == 4 && enemies.leaf_marker_count == 9);
     assert(engine_enemies_tick(&enemies, camera) == 0);
@@ -173,6 +183,7 @@ static void check_attack_roar(void)
     assert(lizard->body.node->parts[19] == 74);
     for (unsigned int i = 0; i < 65; ++i) tick();
     assert(lizard->handler == 0x1127e && lizard->timer == 100);
+    assert(lizard_sound_requests == 1);
     player.roar_pulse = 40;
     tick();
     assert(lizard->handler == 0x1117a && enemies.stuns == 1);

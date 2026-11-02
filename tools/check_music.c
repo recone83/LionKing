@@ -3,10 +3,13 @@
 #include <string.h>
 #include "engine/music.h"
 #include "engine/resources.h"
+#include "engine/assets.h"
+#include "engine/animation_data.h"
 
 static MUSIC_PLAYER player, reference;
 static MUSIC_OUTPUT output;
 static unsigned char packed[79311], data[49887];
+static unsigned char effect_data[65536];
 static RESOURCE_DICTIONARY dictionary;
 static short samples[44100 * 2], fragmented[44100 * 2];
 static short submitted[4410 * 2];
@@ -95,6 +98,96 @@ int main(void)
     music_output_stop(&output); music_output_stop(&output);
     assert(stopped == 1 && !output.opened);
     puts("PASS: partial/zero audio writes preserve every frame, bounded queue and idempotent stop");
+
+    static const unsigned char effect[] = {128, 255, 0, 129};
+    assert(music_initialize(&player, data, size) == 0);
+    reference = player;
+    assert(music_effect_play(&player, 0, effect, sizeof(effect)) == 0);
+    assert(music_samples(&player, fragmented, 256) == 0);
+    assert(music_samples(&reference, samples, 256) == 0);
+    unsigned long long phase = 0;
+    for (unsigned int i = 0; i < 256; ++i) {
+        unsigned long long position = phase >> 32;
+        int value = position < sizeof(effect) ? ((int)effect[position]-128)*128 : 0;
+        for (unsigned int channel = 0; channel < 2; ++channel) {
+            int mixed = samples[i*2+channel] + value;
+            assert(fragmented[i*2+channel] ==
+                (mixed < -32768 ? -32768 : mixed > 32767 ? 32767 : mixed));
+        }
+        phase += (12604ULL << 32) / MUSIC_RATE;
+    }
+    assert(!player.effects[0].data);
+    assert(music_effect_play(&player, 2, effect, sizeof(effect)) == -1);
+    assert(music_effect_play(&player, 0, effect, 0) == -1);
+    static const unsigned char loud[] = {255};
+    assert(music_initialize(&player, data, size) == 0);
+    assert(music_effect_play(&player, 0, loud, 1) == 0);
+    assert(music_effect_play(&player, 1, loud, 1) == 0);
+    assert(music_samples(&player, samples, 1) == 0);
+    assert(samples[0] == 32512 && samples[1] == 32512);
+    assert(music_effect_play(&player, 0, effect, sizeof(effect)) == 0 &&
+        !player.effects[0].phase);
+    puts("PASS: exact unsigned PCM effect conversion, 12604 Hz resampling, two channels and interruption reset");
+    static unsigned char saturated_effect[128];
+    memset(saturated_effect, 255, sizeof(saturated_effect));
+    assert(music_initialize(&player, data, size) == 0);
+    reference = player;
+    assert(music_effect_play(&player, 0, saturated_effect, sizeof(saturated_effect)) == 0);
+    assert(music_effect_play(&player, 1, saturated_effect, sizeof(saturated_effect)) == 0);
+    assert(music_samples(&player, fragmented, 256) == 0);
+    assert(music_samples(&reference, samples, 256) == 0);
+    unsigned int clipped = 0;
+    for (unsigned int i = 0; i < 512; ++i) {
+        assert(samples[i] != -32768 && samples[i] != 32767);
+        int mixed = samples[i] + 32512;
+        if (mixed > 32767) ++clipped;
+        assert(fragmented[i] == (mixed > 32767 ? 32767 : mixed));
+    }
+    assert(clipped > 0);
+    puts("PASS: combined music/two-effect saturation clamps actual over-range samples without wraparound");
+
+    for (unsigned int i = 0; i < 15; ++i) {
+        const unsigned char *list = i < 11 ? animation_common_sound_list : animation_level1_sound_list;
+        unsigned int list_size = i < 11 ? sizeof(animation_common_sound_list) :
+            sizeof(animation_level1_sound_list);
+        char name[13];
+        unsigned int slot, length;
+        assert(assets_slot_list_name(list, list_size, i < 11 ? i : i-11, &slot, name) == 0);
+        assert(resources_load_entry(&api, "data/LIONKING.EPF", name, packed, sizeof(packed),
+            effect_data, sizeof(effect_data), &dictionary, &length) == 0);
+        assert(length > 0);
+        assert(music_initialize(&player, data, size) == 0);
+        reference = player;
+        assert(music_effect_play(&player, 0, effect_data, length) == 0);
+        assert(music_effect_play(&reference, 0, effect_data, length) == 0);
+        assert(music_samples(&player, samples, MUSIC_RATE) == 0);
+        for (unsigned int pos = 0; pos < MUSIC_RATE;) {
+            unsigned int count = MUSIC_RATE-pos;
+            if (count > 137) count = 137;
+            assert(music_samples(&reference, fragmented+pos*2, count) == 0);
+            pos += count;
+        }
+        assert(memcmp(samples, fragmented, sizeof(samples)) == 0);
+        printf("PASS: original sample %u %s (%u bytes), music/effect chunk-invariant mix\n",
+            slot, name, length);
+        if (i == 0) {
+            assert(music_initialize(&player, data, size) == 0);
+            assert(music_effect_play(&player, 0, effect_data, length) == 0);
+            assert(music_effect_play(&player, 1, effect_data, length) == 0);
+            reference = player;
+            assert(music_output_open(&output, &player, &api) == 0);
+            write_limit = 0;
+            assert(music_output_service(&output) == 0 && !queued && output.count == 1024);
+            write_limit = 137;
+            for (unsigned int j = 0; j < 20 && queued < 4410; ++j)
+                assert(music_output_service(&output) == 0);
+            assert(queued == 4410);
+            assert(music_samples(&reference, samples, 4410) == 0);
+            assert(memcmp(samples, submitted, sizeof(submitted)) == 0);
+            music_output_stop(&output);
+            puts("PASS: actual two-channel BOUNCE/music mix preserves exact PCM through partial/zero writes");
+        }
+    }
 
     for (unsigned int n = 0; n < size; n += 499) assert(music_initialize(&player, data, n) == -1);
     unsigned char saved = data[3]; data[3] = 13;

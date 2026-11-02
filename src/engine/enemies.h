@@ -54,6 +54,7 @@ typedef struct {
     RENDER_POOL *renders;
     const ENGINE_MAP_COLLISION *map;
     ENGINE_PLAYER_AIR *player;
+    int (*sound)(void *context, unsigned short channel, unsigned short sample);
 } ENGINE_ENEMIES;
 
 int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objects,

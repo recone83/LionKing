@@ -12,6 +12,8 @@ int assets_slot_list_count(const unsigned char *list, unsigned int size,
     unsigned int *count);
 int assets_slot_list_entry(const unsigned char *list, unsigned int size,
     unsigned int index, unsigned int *slot, char name[13]);
+int assets_slot_list_name(const unsigned char *list, unsigned int size,
+    unsigned int index, unsigned int *slot, char name[13]);
 int assets_load_named_bank(const DOS64_API *api, const char *archive,
     const unsigned char *list, unsigned int list_size, unsigned int index,
     unsigned char *packed, unsigned int packed_capacity, unsigned char *data,

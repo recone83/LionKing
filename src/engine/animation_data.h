@@ -45,5 +45,7 @@ extern const unsigned char animation_level6_bank_list[188];
 extern const unsigned char animation_enemy_data[ANIMATION_ENEMY_SIZE];
 extern const unsigned char animation_level1_bank_list[156];
 extern const unsigned char animation_common_bank_list[116];
+extern const unsigned char animation_common_sound_list[92];
+extern const unsigned char animation_level1_sound_list[36];
 
 #endif

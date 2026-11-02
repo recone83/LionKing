@@ -27,6 +27,9 @@ typedef struct {
     unsigned int collected;
     unsigned int upgrades;
     unsigned int checkpoints;
+    unsigned short bonus_count;
+    unsigned short bonus_selected;
+    unsigned char *lives;
     short max_health;
     unsigned short max_roar;
     RENDER_OWNER checkpoint;
@@ -38,7 +41,7 @@ typedef struct {
 
 int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objects,
     RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player,
-    short max_health, unsigned short max_roar);
+    short max_health, unsigned short max_roar, unsigned char *lives);
 int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera);
 int engine_pickups_restart(ENGINE_PICKUPS *pickups);
 

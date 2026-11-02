@@ -3,5 +3,7 @@
 
 int render_draw_sprite(const unsigned char *asset, unsigned int size,
     unsigned short frame, int x, int y, unsigned char *pixels);
+int render_draw_sprite_clipped(const unsigned char *asset, unsigned int size,
+    unsigned short frame, int x, int y, unsigned short right, unsigned char *pixels);
 
 #endif

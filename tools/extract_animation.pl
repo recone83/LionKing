@@ -21,6 +21,16 @@ while (@level1_banks) {
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";
+for my $list (['common_sound', 0x12f30, 92], ['level1_sound', 0x12f8c, 36]) {
+    my ($name, $offset, $size) = @$list;
+    print "const unsigned char animation_${name}_list[$size] = {\n";
+    my @bytes = unpack 'C*', substr($data, $offset, $size);
+    while (@bytes) {
+        my @row = splice @bytes, 0, 16;
+        print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+    }
+    print "};\n";
+}
 print "const unsigned char animation_common_bank_list[116] = {\n";
 my @common_banks = unpack 'C*', substr($data, 0xb01c, 116);
 while (@common_banks) {

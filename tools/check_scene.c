@@ -143,7 +143,7 @@ static int __attribute__((ms_abi)) close_file(void *file)
         assert(map_counter(text, "Porcupine map markers: ") == 5);
         assert(map_counter(text, "Beetle map markers: ") == 4);
         assert(map_counter(text, "Leaf map markers: ") == 9);
-        assert(map_counter(text, "Pickup map markers: ") == 11);
+        assert(map_counter(text, "Pickup map markers: ") == 14);
         map_deaths = map_counter(text, "Player deaths: ");
         map_restarts = map_counter(text, "Player checkpoint restarts: ");
         map_lives = map_counter(text, "Player lives remaining: ");
@@ -552,8 +552,12 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
     assert(w == 320 && h == 200 && stride == 320 && x == 0 && y == 40 && dw == 640 && dh == 400);
     if (map_test) {
         if (map_animation && shown) {
-            assert(memcmp(previous_map_frame, image,
-                80U * 320 * sizeof(previous_map_frame[0])) == 0);
+            for (unsigned int row = 0; row < 80; ++row)
+                for (unsigned int column = 0; column < 320; ++column) {
+                    int meter = row >= 12 && row < 40 &&
+                        ((column >= 18 && column < 44) || (column >= 274 && column < 300));
+                    if (!meter) assert(previous_map_frame[row*320+column] == image[row*320+column]);
+                }
             ++stable_background_frames;
         }
         if (shown && memcmp(previous_map_frame, image, sizeof(previous_map_frame)) != 0) ++changed;

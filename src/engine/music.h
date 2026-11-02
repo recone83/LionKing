@@ -26,10 +26,17 @@ typedef struct {
 } MUSIC_VOICE;
 
 typedef struct {
+    const unsigned char *data;
+    unsigned int length;
+    unsigned long long phase;
+} MUSIC_EFFECT;
+
+typedef struct {
     MUSIC_EVENT tracks[MUSIC_TRACKS + 1][64];
     unsigned short orders[MUSIC_ORDERS][4];
     MUSIC_SAMPLE samples[MUSIC_INSTRUMENTS];
     MUSIC_VOICE voices[4];
+    MUSIC_EFFECT effects[2];
     unsigned int pan[4];
     unsigned int order, row, tick, speed, tempo, tick_remaining;
     unsigned int tick_remainder, break_row, loops, rows_played;
@@ -39,6 +46,8 @@ typedef struct {
 
 int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned int size);
 int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames);
+int music_effect_play(MUSIC_PLAYER *player, unsigned int channel,
+    const unsigned char *data, unsigned int size);
 
 typedef struct {
     MUSIC_PLAYER *player;
