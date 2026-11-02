@@ -814,7 +814,7 @@ and silent audio, so it is not an audio-playback validation environment.
 
 ### Visible original emitter scene
 
-The default `LIONKING.EXE` entry now displays the original `LEVEL6.MAP` palette
+The `LIONKING.EXE --emitters` entry displays the original `LEVEL6.MAP` palette
 and tiles with `CRUMBLIN.MCH`, loaded from the original level-six list at
 DS `0xe3d0`, slot 160. It runs the migrated four-emitter setup `0x287bb`,
 emitter `0x2865d`, timed parent `0x2881d` and falling child `0x288a1`
@@ -829,7 +829,7 @@ Camera mapping is enabled only during rendering, leaving behavior flags
 unchanged. Escape exits; `--idle` retains the previous automatic Simba preview
 and `--manual` retains the bank/frame browser.
 
-`tools/check_scene.c` runs the actual default entry for 20 simulated seconds
+`tools/check_scene.c --emitters` runs the actual emitter entry for 20 simulated seconds
 and checks 128064000 exact ARGB pixels, repeated activation and Escape.
 It requires more than 1500 frames with visible object pixels and at least
 100000 object pixels overall. Compile it with the same source list as
@@ -888,7 +888,7 @@ results and the repeated starting position are test fixtures. Transitions to
 `0x1aa97`, `0x1ae53` and damage `0x1ef04` are explicit callbacks, not fabricated
 implementations. The preview stops at those boundaries. Original addresses
 in `ENGINE_PLAYER_CALL` are data only, never invoked as native pointers.
-The default emitter scene and `--idle` / `--manual` modes remain unchanged.
+The emitter scene (`--emitters`) and `--idle` / `--manual` modes remain available.
 
 `tools/check_player_reactions.c` checks 11010048 calls, including every signed
 contact word, wrapped pointer indices and young/adult forms.
@@ -904,3 +904,48 @@ seconds, verifies 128064000 ARGB pixels, all eight cases, 320 moving frames,
 The player test also checks 1966080 gravity cases across all fractional Y
 values, signed overflow and the +7 cap. Native QEMU verification showed
 28624 changed viewport pixels and a successful Escape exit with code zero.
+
+### Larger default test: deflection, flight and landing
+
+Run `bash build.sh`: the default entry now shows **Simba**, not the rock scene.
+It chains the migrated deflection into the original right/left airborne
+handlers `0x1aa97` / `0x1ae53`, then the landing selectors
+`0x1b307` / `0x1b4a0`. Left/Right override the fixture's airborne direction.
+Escape exits. Each fixture repeats after two seconds and stops at the selected
+ground-state boundary; ordinary ground locomotion is not implemented here.
+`--deflection` retains the shorter earlier test, `--emitters` the rock scene,
+`--idle` automatic idle, and `--manual` the bank browser.
+
+The airborne code preserves the original gate ordering, right-only upward
+probe and counter-forced direction, left/right script-reset asymmetry,
+edge sentinels `0xf8` / `0xe8`, fixed-point gravity at `0x20ea6` with the
+flags-bit-2 cap bypass, anchor centering and direction changes. Landing
+preserves signed duration/velocity thresholds, exact script/handler arguments,
+flags and the right-only zeroing of vertical velocity.
+
+An important original behavior: deflection sets the next handler **before**
+calling it. The airborne handler therefore skips initialization on this path;
+it must retain the running flip script instead of loading the nominal `0x6116`
+argument. The test covers that continuation. Later visual records require
+additional original banks, so the extended preview loads all 28 young banks.
+
+This remains an explicit migration test, not a playable level. The ground at
+Y=160, ceiling probe outcomes, absence of edge hits and repeated starting
+position are synthetic dependencies. The original map queries `0x14c72`,
+`0x170ae`, `0x174b2`, special-state handlers and ground states remain explicit
+callback boundaries, never silently fabricated gameplay.
+
+`tools/check_player_air.c` verifies both full airborne paths and 2752512
+landing cases: all signed duration words, young/adult forms, signed velocity
+thresholds, gate precedence, exact edge operands, probes, anchors and errors.
+It also verifies 1966080 capped/uncapped player-gravity combinations.
+`build/check_scene` checks the actual default entry for 20 seconds:
+128064000 exact ARGB pixels, 2001 visible frames, 398 moving frames,
+460 airborne frames and ten complete deflection-to-landing chains.
+`build/check_scene --steering` additionally verifies two direction changes
+from actual mocked DOS64 arrow input, pixel-for-pixel.
+Compile `check_player_air.c` with the same engine source list as the preceding
+player tests. Run `build/check_scene --deflection` and `--emitters` for the
+previous scene regressions.
+Real native QEMU verification produced 14724 changed viewport pixels and
+repeated landing-boundary logs; Escape returned exit code zero.

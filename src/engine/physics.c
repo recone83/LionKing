@@ -53,11 +53,17 @@ int engine_motion_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner)
 int engine_motion_player_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner,
     unsigned short form)
 {
+    return engine_motion_air_gravity(motion, owner, form, 0);
+}
+
+int engine_motion_air_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner,
+    unsigned short form, unsigned char flags)
+{
     if (!motion || !owner) {
         return -1;
     }
     motion->velocity_y = engine_add_velocity(motion->velocity_y,
-        form ? UINT32_C(0x6000) : UINT32_C(0x4e00), 0);
+        form ? UINT32_C(0x6000) : UINT32_C(0x4e00), flags);
     integrate(&owner->y, &motion->fraction_y, motion->velocity_y);
     return 0;
 }

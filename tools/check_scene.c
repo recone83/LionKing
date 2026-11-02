@@ -29,21 +29,31 @@ static unsigned long long cycle_begin;
 static unsigned int iteration, map_size, shown, changed, object_frames, activation;
 static unsigned int shake_frames, shake_pixels;
 static ENGINE_CLOCK clock;
-static int deflection_test, player_completed;
-static ENGINE_PLAYER_DEFLECTION player;
+static int deflection_test, flight_test, player_completed, airborne;
+static int steering_test;
+static ENGINE_PLAYER_AIR player_air;
+static ENGINE_PLAYER_DEFLECTION *player = &player_air.player;
 static ENGINE_OBJECT *player_object;
 static unsigned int player_variant, player_transitions, player_logs, moving_frames;
+static unsigned int flight_transitions, flight_logs, airborne_frames;
+static unsigned int direction_changes;
 static unsigned int variant_frames[8];
-static unsigned char player_collision_flags, flip_sprites[2][32768];
+static unsigned char player_collision_flags, flip_sprites[ASSETS_YOUNG_BANK_COUNT][32768];
 static RENDER_OWNER previous_player_position;
 static void __attribute__((ms_abi)) log_text(const char *text)
 {
+    if (strstr(text, "failed") || strstr(text, "invalid") || strstr(text, "cannot")) {
+        fputs(text, stderr);
+    }
     assert(!strstr(text, "failed") && !strstr(text, "invalid") && !strstr(text, "cannot"));
     if (strstr(text, "test activation enabled")) {
         ++activation;
     }
     if (strstr(text, "Player deflection reached unported next state")) {
         ++player_logs;
+    }
+    if (strstr(text, "Player flight landed through original selector")) {
+        ++flight_logs;
     }
 }
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
@@ -67,6 +77,14 @@ static void __attribute__((ms_abi)) poll(void)
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
+    if (steering_test && iteration >= 56 && iteration <= 75) {
+        api.Input.KeyDown[0x50] = 1;
+        api.Input.KeyPressed[0x50] = iteration == 56;
+    }
+    if (steering_test && iteration >= 41 && iteration <= 55) {
+        api.Input.KeyDown[0x4f] = 1;
+        api.Input.KeyPressed[0x4f] = iteration == 41;
+    }
     if (iteration == 2002) {
         api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
     }
@@ -75,12 +93,20 @@ static void __attribute__((ms_abi)) poll(void)
 static void update_reference(void *context)
 {
     (void)context;
+    if (flight_test && airborne) {
+        unsigned short directions = (api.Input.KeyDown[0x50] ? 4 : 0) |
+            (api.Input.KeyDown[0x4f] ? 8 : 0);
+        player_air.pressed = directions ? directions : (player_variant & 1 ? 4 : 8);
+    }
+    unsigned int before = player->handler;
+    int was_air = player_object && player_object->behavior == &engine_player_air_behavior;
     assert(engine_update_objects(&objects, &api.Input) == 0);
+    direction_changes += was_air && player->handler != before;
 }
 static int player_probe(void *context, short x, short y, short *hit)
 {
     (void)context;
-    assert(x == player.body.owner.x && y == player.body.owner.y);
+    assert(x == player->body.owner.x && y == player->body.owner.y);
     *hit = player_variant & 4 ? -1 : 0;
     return 0;
 }
@@ -89,9 +115,40 @@ static int player_transition(void *context, const ENGINE_PLAYER_CALL *call)
     (void)context;
     assert((call->handler == 0xaa97 || call->handler == 0xae53) &&
         call->script == 0x6116 && call->counter == 0);
+    ++player_transitions;
+    if (flight_test) {
+        airborne = 1;
+        player_air.pressed = player_variant & 1 ? 4 : 8;
+        return engine_player_begin_air(&objects, player_object, &player_air, call);
+    }
     player_object->behavior = 0;
     player_completed = 1;
-    ++player_transitions;
+    return 0;
+}
+static int flight_ground(void *context, short *kind, short *delta_y)
+{
+    (void)context;
+    *kind = player->body.owner.y >= 160 ? 1 : 0;
+    *delta_y = (short)(160 - player->body.owner.y);
+    return 0;
+}
+static int flight_edge(void *context, short *hit, short *kind, short *x, short *y)
+{
+    (void)context;
+    *hit = *kind = *x = *y = 0;
+    return 0;
+}
+static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
+    short kind, short x, short y)
+{
+    (void)context; (void)kind; (void)x; (void)y;
+    assert(call->handler == 0xc8d5 || call->handler == 0xc2cd ||
+        call->handler == 0xcdc2 || call->handler == 0xd108 ||
+        call->handler == 0xb253 || call->handler == 0xb19f);
+    assert(player->body.owner.y == 160);
+    player_object->behavior = 0;
+    player_completed = 1;
+    ++flight_transitions;
     return 0;
 }
 static void begin_reference_player(void)
@@ -100,16 +157,17 @@ static void begin_reference_player(void)
     uint32_t position = UINT32_C(0x6c31) + (player_variant & 2 ? 2 : 0);
     assert((player_variant & 1 ? engine_player_reaction_e6ee(0, position, &call) :
         engine_player_reaction_e667(0, position, &call)) == 0);
-    player.body.owner = (RENDER_OWNER){160, 100};
-    player.body.motion = (ENGINE_MOTION){0};
+    player->body.owner = (RENDER_OWNER){160, 100};
+    player->body.motion = (ENGINE_MOTION){0};
     player_collision_flags = 0;
     player_completed = 0;
-    previous_player_position = player.body.owner;
-    assert(engine_player_begin_deflection(player_object, &player, &call) == 0);
+    airborne = 0;
+    previous_player_position = player->body.owner;
+    assert(engine_player_begin_deflection(player_object, player, &call) == 0);
 }
 static void draw_reference_player(const DOS64_COLOR *image)
 {
-    if (player_completed && now - cycle_begin >= 1000000000ULL) {
+    if (player_completed && now - cycle_begin >= (flight_test ? 2000000000ULL : 1000000000ULL)) {
         player_variant = (player_variant + 1) & 7;
         cycle_begin = now;
         begin_reference_player();
@@ -129,16 +187,17 @@ static void draw_reference_player(const DOS64_COLOR *image)
     object_frames += visible != 0;
     changed += visible;
     variant_frames[player_variant] += visible != 0;
-    moving_frames += player.body.owner.x != previous_player_position.x ||
-        player.body.owner.y != previous_player_position.y;
-    previous_player_position = player.body.owner;
+    moving_frames += player->body.owner.x != previous_player_position.x ||
+        player->body.owner.y != previous_player_position.y;
+    airborne_frames += airborne && !player_completed;
+    previous_player_position = player->body.owner;
     assert(engine_dispatch_ticks(&clock, now, update_reference, 0) >= 0);
 }
 static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int w,
     unsigned int h, unsigned int stride, int x, int y, unsigned int dw, unsigned int dh)
 {
     assert(w == 320 && h == 200 && stride == 320 && x == 0 && y == 40 && dw == 640 && dh == 400);
-    if (deflection_test) {
+    if (deflection_test || flight_test) {
         draw_reference_player(image);
         return;
     }
@@ -196,37 +255,45 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
 }
 int main(int argc, char **argv)
 {
-    assert(argc == 1 || (argc == 2 && strcmp(argv[1], "--deflection") == 0));
-    deflection_test = argc == 2;
+    assert(argc == 1 || (argc == 2 && (strcmp(argv[1], "--deflection") == 0 ||
+        strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0)));
+    steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
+    flight_test = argc == 1 || steering_test;
+    deflection_test = argc == 2 && strcmp(argv[1], "--deflection") == 0;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION;
-    api.Arguments = deflection_test ? "--deflection" : "";
+    api.Arguments = flight_test ? "" : deflection_test ? "--deflection" : "--emitters";
     api.Write = log_text; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
     api.Gfx.SelectLayer = select_layer; api.Gfx.Present = present; api.DrawImage = draw;
     api.Fs.Open = open_file; api.Fs.Close = close_file; api.Fs.Seek = seek_file;
     api.Fs.Tell = tell_file; api.Fs.Read = read_file;
     assert(resources_load_entry(&api, "LIONKING.EPF",
-        deflection_test ? "LEVEL1.MAP" : "LEVEL6.MAP", packed,
+        (deflection_test || flight_test) ? "LEVEL1.MAP" : "LEVEL6.MAP", packed,
         sizeof(packed), map, sizeof(map), &dictionary, &map_size) == 0);
     assert(vga_load_palette(map, map_size, palette) == 0);
     unsigned int slot, loaded;
     engine_initialize_objects(&objects); render_initialize_nodes(&renders);
-    if (deflection_test) {
-        for (unsigned int i = 0; i < 2; ++i) {
+    if (deflection_test || flight_test) {
+        unsigned int count = flight_test ? ASSETS_YOUNG_BANK_COUNT : 2;
+        for (unsigned int i = 0; i < count; ++i) {
+            unsigned int index = flight_test ? i : 5 + i;
             assert(assets_load_named_bank(&api, "LIONKING.EPF", assets_young_bank_list,
-                sizeof(assets_young_bank_list), 5 + i, packed, sizeof(packed),
+                sizeof(assets_young_bank_list), index, packed, sizeof(packed),
                 flip_sprites[i], sizeof(flip_sprites[i]), &dictionary,
-                &slot, &loaded) == 0 && slot == 11 + i);
+                &slot, &loaded) == 0 && slot == 6 + index);
             banks[slot] = (RENDER_SPRITE_BANK){flip_sprites[i], loaded};
         }
-        player.body.render_pool = &renders;
-        player.body.node = render_acquire_node(&renders, &player.body.owner, 0, 0,
+        player->body.render_pool = &renders;
+        player->body.node = render_acquire_node(&renders, &player->body.owner, 0, 0,
             animation_movement_data + 0x78b4 - ANIMATION_MOVEMENT_BASE, 20);
         player_object = engine_acquire_object(&objects, 0);
-        assert(player.body.node && player_object);
-        player.probe = player_probe;
-        player.transition = player_transition;
-        player.collision_flags = &player_collision_flags;
+        assert(player->body.node && player_object);
+        player->probe = player_probe;
+        player->transition = player_transition;
+        player->collision_flags = &player_collision_flags;
+        player_air.ground = flight_ground;
+        player_air.edge = flight_edge;
+        player_air.transition = flight_landed;
         begin_reference_player();
     } else {
         assert(assets_load_named_bank(&api, "LIONKING.EPF", animation_level6_bank_list,
@@ -238,6 +305,24 @@ int main(int argc, char **argv)
     }
     engine_clock_reset(&clock, 0);
     assert(start(&api) == 0);
+    if (flight_test) {
+        assert(iteration == 2002 && shown == 2001 && player_transitions == 10 &&
+            flight_transitions == 10 && flight_logs == flight_transitions && !player_logs);
+        assert(object_frames > 1800 && changed > 100000);
+        if (steering_test) {
+            assert(moving_frames > 300 && airborne_frames > 300 && direction_changes >= 2);
+        } else {
+            assert(moving_frames == 398 && airborne_frames == 460);
+        }
+        for (unsigned int i = 0; i < 8; ++i) {
+            assert(variant_frames[i] >= 190);
+        }
+        printf("PASS: default player flight entry, %llu exact ARGB pixels, "
+            "%u visible/%u moving/%u airborne frames, %u direction changes, "
+            "10 deflection->air->landing chains, Escape\n",
+            verified, object_frames, moving_frames, airborne_frames, direction_changes);
+        return 0;
+    }
     if (deflection_test) {
         assert(iteration == 2002 && shown == 2001 && player_transitions == 20 &&
             player_logs == player_transitions);
@@ -253,7 +338,7 @@ int main(int argc, char **argv)
     assert(iteration == 2002 && shown == 2001 && activation >= 3);
     assert(object_frames > 1500 && changed > 100000 && objects.update_count > 900);
     assert(shake_frames >= 20 && shake_pixels > 100000 && player_flags == 0x40);
-    printf("PASS: default DOS64 emitter scene, 20 seconds, %llu exact ARGB pixels, "
+    printf("PASS: --emitters DOS64 scene, 20 seconds, %llu exact ARGB pixels, "
         "%u visible-object frames, %u object pixels, %u shaken frames/%u shake pixels, "
         "live spawning/culling and Escape\n",
         verified, object_frames, changed, shake_frames, shake_pixels);

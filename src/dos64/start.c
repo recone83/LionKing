@@ -22,6 +22,7 @@ static VGA_FADE fade;
 static unsigned char level_rgb[768];
 static const unsigned char black_rgb[768];
 static unsigned char idle_sprites[3][32768];
+static unsigned char player_sprites[ASSETS_YOUNG_BANK_COUNT][32768];
 static ENGINE_OBJECT_POOL scene_objects;
 static ENGINE_EMITTER_GROUP scene_emitters;
 static int scene_failed;
@@ -156,12 +157,14 @@ static int argument_requested(const char *arguments, const char *expected)
 
 typedef struct {
     const DOS64_API *api;
-    ENGINE_PLAYER_DEFLECTION player;
+    ENGINE_PLAYER_AIR air;
     ENGINE_OBJECT *object;
     unsigned int variant;
     unsigned char collision_flags;
     int completed;
     int failed;
+    int flight;
+    int airborne;
 } DEFLECTION_PREVIEW;
 
 static int preview_player_probe(void *context, short x, short y, short *hit)
@@ -181,9 +184,48 @@ static int preview_player_transition(void *context, const ENGINE_PLAYER_CALL *ca
         lk_platform_log("Lion King: unexpected player preview transition.\n");
         return -1;
     }
+    if (preview->flight) {
+        preview->airborne = 1;
+        preview->air.pressed = preview->variant & 1 ? 4 : 8;
+        return engine_player_begin_air(&scene_objects, preview->object, &preview->air, call);
+    }
     preview->object->behavior = 0;
     preview->completed = 1;
     lk_platform_log("Player deflection reached unported next state; fixture pauses.\n");
+    return 0;
+}
+
+static int preview_player_ground(void *context, short *kind, short *delta_y)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    *kind = preview->air.player.body.owner.y >= 160 ? 1 : 0;
+    *delta_y = (short)(160 - preview->air.player.body.owner.y);
+    return 0;
+}
+
+static int preview_player_edge(void *context, short *hit, short *kind, short *x, short *y)
+{
+    (void)context;
+    *hit = *kind = *x = *y = 0;
+    return 0;
+}
+
+static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
+    short kind, short x, short y)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    (void)kind;
+    (void)x;
+    (void)y;
+    if (call->handler != 0xc8d5U && call->handler != 0xc2cdU &&
+        call->handler != 0xcdc2U && call->handler != 0xd108U &&
+        call->handler != 0xb253U && call->handler != 0xb19fU) {
+        lk_platform_log("Lion King: unexpected player flight boundary.\n");
+        return -1;
+    }
+    preview->object->behavior = 0;
+    preview->completed = 1;
+    lk_platform_log("Player flight landed through original selector; next ground state unported.\n");
     return 0;
 }
 
@@ -197,23 +239,29 @@ static int begin_player_preview(DEFLECTION_PREVIEW *preview)
     if (status != 0) {
         return -1;
     }
-    preview->player.body.owner = (RENDER_OWNER){160, 100};
-    preview->player.body.motion = (ENGINE_MOTION){0};
+    preview->air.player.body.owner = (RENDER_OWNER){160, 100};
+    preview->air.player.body.motion = (ENGINE_MOTION){0};
     preview->collision_flags = 0;
     preview->completed = 0;
-    return engine_player_begin_deflection(preview->object, &preview->player, &call);
+    preview->airborne = 0;
+    return engine_player_begin_deflection(preview->object, &preview->air.player, &call);
 }
 
 static void update_player_preview(void *context)
 {
     DEFLECTION_PREVIEW *preview = context;
+    if (preview->flight && preview->airborne) {
+        unsigned short directions = (preview->api->Input.KeyDown[0x50] ? 4 : 0) |
+            (preview->api->Input.KeyDown[0x4f] ? 8 : 0);
+        preview->air.pressed = directions ? directions : (preview->variant & 1 ? 4 : 8);
+    }
     if (!preview->failed &&
         engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
         preview->failed = 1;
     }
 }
 
-static int run_deflection_preview(const DOS64_API *api)
+static int run_deflection_preview(const DOS64_API *api, int flight)
 {
     unsigned int map_size;
     if (resources_load_entry(api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
@@ -223,36 +271,49 @@ static int run_deflection_preview(const DOS64_API *api)
         return 1;
     }
     RENDER_SPRITE_BANK banks[34] = {0};
-    for (unsigned int i = 0; i < 2; ++i) {
+    unsigned int count = flight ? ASSETS_YOUNG_BANK_COUNT : 2;
+    for (unsigned int i = 0; i < count; ++i) {
         unsigned int slot, loaded;
+        unsigned int index = flight ? i : 5 + i;
         if (assets_load_named_bank(api, "LIONKING.EPF", assets_young_bank_list,
-            sizeof(assets_young_bank_list), 5 + i, packed, sizeof(packed),
-            idle_sprites[i], sizeof(idle_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
-            slot != 11 + i) {
+            sizeof(assets_young_bank_list), index, packed, sizeof(packed),
+            player_sprites[i], sizeof(player_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
+            slot != 6 + index) {
             lk_platform_log("Lion King: cannot load original flip banks.\n");
             return 1;
         }
-        banks[slot] = (RENDER_SPRITE_BANK){idle_sprites[i], loaded};
+        banks[slot] = (RENDER_SPRITE_BANK){player_sprites[i], loaded};
     }
     engine_initialize_objects(&scene_objects);
     render_initialize_nodes(&render_pool);
     DEFLECTION_PREVIEW preview = {0};
     preview.api = api;
-    preview.player.body.render_pool = &render_pool;
-    preview.player.body.node = render_acquire_node(&render_pool,
-        &preview.player.body.owner, 0, 0,
+    preview.flight = flight;
+    preview.air.player.body.render_pool = &render_pool;
+    preview.air.player.body.node = render_acquire_node(&render_pool,
+        &preview.air.player.body.owner, 0, 0,
         animation_movement_data + 0x78b4 - ANIMATION_MOVEMENT_BASE, 20);
     preview.object = engine_acquire_object(&scene_objects, 0);
-    preview.player.probe = preview_player_probe;
-    preview.player.transition = preview_player_transition;
-    preview.player.context = &preview;
-    preview.player.collision_flags = &preview.collision_flags;
-    if (!preview.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
+    preview.air.player.probe = preview_player_probe;
+    preview.air.player.transition = preview_player_transition;
+    preview.air.player.context = &preview;
+    preview.air.player.collision_flags = &preview.collision_flags;
+    preview.air.ground = preview_player_ground;
+    preview.air.edge = preview_player_edge;
+    preview.air.transition = preview_player_landed;
+    if (!preview.air.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
         lk_platform_log("Lion King: cannot initialize original player deflection.\n");
         return 1;
     }
-    lk_platform_log("Original Simba deflection test: --deflection, Escape exits.\n"
-        "Eight automatic fixture cases: both selectors, both script ranges, probe off/on.\n"
+    if (flight) {
+        lk_platform_log("Original Simba flight test: deflection -> air -> landing selector.\n"
+            "Left/Right: airborne direction. Escape: exit. --emitters: previous rock scene.\n"
+            "Ground Y=160, probe results and restarts are fixtures, not level collision.\n");
+    }
+    if (!flight) {
+        lk_platform_log("Original Simba deflection test: --deflection, Escape exits.\n");
+    }
+    lk_platform_log("Eight automatic fixture cases: both selectors, both script ranges, probe off/on.\n"
         "Original motion and visual scripts; probe results and restarts are diagnostic.\n");
     VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
     unsigned long long begin = lk_platform_time_ns();
@@ -264,7 +325,7 @@ static int run_deflection_preview(const DOS64_API *api)
             break;
         }
         unsigned long long now = lk_platform_time_ns();
-        if (preview.completed && now - begin >= 1000000000ULL) {
+        if (preview.completed && now - begin >= (flight ? 2000000000ULL : 1000000000ULL)) {
             preview.variant = (preview.variant + 1) & 7;
             begin = now;
             if (begin_player_preview(&preview) != 0) {
@@ -290,7 +351,8 @@ static int run_deflection_preview(const DOS64_API *api)
         }
         lk_platform_sleep(10);
     }
-    lk_platform_log("Original player deflection preview finished.\n");
+    lk_platform_log(flight ? "Original player flight preview finished.\n" :
+        "Original player deflection preview finished.\n");
     return 0;
 }
 
@@ -407,12 +469,15 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
         return 1;
     }
     if (argument_requested(api->Arguments, "--deflection")) {
-        return run_deflection_preview(api);
+        return run_deflection_preview(api, 0);
+    }
+    if (argument_requested(api->Arguments, "--emitters")) {
+        return run_emitter_scene(api);
     }
     if (!argument_requested(api->Arguments, "--idle") &&
         !argument_requested(api->Arguments, "--manual") &&
         !argument_requested(api->Arguments, "--selftest")) {
-        return run_emitter_scene(api);
+        return run_deflection_preview(api, 1);
     }
     LK_EPF_INFO archive;
     if (resources_open_archive(api, "LIONKING.EPF", &archive) != 0) {

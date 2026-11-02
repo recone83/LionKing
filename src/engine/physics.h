@@ -18,6 +18,8 @@ int engine_motion_y(ENGINE_MOTION *motion, RENDER_OWNER *owner);
 int engine_motion_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner);
 int engine_motion_player_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner,
     unsigned short form);
+int engine_motion_air_gravity(ENGINE_MOTION *motion, RENDER_OWNER *owner,
+    unsigned short form, unsigned char flags);
 int engine_motion_accelerate_x(ENGINE_MOTION *motion, RENDER_OWNER *owner,
     uint32_t increment);
 int engine_motion_brake_x(ENGINE_MOTION *motion, uint32_t decrement);

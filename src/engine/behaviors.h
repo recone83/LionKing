@@ -94,6 +94,32 @@ extern const ENGINE_OBJECT_BEHAVIOR engine_player_deflection_behavior;
 int engine_player_begin_deflection(ENGINE_OBJECT *object,
     ENGINE_PLAYER_DEFLECTION *state, const ENGINE_PLAYER_CALL *call);
 
+typedef int (*ENGINE_PLAYER_GROUND)(void *context, short *kind, short *delta_y);
+typedef int (*ENGINE_PLAYER_EDGE)(void *context, short *hit, short *kind,
+    short *x, short *y);
+typedef int (*ENGINE_PLAYER_AIR_TRANSITION)(void *context,
+    const ENGINE_PLAYER_CALL *call, short kind, short x, short y);
+
+typedef struct {
+    ENGINE_PLAYER_DEFLECTION player;
+    unsigned short flags;
+    unsigned short player_flags;
+    unsigned short pressed;
+    short anchor_x;
+    short anchor_y;
+    unsigned char contact_kind;
+    unsigned char landing_flags;
+    ENGINE_PLAYER_GROUND ground;
+    ENGINE_PLAYER_EDGE edge;
+    ENGINE_PLAYER_AIR_TRANSITION transition;
+} ENGINE_PLAYER_AIR;
+
+extern const ENGINE_OBJECT_BEHAVIOR engine_player_air_behavior;
+int engine_player_begin_air(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call);
+int engine_player_land(ENGINE_PLAYER_AIR *state, unsigned int handler,
+    short duration);
+
 typedef struct {
     ENGINE_FALLING_OBJECT body;
     unsigned short *camera_shake;

@@ -279,7 +279,7 @@ Dowody blitterów: [tile_blitters.asm](../../bin/tile_blitters.asm). Dane kafelk
 
 Dowody sprite'ów i zestawów zasobów: [asset_loading_blocks.asm](../../bin/asset_loading_blocks.asm). `assets_reload_level_samples` zwalnia poprzednie próbki i ładuje listy zależne od stanu; nie jest wyłącznie funkcją zwalniającą. Listy nazw zawierają pola o szerokości 8 bajtów z usuwaniem końcowych spacji. Rozdzielono warstwę zestawów od czytnika EPF i od sterownika audio, ale zależności do niewydzielonych helperów nadal istnieją.
 
-Domyślne wejście DOS64 pokazuje teraz oryginalną scenę `CRUMBLIN` na
+Wejście DOS64 `--emitters` pokazuje oryginalną scenę `CRUMBLIN` na
 `LEVEL6.MAP`: grupa czterech emiterów, rodzice z licznikiem i spadające dzieci
 działają przez dispatcher z oryginalnymi skryptami, grawitacją i usuwaniem.
 Lista zasobów DS `0xe3d0` wskazuje `CRUMBLIN` w slocie 160.
@@ -324,3 +324,22 @@ osiem powtarzanych przypadków testowych. Na granicy następnego stanu zatrzymuj
 reakcję, zamiast dopisywać rozgrywkę. [check_scene.c](../../tools/check_scene.c)
 z argumentem `--deflection` sprawdza 20 sekund rzeczywistego wejścia:
 128064000 pikseli ARGB, 320 klatek z ruchem i 20 granic przejścia.
+
+Większy test domyślny łączy teraz odbicie, pełne ścieżki lotu `0x1aa97` /
+`0x1ae53` oraz selektory lądowania `0x1b307` / `0x1b4a0`.
+Strzałki zmieniają kierunek w powietrzu przez oryginalne rozgałęzienia.
+Zachowano asymetrię sondy w górę, resetu skryptu, licznika i zerowania Y.
+Grawitacja `0x20ea6` uwzględnia bit 2 flag; `0x20e37` z wcześniejszego
+odbicia nadal używa ograniczenia bezwarunkowo.
+
+Przy przejściu z odbicia handler jest już ustawiony. Oryginalny lot pomija
+wtedy inicjalizację i zachowuje skrypt przewrotu — nie wymusza `0x6116`.
+Podgląd ładuje wszystkie 28 banków młodego Simby, ponieważ dalsze rekordy
+skryptu wychodzą poza same banki przewrotów.
+Ziemia na Y=160, wyniki sondy, brak krawędzi i ponowne uruchomienia są
+jawnym fixture; rzeczywiste sondy mapy i wybrane stany naziemne nie są
+zastąpione wymyśloną grą. Test zatrzymuje się na ich granicy.
+[check_player_air.c](../../tools/check_player_air.c) sprawdza pełne ścieżki
+i 2752512 lądowań, a [check_scene.c](../../tools/check_scene.c) bez argumentów
+sprawdza 20 sekund rzeczywistego wejścia, dziesięć pełnych łańcuchów
+i 128064000 pikseli. `--steering` sprawdza też wejście strzałek.
