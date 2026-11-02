@@ -1,0 +1,35 @@
+DOSBox-X OPL2/OPL3 emulator
+=========================
+
+Repository: https://github.com/joncampbell123/dosbox-x
+Revision: 8a94b28e4113cf9641ea22f1d24191d1d2379f4c
+Original paths: src/hardware/opl.cpp, src/hardware/opl.h
+Local paths: opl.c, opl.h
+
+Copyright (C) 2002-2021 The DOSBox Team.
+Originally based on ADLIBEMU.C by Ken Silverman,
+Copyright (C) 1998-2001 Ken Silverman.
+License: LGPL version 2.1 or later; see COPYING.LIB.
+COPYING supplies the GNU GPL version 2 referenced by that license.
+
+DOS64 modifications:
+- Convert the single static_cast to a C cast.
+- Correct enable_operator's declaration to include the implementation's
+  third argument (C does not have C++ overloads).
+- Name the unused operator_off parameter for C compiler compatibility.
+- Remove DOSBox-specific C++ stream save/load-state functions.
+- Define phase addition wraparound with unsigned arithmetic and widen
+  vibrato products before signed division, avoiding signed overflow.
+- Add dosbox.h for the host integer types, bool and INLINE definitions.
+- Keep the status register private to avoid colliding with Heretic's status()
+  function when linking the C adaptation.
+
+The chip implementation is included once by ../../dos64_opl_core.c, compiled
+as ordinary C without structure packing. That wrapper selects OPL3 and
+supplies local sine, power-of-two and noise functions for the freestanding
+runtime. ../../dos64_opl.c is the MUS/GENMIDI instrument driver; it is not a
+copy of DOSBox's host integration or the original DMX driver.
+
+Rebuild the complete application from source with make -C src at the project
+root. No binary-only OPL component is required. The LGPL notices in opl.c and
+opl.h are preserved.
