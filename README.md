@@ -1222,7 +1222,7 @@ The camera translates the same world coordinates in both X and Y.
 
 Starting X=160 is still a preview choice, not migrated level startup.
 Starting Y is located on the real surface (LEVEL1 currently Y=1255).
-Ceiling/lateral blocking, dynamic map objects, complete hazard handling
+Dynamic map objects, complete hazard handling
 and swing-object states remain unported. An encountered unported edge
 branch reports an error rather than inventing a substitute.
 Diagnostics and exit measurements remain in `LIONKING.LOG`.
@@ -1235,3 +1235,28 @@ Native DOS64 verification recorded six contour adjustments, one jump/landing,
 and final position X506/Y1261. The captured frame shows Simba on LEVEL1's
 real terrain; Escape returned zero. The default preview's exact-pixel
 regression still passes.
+
+Map mode also runs the original left/right lateral probes (`0x16f41`,
+`0x16e37`, classification `0x17053`) before each behavior tick, in that
+order. Blocked directions are removed from held input and recorded in
+`boundary_controls`, so existing run/roll/flight handlers choose their
+original responses. The probes preserve half-cell neighbors, asymmetric
+X corrections, half-height contacts and wall-leap offsets. Wall-grip
+states bypass them. The preview uses map limits X16..map-width-minus-16;
+level-specific moving boundaries and dynamic-object forced contacts
+are not yet connected.
+
+Ceiling queries (`0x1739c`) use the signed top offset of the current
+animation descriptor and the original contact plane. The original reads
+the same next-row cell twice; kinds 0x40..0x4f and >=0xb0 block before
+the later contour-table branches. This behavior is preserved rather
+than replaced by an invented ceiling shape sampler.
+
+The focused map check now covers both lateral directions, correction
+order, half-cell/half-height thresholds, grip and leap flags, map limits,
+and cancellation of both jump directions against real LEVEL1 ceilings.
+A native input smoke recorded 164 left-blocked ticks, six contour
+adjustments, one landing and final X603/Y1261; Escape returned zero.
+Its ground route did not touch a ceiling (zero ceiling hits), so ceiling
+behavior was verified separately by the connected real-map player check.
+All measurements remain file-only in `LIONKING.LOG`.

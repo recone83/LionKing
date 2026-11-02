@@ -513,6 +513,25 @@ Zachowano bazę DS bez przesuwania adresów danych.
 
 Scena `--map` wybiera X160 i szuka rzeczywistej powierzchni dla startu,
 przewija kamerę w obu osiach i wyłącza skróty kontaktów testowych.
-Na tym etapie nie przeniesiono blokowania boków/sufitu, obiektów
-dynamicznych ani pełnej obsługi pułapek. Poprzednie tryby nadal służą
+Na tym etapie nie przeniesiono obiektów dynamicznych ani pełnej
+obsługi pułapek. Poprzednie tryby nadal służą
 do izolowanego sprawdzania handlerów z atrapami.
+
+`engine_map_lateral` przenosi `0x16f41/0x16e37/0x17053`. Przed handlerem
+sprawdza lewą, następnie prawą stronę, ustawia `boundary_controls` 4/8
+i usuwa z wejścia zablokowane kierunki (`0x14e97`). Próbka ma X +/-12
+i wiersz (Y-16)/16; flaga 0x8000 zmniejsza odsunięcie do 8 i dodaje
+32 do Y. Flaga chwytu 8 pomija obie strony. Zachowano kontakty 6/9,
+2 zależne od flags_high, 0x40/0x41, połówki wysokości 0x4e/0x4f,
+pełne kontakty >=0xb0 oraz sąsiadów +/-2 bajty i asymetrię korekt X.
+Granice podglądu to X16 i szerokość mapy minus 16; przesuwane granice
+poziomu oraz wymuszanie kontaktów przez obiekty dynamiczne pozostają
+poza tym blokiem.
+
+`engine_map_ceiling` odpowiada `0x1739c`: dodaje signed +4 aktualnego
+deskryptora do Y, wywołuje geometrię (Y-8)/16 i czyta następny wiersz
+płaszczyzny kontaktów. Oba odczyty oryginału dotyczą tej samej komórki,
+więc kontakty 0x40..0x4f i >=0xb0 blokują przed późniejszymi gałęziami
+tablicy DS 0x16d28. Nie zastąpiono tej osobliwości nową mechaniką.
+Test mapy sprawdza również zatrzymanie obu oryginalnych kierunków
+skoku przez rzeczywisty sufit LEVEL1.

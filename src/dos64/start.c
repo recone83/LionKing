@@ -231,6 +231,9 @@ typedef struct {
     unsigned int map_height_changes;
     unsigned int map_landings;
     unsigned int map_edge_contacts;
+    unsigned int map_left_blocks;
+    unsigned int map_right_blocks;
+    unsigned int map_ceiling_hits;
     unsigned long long jump_begin;
 } DEFLECTION_PREVIEW;
 
@@ -331,6 +334,13 @@ static int preview_player_sound(void *context, unsigned short sample)
 static int preview_player_probe(void *context, short x, short y, short *hit)
 {
     DEFLECTION_PREVIEW *preview = context;
+    if (preview->map_mode) {
+        int result = engine_map_ceiling(&preview->collision,
+            preview->air.player.body.node, x, y, hit);
+        if (result != 0) lk_platform_log("Lion King: invalid map ceiling query.\n");
+        else if (*hit) ++preview->map_ceiling_hits;
+        return result;
+    }
     (void)x;
     (void)y;
     *hit = !preview->jump && (preview->variant & 4) ? -1 : 0;
@@ -661,6 +671,18 @@ static void update_player_preview(void *context)
                 return;
             }
         }
+        if (preview->map_mode) {
+            if (engine_map_lateral(&preview->collision, &preview->air.player.body.owner,
+                preview->air.flags, preview->air.player.flags_high,
+                &preview->air.boundary_controls) != 0) {
+                lk_platform_log("Lion King: invalid map lateral query.\n");
+                preview->failed = 1;
+                return;
+            }
+            if (preview->air.boundary_controls & 4) ++preview->map_left_blocks;
+            if (preview->air.boundary_controls & 8) ++preview->map_right_blocks;
+            preview->air.pressed &= (unsigned short)~preview->air.boundary_controls;
+        }
         if (engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
             preview->failed = 1;
             return;
@@ -853,7 +875,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 "Left/Right: move; Space: jump; Down: crouch/roll; Escape: exit.\n"
                 "Floor, slopes, landing and edge queries use map planes, not a fixed Y.\n"
                 "Starting X160 is a preview choice; Y is found on the real contour.\n"
-                "Ceiling and lateral blocking, dynamic map objects and hazards remain unported.\n"
+                "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
+                "Dynamic map objects and hazards remain unported.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
         } else {
             lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
@@ -985,6 +1008,9 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         log_map_measurement("Map contour height adjustments: ", preview.map_height_changes);
         log_map_measurement("Map landing transitions: ", preview.map_landings);
         log_map_measurement("Map edge contacts: ", preview.map_edge_contacts);
+        log_map_measurement("Map left blocked ticks: ", preview.map_left_blocks);
+        log_map_measurement("Map right blocked ticks: ", preview.map_right_blocks);
+        log_map_measurement("Map ceiling hits: ", preview.map_ceiling_hits);
         log_map_measurement("Map final X: ", (unsigned short)preview.air.player.body.owner.x);
         log_map_measurement("Map final Y: ", (unsigned short)preview.air.player.body.owner.y);
     }

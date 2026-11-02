@@ -35,5 +35,9 @@ int engine_map_ledge_height(const ENGINE_MAP_COLLISION *collision,
     short x, short y, short *height);
 int engine_map_edge(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
     short *hit, short *kind, short *x, short *y);
+int engine_map_lateral(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
+    unsigned short flags, unsigned char flags_high, unsigned char *blocked);
+int engine_map_ceiling(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
+    short x, short y, short *hit);
 
 #endif

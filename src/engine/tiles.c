@@ -106,6 +106,96 @@ static short map_word(unsigned int value)
     return (short)(value < 0x8000 ? (int)value : (int)value - 65536);
 }
 
+static int lateral_probe(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
+    unsigned short flags, unsigned char flags_high, int right, short *hit)
+{
+    int x = map_word((unsigned short)owner->x + (right ? 12U : 0U - 12U));
+    int y = map_word((unsigned short)owner->y - 8U);
+    if (flags & 0x8000) {
+        x = map_word((unsigned short)x + (right ? 0U - 4U : 4U));
+        y = map_word((unsigned short)y + 32U);
+    }
+    int px = x < 0 ? 0 : x, py = y < 8 ? 0 : y - 8;
+    unsigned int tile;
+    if (collision_cell(collision, px, py / 16, 2, &tile) != 0) return -1;
+    unsigned int kind = map_shape(tile);
+    *hit = 0;
+    if ((kind & 255) != (right ? 6U : 9U)) {
+        if (!(kind >= 0xb0 || (kind == 2 && !(flags_high & 8)) ||
+            kind == 0x4f || kind == 0x4e || kind == 0x40 || kind == 0x41)) return 0;
+        int half_y = ((unsigned short)y - 8U) & 15;
+        if ((kind == 0x4e && half_y < 8) || (kind == 0x4f && half_y > 8)) return 0;
+        if (right && (kind & 255) == 0x40) return 0;
+        int half_x = (unsigned short)x & 15;
+        if (right && (kind & 255) == 0x41) {
+            *hit = half_x >= 8 ? -1 : 0;
+            return 0;
+        }
+        if (!right && kind == 0x40) {
+            if (half_x > 8) return 0;
+            if (half_x < 8) owner->x = map_word((unsigned short)owner->x - (unsigned int)(half_x - 8));
+            *hit = -1;
+            return 0;
+        }
+        /* Unlike edge queries, these inspect the neighboring eight-pixel word. */
+        unsigned int offset = collision->table + 2 * collision->plane_size +
+            (unsigned int)(py / 16) * collision->width * 4 + (unsigned int)(px / 16) * 4;
+        int neighbor_offset = (int)offset + (right ? -2 : 2);
+        if (neighbor_offset < 0 || (unsigned int)neighbor_offset + 2 > collision->size) return -1;
+        unsigned int neighbor = map_shape(map_u16(collision->map + neighbor_offset));
+        if (right) {
+            if ((neighbor & 255) == 0x41) owner->x = map_word((unsigned short)owner->x - 8U);
+        } else {
+            owner->x = map_word((unsigned short)owner->x +
+                ((neighbor & 255) == 0x40 ? 8U : (unsigned int)(15 - half_x)));
+        }
+    }
+    *hit = -1;
+    return 0;
+}
+
+int engine_map_lateral(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
+    unsigned short flags, unsigned char flags_high, unsigned char *blocked)
+{
+    if (!collision || !collision->map || !collision->contours || !owner || !blocked) return -1;
+    *blocked = 0;
+    if (flags & 8) return 0;
+    short hit;
+    if (owner->x <= 16) {
+        owner->x = 16; *blocked |= 4;
+    } else {
+        if (lateral_probe(collision, owner, flags, flags_high, 0, &hit) != 0) return -1;
+        if (hit) *blocked |= 4;
+    }
+    int limit = (int)collision->width * 8 - 16;
+    if (owner->x >= limit) {
+        owner->x = (short)limit; *blocked |= 8;
+    } else {
+        if (lateral_probe(collision, owner, flags, flags_high, 1, &hit) != 0) return -1;
+        if (hit) *blocked |= 8;
+    }
+    return 0;
+}
+
+int engine_map_ceiling(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
+    short x, short y, short *hit)
+{
+    if (!collision || !collision->map || !collision->contours || !node ||
+        !node->parts || node->parts_size < 6 || !hit) return -1;
+    *hit = 0;
+    int top = map_word((unsigned short)y + map_u16(node->parts + 4));
+    int px = x < 0 ? 0 : x, py = top < 8 ? 0 : top - 8;
+    unsigned int tile;
+    if (collision_cell(collision, px, py / 16 + 1, 2, &tile) != 0) return -1;
+    unsigned int kind = map_shape(tile);
+    if (kind >= 0xb0 || (kind >= 0x40 && kind <= 0x4f)) {
+        *hit = -1; return 0;
+    }
+    /* Both original reads address the same cell; the later shape-table
+       branches cannot be reached after the classification above. */
+    return 0;
+}
+
 int engine_map_edge(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
     short *hit, short *kind, short *x, short *y)
 {

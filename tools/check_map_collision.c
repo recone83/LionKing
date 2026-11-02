@@ -46,7 +46,8 @@ static int map_edge(void *context, short *hit, short *kind, short *x, short *y)
 }
 static int probe(void *context, short x, short y, short *hit)
 {
-    assert(context == &player); (void)x; (void)y; *hit = 0; return 0;
+    assert(context == &player);
+    return engine_map_ceiling(&collision, player.player.body.node, x, y, hit);
 }
 static int sound(void *context, unsigned short sample)
 {
@@ -64,6 +65,22 @@ static int ledge_height(void *context, short x, short y, short *height)
 {
     assert(context == &player);
     return engine_map_ledge_height(&collision, x, y, height);
+}
+
+static void tick(void)
+{
+    assert(engine_map_lateral(&collision, &player.player.body.owner, player.flags,
+        player.player.flags_high, &player.boundary_controls) == 0);
+    player.pressed &= (unsigned short)~player.boundary_controls;
+    DOS64_INPUT input = {0};
+    assert(engine_update_objects(&pool, &input) == 0);
+}
+
+static void set_kind(unsigned char *data, unsigned int offset, unsigned int kind)
+{
+    unsigned int tile = (kind / 8) * 32 + (kind % 8) * 2;
+    data[offset] = (unsigned char)tile;
+    data[offset + 1] = (unsigned char)(tile >> 8);
 }
 static void __attribute__((ms_abi)) diagnostic(const char *text) { fputs(text, stderr); }
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode) { return fopen(path, mode); }
@@ -132,21 +149,54 @@ int main(void)
     player.player.probe = probe; player.sound = sound;
     ENGINE_PLAYER_CALL idle = {0xc8d5, 0x6148, 0};
     assert(engine_player_begin_ground(&pool, object, &player, &idle) == 0);
-    DOS64_INPUT input = {0};
     player.pressed = 8;
-    for (unsigned int i = 0; i < 80; ++i) assert(engine_update_objects(&pool, &input) == 0);
+    for (unsigned int i = 0; i < 80; ++i) { player.pressed = 8; tick(); }
     assert(player.player.body.owner.x > 360 && snaps > 0 && player.player.body.owner.y != 1255);
     short start_y = player.player.body.owner.y;
     player.pressed |= 0x20;
-    for (unsigned int i = 0; i < 10; ++i) assert(engine_update_objects(&pool, &input) == 0);
+    for (unsigned int i = 0; i < 10; ++i) { player.pressed = 0x28; tick(); }
     assert(player.player.body.owner.y < start_y - 20);
     player.pressed = 0;
-    for (unsigned int i = 0; i < 120; ++i) assert(engine_update_objects(&pool, &input) == 0);
+    for (unsigned int i = 0; i < 120; ++i) tick();
     assert(landings && object->behavior == &engine_player_ground_behavior);
     assert(engine_map_ground(&collision, player.player.body.owner.x, player.player.body.owner.y,
         &ground_sample) == 0 && ground_sample.supported && !ground_sample.delta_y);
     printf("Connected map motion: X%d Y%d, %u contour adjustments, %u landings\n",
         player.player.body.owner.x, player.player.body.owner.y, snaps, landings);
+    unsigned int side_hits = 0, ceiling_hits = 0;
+    for (int y = 32; y < 1280; y += 16) {
+        for (int x = 32; x < 1568; x += 16) {
+            RENDER_OWNER point = {(short)x, (short)y};
+            unsigned char blocked;
+            short hit;
+            assert(engine_map_lateral(&collision, &point, 0, 0, &blocked) == 0);
+            assert(engine_map_ceiling(&collision, player.player.body.node,
+                (short)x, (short)y, &hit) == 0);
+            if (blocked && side_hits++ < 3) printf("Real side contact X%d Y%d mask%u correctedX%d\n",
+                x, y, blocked, point.x);
+            if (hit && ceiling_hits++ < 3) printf("Real ceiling contact X%d Y%d\n", x, y);
+        }
+    }
+    assert(side_hits && ceiling_hits);
+    for (unsigned int direction = 0; direction < 2; ++direction) {
+        player.player.handler = 0;
+        player.player.body.owner = (RENDER_OWNER){1088, 112};
+        player.player.body.motion = (ENGINE_MOTION){0};
+        ENGINE_PLAYER_CALL jump = {direction ? 0xb7e7U : 0xb604U, 0x6180, 0};
+        assert(engine_player_begin_jump(&pool, object, &player, &jump, 0x612c) == 0);
+        short hit = 0;
+        for (short y = 32; y < 1280 && !hit; y += 16) {
+            assert(probe(&player, 1088, y, &hit) == 0);
+            if (hit) player.player.body.owner.y = y;
+        }
+        assert(hit);
+        player.pressed = 0;
+        tick();
+        assert(flags & 0x20);
+        assert(player.player.body.motion.velocity_y < 0x80000000U);
+        assert(object->behavior == &engine_player_air_behavior);
+    }
+    puts("PASS: real LEVEL1 ceiling stops both original jump directions");
     unsigned char fixture[512] = {0}, heights[4096] = {0};
     fixture[8] = 8; fixture[12] = 4; fixture[16] = 128;
     heights[16 + 3] = 13 | 0xe0;
@@ -185,6 +235,74 @@ int main(void)
     assert(engine_map_ledge_height(&test, 3, 16, &height) == -1);
     assert(engine_map_collision_initialize(&test, fixture, 200, heights, sizeof(heights)) == -1);
     assert(engine_map_collision_initialize(&test, fixture, sizeof(fixture), heights, 4095) == -1);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    position = (RENDER_OWNER){24, 32};
+    unsigned char blocked;
+    set_kind(fixture, 288, 0xb0);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 &&
+        blocked == 4 && position.x == 27);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    position = (RENDER_OWNER){24, 32};
+    set_kind(fixture, 296, 0xb0);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 &&
+        blocked == 8 && position.x == 24);
+    set_kind(fixture, 294, 0x41);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 &&
+        blocked == 8 && position.x == 16);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    position = (RENDER_OWNER){24, 32};
+    set_kind(fixture, 296, 6);
+    assert(engine_map_lateral(&test, &position, 8, 0, &blocked) == 0 && !blocked && position.x == 24);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8);
+    set_kind(fixture, 296, 0x4e);
+    position = (RENDER_OWNER){24, 32};
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    position.y = 40;
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8);
+    set_kind(fixture, 296, 0x4f);
+    position = (RENDER_OWNER){24, 32};
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8);
+    position.y = 47;
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    set_kind(fixture, 296, 0x40);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    set_kind(fixture, 296, 0x41);
+    position = (RENDER_OWNER){24, 32};
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    position.x = 28;
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8);
+    set_kind(fixture, 296, 0x140);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    set_kind(fixture, 288, 0x40);
+    position = (RENDER_OWNER){24, 32};
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    position.x = 20;
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 4 && position.x == 20);
+    position.x = 18;
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 4 && position.x == 20);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    set_kind(fixture, 296, 6);
+    position = (RENDER_OWNER){24, 0};
+    assert(engine_map_lateral(&test, &position, 0x8000, 0, &blocked) == 0 && blocked == 8);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && !blocked);
+    set_kind(fixture, 296, 2);
+    position = (RENDER_OWNER){24, 32};
+    assert(engine_map_lateral(&test, &position, 0, 8, &blocked) == 0 && !blocked);
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    parts[4] = (unsigned char)-16; parts[5] = 255;
+    set_kind(fixture, 292, 0xb0);
+    assert(engine_map_ceiling(&test, &node, 24, 24, &hit) == 0 && hit);
+    set_kind(fixture, 292, 0x40);
+    assert(engine_map_ceiling(&test, &node, 24, 24, &hit) == 0 && hit);
+    set_kind(fixture, 292, 2);
+    assert(engine_map_ceiling(&test, &node, 24, 24, &hit) == 0 && !hit);
+    memset(fixture + 128, 0, sizeof(fixture) - 128);
+    position = (RENDER_OWNER){0, 32};
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 4 && position.x == 16);
+    position = (RENDER_OWNER){63, 32};
+    assert(engine_map_lateral(&test, &position, 0, 0, &blocked) == 0 && blocked == 8 && position.x == 48);
     puts("PASS: original two-row contour support, tags, real slope traversal, jump and map landing");
     return 0;
 }
