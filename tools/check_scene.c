@@ -46,9 +46,11 @@ static RENDER_OWNER damage_source;
 static int demo_hit;
 static unsigned int action_frames, roar_sounds, damage_sounds;
 static int map_test;
+static int map_animation;
 static unsigned int stomp_jump;
 static unsigned int enemy_damage_logs, map_stuns, map_defeats, map_contacts;
 static unsigned int rebound_logs;
+static unsigned int stable_background_frames, animation_roar_logs;
 static unsigned int map_spawns, map_jumps;
 static unsigned long long audio_written, audio_energy, audio_queued, audio_time;
 static unsigned int audio_stops;
@@ -97,7 +99,11 @@ static void record_log(const char *text)
     if (strstr(text, "Original running/standing jump selected")) ++ground_jump_logs;
     if (strstr(text, "damage/recoil handler selected from a real enemy contact"))
         ++enemy_damage_logs;
-    if (strstr(text, "Original rebound sample 0 requested")) ++rebound_logs;
+    if (strstr(text, "Original rebound sample 0 requested")) {
+        if (stomp_jump) assert(enemy_damage_logs == 0);
+        ++rebound_logs;
+    }
+    if (strstr(text, "Original roar sample requested")) ++animation_roar_logs;
 }
 static void __attribute__((ms_abi)) log_text(const char *text)
 {
@@ -191,7 +197,8 @@ static void __attribute__((ms_abi)) poll(void)
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
     if (map_test) {
-        api.Input.KeyDown[0x4f] = iteration < 280;
+        api.Input.KeyDown[0x4f] = stomp_jump ? iteration < 280 :
+            iteration < 70 || (iteration >= 220 && iteration < 400);
         api.Input.KeyDown[0x50] = iteration >= 1000 && iteration < 1200;
         api.Input.KeyDown[0x2c] = iteration >= 700 && iteration < 750;
         api.Input.KeyPressed[0x2c] = iteration == 700;
@@ -200,7 +207,17 @@ static void __attribute__((ms_abi)) poll(void)
             api.Input.KeyPressed[0x2c] = iteration == stomp_jump;
         }
         api.Input.KeyDown[0xe0] = (iteration >= 450 && iteration < 462) ||
-            (iteration >= 900 && iteration < 912) || (iteration >= 1400 && iteration < 1412);
+            (iteration >= 900 && iteration < 912) || (iteration >= 1400 && iteration < 1412) ||
+            (!stomp_jump && iteration >= 80 && iteration < 92);
+        if (map_animation) {
+            memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
+            memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
+            api.Input.KeyDown[0xe0] = (iteration >= 200 && iteration < 212) ||
+                (iteration >= 600 && iteration < 612) ||
+                (iteration >= 1000 && iteration < 1012);
+            api.Input.KeyDown[0x51] = (iteration >= 400 && iteration < 420) ||
+                (iteration >= 800 && iteration < 820);
+        }
     }
     if (ground_steering && iteration <= 1400) {
         unsigned int phase = iteration % 400;
@@ -518,6 +535,11 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
 {
     assert(w == 320 && h == 200 && stride == 320 && x == 0 && y == 40 && dw == 640 && dh == 400);
     if (map_test) {
+        if (map_animation && shown) {
+            assert(memcmp(previous_map_frame, image,
+                80U * 320 * sizeof(previous_map_frame[0])) == 0);
+            ++stable_background_frames;
+        }
         if (shown && memcmp(previous_map_frame, image, sizeof(previous_map_frame)) != 0) ++changed;
         memcpy(previous_map_frame, image, sizeof(previous_map_frame));
         return;
@@ -584,9 +606,11 @@ int main(int argc, char **argv)
         strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0 ||
         strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0 ||
         strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0 ||
-        strcmp(argv[1], "--map") == 0 || strcmp(argv[1], "--map-stomp") == 0)));
+        strcmp(argv[1], "--map") == 0 || strcmp(argv[1], "--map-stomp") == 0 ||
+        strcmp(argv[1], "--map-animation") == 0)));
+    map_animation = argc == 2 && strcmp(argv[1], "--map-animation") == 0;
     stomp_jump = argc == 2 && strcmp(argv[1], "--map-stomp") == 0 ? 60 : 0;
-    map_test = stomp_jump || (argc == 2 && strcmp(argv[1], "--map") == 0);
+    map_test = map_animation || stomp_jump || (argc == 2 && strcmp(argv[1], "--map") == 0);
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
     jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
     ground_steering = argc == 2 && strcmp(argv[1], "--ground-steering") == 0;
@@ -611,14 +635,19 @@ int main(int argc, char **argv)
         printf("Map measurements: %u spawns/%u contacts/%u stuns/%u defeats, %u damage logs/"
             "%u landings, %u changed frames, %llu audio frames\n", map_spawns, map_contacts,
             map_stuns, map_defeats, enemy_damage_logs, map_jumps, changed, audio_written);
-        assert(iteration == 2002 && shown == 2001 && changed > 200 && map_spawns >= 2 &&
-            map_contacts > 0 && map_jumps > 0);
+        assert(iteration == 2002 && shown == 2001);
         assert(audio_written > 800000 && audio_energy > 0 && audio_stops == 1 && !log_file);
-        if (stomp_jump) {
-            assert(map_defeats == 1 && rebound_logs == 1 && enemy_damage_logs == 0);
+        if (map_animation) {
+            assert(stable_background_frames == 2000 && changed > 100 &&
+                animation_roar_logs == 3 && enemy_damage_logs == 0);
+            puts("PASS: repeated idle/roar/crouch transitions keep distant background exactly stationary");
+        } else if (stomp_jump) {
+            assert(changed > 200 && map_spawns >= 2 && map_contacts > 0 &&
+                map_jumps > 0 && map_defeats == 1 && rebound_logs == 1);
             puts("PASS: real-map stomp, rendered lizard death, Simba rebound, continued gameplay/music and Escape");
         } else {
-            assert(enemy_damage_logs > 0 && map_stuns > 0);
+            assert(changed > 200 && map_spawns >= 2 && map_contacts > 0 &&
+                map_jumps > 0 && enemy_damage_logs > 0 && map_stuns > 0);
             puts("PASS: real map lizards, actual contacts/recoil, roar, jumping, music and Escape with file-only logs");
         }
         return 0;

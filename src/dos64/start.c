@@ -233,6 +233,7 @@ typedef struct {
     unsigned int wall_case;
     int fixture_wall_contact;
     int map_mode;
+    RENDER_FOLLOW_CAMERA camera;
     ENGINE_MAP_COLLISION collision;
     short map_spawn_y;
     unsigned int map_contacts;
@@ -263,6 +264,10 @@ static int preview_player_contact(void *context, short *touching)
 
 static int preview_camera(const DEFLECTION_PREVIEW *preview, RENDER_OWNER *camera)
 {
+    if (preview->map_mode) {
+        *camera = preview->camera.position;
+        return 0;
+    }
     *camera = (RENDER_OWNER){
         preview->air.player.body.owner.x > 160 ?
             (short)(preview->air.player.body.owner.x - 160) : 0,
@@ -727,7 +732,11 @@ static void update_player_preview(void *context)
         }
         if (preview->map_mode) {
             RENDER_OWNER camera;
-            if (preview_camera(preview, &camera) != 0 ||
+            if (render_follow_camera(&preview->camera, preview->air.player.body.owner,
+                (unsigned char)(preview->air.player.body.node->pass_flags & 8),
+                preview->air.player.flags_high, preview->collision.width,
+                preview->collision.height) != 0 ||
+                preview_camera(preview, &camera) != 0 ||
                 engine_enemies_tick(&map_enemies, camera) != 0) {
                 lk_platform_log("Lion King: original LEVEL1 enemy update failed.\n");
                 preview->failed = 1;
@@ -917,6 +926,16 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         return 1;
     }
     if (preview.map_mode) {
+        preview.camera.horizontal_offset = 128;
+        preview.camera.position = (RENDER_OWNER){
+            (short)(preview.air.player.body.owner.x - 128),
+            (short)(preview.air.player.body.owner.y - 128)};
+        RENDER_VIEWPORT viewport;
+        if (render_prepare_viewport(&preview.camera.position, preview.collision.width,
+            preview.collision.height, 0, &viewport) != 0) {
+            lk_platform_log("Lion King: cannot initialize map follow camera.\n");
+            return 1;
+        }
         static const unsigned int indices[4] = {3, 12, 13, 14};
         for (unsigned int i = 0; i < 4; ++i) {
             unsigned int slot, loaded;

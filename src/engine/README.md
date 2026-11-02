@@ -294,6 +294,24 @@ dekompilator błędnie zastąpił kamerę stałymi. Kolejność: dolny clamp do 
 górny clamp z porównaniem signed dolnego słowa wymiaru, zapis kamery logicznej,
 dodanie shake do widocznego Y i wyrównanie początków do 8 pikseli.
 [check_viewport.c](../../tools/check_viewport.c) sprawdza 1966080 przypadków.
+`render_follow_camera` przenosi nieowijający podzbiór LEVEL1 z `0x17580`
+(base-zero `0x7580`): kotwica X przechodzi o 1/tick w stronę 128 przy
+patrzeniu w prawo lub 192 w lewo; kotwica Y to 128/210/64 odpowiednio
+dla zwykłej pozycji/flags-high 1/flags-high 2, z priorytetem bitu 2.
+Zwykłe śledzenie Y odejmuje martwą strefę ±20, a oba kroki są ograniczone
+do ±8 przed clampem viewportu. Ustawienia pochodzą z inicjalizacji
+`0x138cd`/`0x14273` i disassembly `0x17580..0x177e3`.
+W tej ścieżce całkowite różnice pozycji trafiają do wysokiego słowa EDX;
+`sar dx,3` działa na zerowym niskim słowie, więc nie dodano domniemanego
+wygładzania różnicy przez dzielenie przez 8.
+`--map` aktualizuje zachowaną kamerę raz po ticku Simby i używa tej samej
+pozycji do aktywacji przeciwników i renderowania, zamiast przeliczać
+`Simba.x−160, Simba.y−120` przy każdej klatce. Inicjalizacja podglądu
+kadruje jego punkt startowy; freeze/owijanie z innych poziomów pozostają
+poza zakresem. Nie zmieniono strumieni animacji ani renderowania sprite'ów.
+`check_scene --map-animation` sprawdza 2000 kolejnych porównań tła podczas
+trzech ryków, powrotów do idle i krótkich przykucnięć; `--map-stomp`
+nadal sprawdza śmierć jaszczurki, odbicie i dalszą grę.
 Scena testowa uruchamia oryginalny obiekt shake razem z aktywacją emiterów,
 z markerem X zero (bez wywołania obrażeń gracza). Przesunięcie obejmuje mapę
 i sprite'y, nie kamerę używaną do cullingu; po prezentacji zeruje się jak

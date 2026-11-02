@@ -64,6 +64,15 @@ int render_prepare_viewport(RENDER_OWNER *camera, unsigned short width_tiles,
     unsigned short height_tiles, unsigned short shake, RENDER_VIEWPORT *viewport);
 
 typedef struct {
+    RENDER_OWNER position;
+    short horizontal_offset;
+} RENDER_FOLLOW_CAMERA;
+
+int render_follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
+    unsigned char facing_left, unsigned char player_flags_high,
+    unsigned short width_tiles, unsigned short height_tiles);
+
+typedef struct {
     const unsigned char *data;
     unsigned int size;
 } RENDER_SPRITE_BANK;

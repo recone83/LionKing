@@ -323,6 +323,37 @@ int render_object_pass(RENDER_POOL *pool, unsigned char pass, short viewport_x,
     return 0;
 }
 
+int render_follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
+    unsigned char facing_left, unsigned char player_flags_high,
+    unsigned short width_tiles, unsigned short height_tiles)
+{
+    if (!camera || width_tiles < 40 || width_tiles > 4095 ||
+        height_tiles < 25 || height_tiles > 4095) return -1;
+    /* 0x17580: integer target deltas, gradual look-ahead and an 8-pixel cap. */
+    if (facing_left) {
+        if (camera->horizontal_offset < 192) ++camera->horizontal_offset;
+    } else {
+        if (camera->horizontal_offset > 128) --camera->horizontal_offset;
+        if (camera->horizontal_offset < 128) camera->horizontal_offset = 128;
+    }
+    int dx = bounds_word((unsigned int)target.x - camera->position.x -
+        camera->horizontal_offset);
+    int vertical_offset = player_flags_high & 2 ? 64 :
+        player_flags_high & 1 ? 210 : 128;
+    int dy = bounds_word((unsigned int)target.y - camera->position.y - vertical_offset);
+    if (!(player_flags_high & 3)) {
+        dy = dy < -20 ? dy + 20 : dy > 20 ? dy - 20 : 0;
+    }
+    if (dx > 8) dx = 8;
+    if (dx < -8) dx = -8;
+    if (dy > 8) dy = 8;
+    if (dy < -8) dy = -8;
+    camera->position.x = bounds_word((unsigned int)camera->position.x + dx);
+    camera->position.y = bounds_word((unsigned int)camera->position.y + dy);
+    RENDER_VIEWPORT viewport;
+    return render_prepare_viewport(&camera->position, width_tiles, height_tiles, 0, &viewport);
+}
+
 static int render_scene_layers(RENDER_SCENE *scene)
 {
     if (!scene || !scene->prepare_viewport || !scene->stage_one ||

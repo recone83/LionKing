@@ -1392,7 +1392,7 @@ threshold, both mirrored attack windows and their excluded boundary ticks,
 stun timing, obstacle braking/resume, culling, death and
 unchanged map bytes. It passes Address/UndefinedBehavior sanitizer checks.
 `tools/check_scene.c --map` runs the actual DOS64 adapter with movement,
-roar, jumping and audio mocks: six spawns, 241 contacts, one stun, six
+roar, jumping and audio mocks: three spawns, 124 contacts, one stun, two
 damage transitions, one landing and 886410 PCM frames in its 20-second
 fixture, with clean Escape/audio/log shutdown. The unchanged default demo
 still matches 128064000 ARGB pixels. Host scene builds now also need
@@ -1405,3 +1405,20 @@ each death tick: DS stream `0x13887` references `DUST` slot 65, not
 Native QEMU also showed Simba and a real lizard together, accepted movement,
 roar and jumping, recorded seven damage/recoil events with 93 health left,
 one stun and one landing, and returned exit code zero on Escape.
+
+Map mode now retains a camera across logic ticks instead of immediately
+recentering it on every animation frame. The original LEVEL1 follow logic
+(`0x17580`) gradually changes the horizontal anchor between 128 and 192,
+uses a 20-pixel vertical dead zone around the normal 128-pixel anchor,
+and limits either axis to 8 pixels per tick. Looking up/crouching uses the
+original 210/64 vertical anchors. Map bounds still clamp the viewport.
+The preview initializes the camera beside its chosen spawn rather than
+scrolling down from the original zero-camera startup.
+
+`tools/check_viewport.c` covers these limits, facing reversals, posture
+anchors and map bounds. `tools/check_scene.c --map-animation` runs repeated
+idle/roar/short-crouch transitions while checking that the distant background
+remains pixel-identical for all 2000 successive frame comparisons. The
+original sprite poses, per-frame anchors and movement commands are retained;
+they are not recentered artificially when switching animations. The default
+non-map scene keeps its previous camera and exact-pixel output.
