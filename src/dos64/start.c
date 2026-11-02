@@ -9,6 +9,7 @@
 #include "engine/animation.h"
 #include "engine/animation_data.h"
 #include "engine/behaviors.h"
+#include "engine/music.h"
 #include "libs/vga.h"
 
 static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
@@ -17,6 +18,9 @@ static unsigned char packed[79311];
 static unsigned char map[580488];
 static unsigned char map_contours[4096];
 static unsigned char animated_tiles[12800];
+static unsigned char level_music[49887];
+static MUSIC_PLAYER music_player;
+static MUSIC_OUTPUT music_output;
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -916,6 +920,21 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         lk_platform_log("Eight automatic fixture cases: both selectors, both script ranges, probe off/on.\n"
             "Original motion and visual scripts; probe results and restarts are diagnostic.\n");
     }
+    if (preview.map_mode) {
+        unsigned int music_size;
+        if (resources_load_entry(&resource_api, "LIONKING.EPF", "LION1.AMF",
+            packed, sizeof(packed), level_music, sizeof(level_music),
+            &dictionary, &music_size) != 0 ||
+            music_initialize(&music_player, level_music, music_size) != 0) {
+            lk_platform_log("Lion King: invalid or unsupported LEVEL1 AMF music.\n");
+            return 1;
+        }
+        if (music_output_open(&music_output, &music_player, api) != 0) {
+            lk_platform_log("Lion King: LEVEL1 music requires a usable DOS64 audio output.\n");
+            return 1;
+        }
+        lk_platform_log("LEVEL1 music: original LION1.AMF samples, 44100 Hz stereo, looping.\n");
+    }
     VGA_FRAME frame = {pixels, sizeof(pixels), 0, palette, present_frame, 0};
     unsigned long long begin = lk_platform_time_ns();
     preview.jump_begin = begin;
@@ -951,6 +970,10 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         }
         if (lk_platform_exit_requested()) {
             break;
+        }
+        if (preview.map_mode && music_output_service(&music_output) != 0) {
+            lk_platform_log("Lion King: LEVEL1 audio streaming failed.\n");
+            return 1;
         }
         unsigned long long now = lk_platform_time_ns();
         if (!preview.jump && !preview.ground_mode && preview.completed &&
@@ -1013,6 +1036,9 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         flight ? "Original player flight preview finished.\n" :
         "Original player deflection preview finished.\n");
     if (preview.map_mode) {
+        log_map_measurement("Music submitted frames: ", (unsigned int)music_output.submitted);
+        log_map_measurement("Music tracker rows: ", music_player.rows_played);
+        log_map_measurement("Music completed loops: ", music_player.loops);
         log_map_measurement("Map supported queries: ", preview.map_contacts);
         log_map_measurement("Map contour height adjustments: ", preview.map_height_changes);
         log_map_measurement("Map landing transitions: ", preview.map_landings);
@@ -1429,5 +1455,8 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     }
     resource_api = *api;
     resource_api.Write = log_resource_message;
-    return lk_platform_finish(run_preview(api));
+    music_output = (MUSIC_OUTPUT){0};
+    int result = run_preview(api);
+    music_output_stop(&music_output);
+    return lk_platform_finish(result);
 }

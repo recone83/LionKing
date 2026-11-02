@@ -559,3 +559,25 @@ pozwalają oglądać tło z ręcznym przewijaniem bez postaci. Dotychczasowe
 tryby diagnostyczne pozostawiono bez zmian. Test mapy weryfikuje
 rzeczywistą zmianę pikseli w obu animowanych poziomach i niezmienność
 bajtów poza docelowymi obszarami grafiki.
+
+Muzyka LEVEL1 (`--map`) korzysta z natywnego `music.c/h`, nie z OPL.
+`LION1.AMF` jest modułem DSMI 1.4 zawierającym 31 slotów instrumentów
+(10 z próbkami PCM), 15 wzorców i 60 ścieżek po 64 wiersze, 4 kanały.
+Loader weryfikuje tę konkretną strukturę, granice próbek/pętli/ścieżek
+i obsługiwane komendy. Nieobsługiwane dane zgłasza przez błąd do adaptera,
+który zapisuje komunikat w logu; nie pomija efektów po cichu.
+
+Odtwarzacz zachowuje nuty, instrumenty, głośność, vibrato i pamięć
+parametrów, volume slide, vibrato+volume slide, pattern break oraz tempo.
+Próbki unsigned 8-bit są miksowane do signed 16-bit stereo z pozycją
+16.16 i pan z nagłówka AMF. Tempo pierwszego wiersza wynosi 165 BPM,
+speed 6; czas ticka to 2.5/BPM z zachowaniem reszty dzielenia.
+Sekwencja zapętla się po ostatnim wzorcu. To odtworzenie zakresu LEVEL1,
+nie pełny player AMF ani bitowa kopia oryginalnego miksera.
+
+`music_output_*` utrzymuje około 100 ms kolejki w `DOS64_API.Audio`,
+zachowuje próbki przy częściowych zapisach i nie blokuje pętli gry.
+`start` zatrzymuje audio również po błędzie sceny. Nie zmieniono
+oryginalnych dekompilowanych funkcji sterownika muzyki; nieużywany import
+OPL usunięto. Test `check_music.c` obejmuje pełny utwór, efekty,
+buforowanie i błędy wejścia.

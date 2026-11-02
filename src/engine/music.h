@@ -1,0 +1,56 @@
+#ifndef LIONKING_MUSIC_H
+#define LIONKING_MUSIC_H
+
+#include "dos64_api.h"
+
+#define MUSIC_RATE 44100U
+#define MUSIC_TRACKS 60U
+#define MUSIC_ORDERS 15U
+#define MUSIC_INSTRUMENTS 31U
+
+typedef struct {
+    unsigned char note, instrument, volume, effect, parameter;
+} MUSIC_EVENT;
+
+typedef struct {
+    const unsigned char *data;
+    unsigned int length, loop_start, loop_end, rate, volume;
+} MUSIC_SAMPLE;
+
+typedef struct {
+    unsigned int instrument, volume, period, phase, step;
+    unsigned int vibrato_speed, vibrato_depth, vibrato_phase;
+    int volume_slide;
+    int volume_slide_memory;
+    int vibrato;
+} MUSIC_VOICE;
+
+typedef struct {
+    MUSIC_EVENT tracks[MUSIC_TRACKS + 1][64];
+    unsigned short orders[MUSIC_ORDERS][4];
+    MUSIC_SAMPLE samples[MUSIC_INSTRUMENTS];
+    MUSIC_VOICE voices[4];
+    unsigned int pan[4];
+    unsigned int order, row, tick, speed, tempo, tick_remaining;
+    unsigned int tick_remainder, break_row, loops, rows_played;
+    unsigned long long frames_generated;
+    int breaking;
+} MUSIC_PLAYER;
+
+int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned int size);
+int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames);
+
+typedef struct {
+    MUSIC_PLAYER *player;
+    const DOS64_API *api;
+    short pending[1024 * 2];
+    unsigned int position, count;
+    unsigned long long submitted;
+    int opened;
+} MUSIC_OUTPUT;
+
+int music_output_open(MUSIC_OUTPUT *output, MUSIC_PLAYER *player, const DOS64_API *api);
+int music_output_service(MUSIC_OUTPUT *output);
+void music_output_stop(MUSIC_OUTPUT *output);
+
+#endif

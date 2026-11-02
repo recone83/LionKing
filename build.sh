@@ -54,6 +54,7 @@ perl tools/extract_animation.pl bin/obj2_data.bin > "$Temporary/animation_data.c
     src/engine/animation.c \
     src/engine/physics.c \
     src/engine/behaviors.c \
+    src/engine/music.c \
     "$Temporary/animation_data.c" \
     lib/dos64_startup.o -Llib -lbmetal \
     -o "$Temporary/lionking.exe"
