@@ -531,8 +531,8 @@ Zachowano bazę DS bez przesuwania adresów danych.
 
 Scena `--map` wybiera X160 i szuka rzeczywistej powierzchni dla startu,
 przewija kamerę w obu osiach i wyłącza skróty kontaktów testowych.
-Na tym etapie nie przeniesiono obiektów dynamicznych ani pełnej
-obsługi pułapek. Poprzednie tryby nadal służą
+Obsługę dynamicznych przeciwników opisano niżej; pełna obsługa pułapek
+pozostaje nieprzeniesiona. Poprzednie tryby nadal służą
 do izolowanego sprawdzania handlerów z atrapami.
 
 `engine_map_lateral` przenosi `0x16f41/0x16e37/0x17053`. Przed handlerem
@@ -640,3 +640,28 @@ Seed wynosi `0x010101`; inicjalizacja generatora w oryginalnym startupie
 nie została jeszcze ustalona. Natywne okno aktywacji to X kamery −111..+415
 i Y −111..+304: jest oparte na `0x552b`, ale nie odwzorowuje jeszcze
 dokładnego wyrównania i przycinania granic oryginalnego skanera.
+
+Typ 10 używa DS `0x13a62` i konstruktora base-zero `0x117af`;
+pięć znaczników uruchamia jeżozwierze. Przeniesiony podzbiór obejmuje
+`0x1181c` (patrol 0xa000, strumień `0x13fef`), `0x11955` (obrót,
+`0x13fe1`), `0x117e3` (kolce i przewrócenie turlaniem), `0x1171b`
+(próg ryku 8, osłabienie `(distance-50)>>3`), `0x11b6b` (inwersja
+sprite'u, odsunięcie Y o −20, prędkość Y −6, ochrona przez 20 ticków)
+oraz `0x11b1b`/`0x11c81` (kontakt airborne, odbicie Simby i opadanie
+z początkową prędkością −4, grawitacja `0xa7ed`). Pauzy przeszkód
+korzystają z istniejącego kodu, z parametrami 120/30, 0x800 i
+strumieniem `0x13ffd`. Nie utożsamiono skoku na kolce z zabiciem jaszczurki.
+Sloty 77/78 to oryginalne `PORCUTRN`/`PORCUWLK`; wszystkie klatki
+inwersji i opadania są testowane rzeczywistym rendererem. Wspólna
+natywna polityka nie odtwarza ponownie przeciwnika po końcowym upadku;
+pełna zgodność oryginalnego skanera aktywacji nadal nie jest deklarowana.
+
+Inwentaryzacja LEVEL1: 47 znaczników, typy/count:
+1/1, 3/2, 9/9, 10/5, 11/4, 14/14, 16/1, 17/3, 18/4,
+40/1, 41/1, 43/1, 49/1. Typy 10 i 14 są podłączone; pozostałe
+nie otrzymały jeszcze zastępczych handlerów. Tablica dispatch
+base-zero `0x5c5c` wskazuje ich oryginalne definicje DS. Typy 17/18
+używają `BUGS` slot 81 (leczenie +4/do maksimum), 16/49 zwiększają
+metry po locie do HUD, a typ 3 zapisuje pozycję checkpointu.
+Pełny HUD, checkpoint/restart, hiena i zakończenie poziomu nadal
+pozostają częścią niezakończonej migracji LEVEL1.

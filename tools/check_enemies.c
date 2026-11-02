@@ -27,7 +27,7 @@ static RENDER_POOL renders;
 static ENGINE_PLAYER_AIR player;
 static ENGINE_OBJECT *player_object;
 static unsigned char collision_flags;
-static unsigned char original_map[580488], enemy_banks[4][32768], player_bank[32768];
+static unsigned char original_map[580488], enemy_banks[6][32768], player_bank[32768];
 static unsigned char pixels[64000], previous_pixels[64000];
 static RENDER_SPRITE_BANK banks[81];
 static const RENDER_OWNER camera = {0, 1080};
@@ -63,7 +63,7 @@ static void setup(void)
     player.roar_charge = 100;
     sound_requests = 0;
     assert(engine_enemies_initialize(&enemies, &pool, &renders, &collision, &player) == 0);
-    assert(enemies.count == 14);
+    assert(enemies.count == 19 && enemies.lizard_count == 14 && enemies.porcupine_count == 5);
     assert(engine_enemies_tick(&enemies, camera) == 0);
     assert(enemies.spawned == 1);
 }
@@ -229,6 +229,86 @@ static void check_attack_windows(void)
     puts("PASS: both exact attack windows and excluded boundary ticks, mirrored in both directions");
 }
 
+static void check_porcupines(void)
+{
+    setup();
+    RENDER_OWNER view = {700, 1080};
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    ENGINE_LIZARD *enemy = 0;
+    for (unsigned int i = 0; i < enemies.count; ++i)
+        if (enemies.lizards[i].marker_type == 10 && enemies.lizards[i].marker.x == 896)
+            enemy = &enemies.lizards[i];
+    assert(enemy && enemy->object && enemy->handler == 0x1181c);
+    assert(enemy->body.node->parts[19] == 78);
+    player.player.body.owner = (RENDER_OWNER){700, 1261};
+    for (unsigned int i = 0; i < 16; ++i)
+        assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->body.owner.x == 906);
+    unsigned char real_kind = enemy->kind;
+    enemy->kind = 0x11;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->facing == 1 && enemy->body.motion.velocity_x == UINT32_C(0xffff6000));
+    assert(enemy->body.node->parts[19] == 77 && (enemy->body.node->pass_flags & 8));
+    enemy->kind = 0x10;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->facing == 0 && enemy->body.motion.velocity_x == 0xa000);
+    enemy->kind = real_kind;
+    player.player.body.owner = enemy->body.owner;
+    player.player.flags_high = 0x10;
+    player.player.body.motion.velocity_y = 0x50000;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert((player.player.flags_high & 4) && !(player.player.flags_high & 0x20));
+    assert(enemy->handler == 0x1181c && player.damage_source == &enemy->body.owner);
+    player.player.flags_high = 8;
+    short before = enemy->body.owner.y;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->handler == 0x11b6b && enemy->timer == 20);
+    assert(enemy->body.owner.y == before - 20 && (enemy->body.node->pass_flags & 0x10));
+    player.player.body.owner = (RENDER_OWNER){700, 1261};
+    player.player.flags_high = 0;
+    for (unsigned int i = 0; i < 20; ++i) {
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(render_object_pass(&renders, 0, -700, -1080, banks, 81, pixels) == 0);
+    }
+    assert(enemy->timer == 0);
+    player.player.body.owner = enemy->body.owner;
+    RENDER_BOUNDS enemy_bounds, player_bounds;
+    assert(render_object_bounds(enemy->body.node, &enemy_bounds) == 0);
+    assert(render_object_bounds(player.player.body.node, &player_bounds) == 0);
+    player.player.body.owner.y += (short)(enemy_bounds.top - player_bounds.bottom + 1);
+    player.player.flags_high = 0x10;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->handler == 0x11c81 && (player.player.flags_high & 0x20));
+    assert(player.contact_source == &enemy->body.owner);
+    player.player.body.owner = (RENDER_OWNER){700, 1261};
+    for (unsigned int i = 0; i < 200; ++i) {
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(render_object_pass(&renders, 0, -700, -1080, banks, 81, pixels) == 0);
+    }
+    assert(enemy->destroyed && !enemy->object);
+    for (unsigned int i = 0; i < 100; ++i)
+        assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(!enemy->object);
+    setup();
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    for (unsigned int i = 0; i < enemies.count; ++i)
+        if (enemies.lizards[i].marker_type == 10 && enemies.lizards[i].marker.x == 896)
+            enemy = &enemies.lizards[i];
+    player.player.body.owner = (RENDER_OWNER){846, 1248};
+    player.roar_pulse = 7;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->handler == 0x1181c);
+    player.player.body.owner = (RENDER_OWNER){enemy->body.owner.x - 58, enemy->body.owner.y};
+    player.roar_pulse = 8;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->handler == 0x1181c);
+    player.player.body.owner = (RENDER_OWNER){enemy->body.owner.x - 50, enemy->body.owner.y};
+    player.roar_pulse = 8;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(enemy->handler == 0x11b6b && enemy->timer == 20);
+    puts("PASS: five real porcupines, 0xa000 patrol, unsafe stomp, roll/roar inversion, timed contact and rendered fall");
+}
+
 int main(void)
 {
     DOS64_API api = {0};
@@ -242,8 +322,8 @@ int main(void)
         packed, sizeof(packed), contours, sizeof(contours), &dictionary, &contour_size) == 0);
     assert(engine_map_collision_initialize(&collision, map, size, contours, contour_size) == 0);
     memcpy(original_map, map, size);
-    static const unsigned int indices[4] = {3, 12, 13, 14};
-    for (unsigned int i = 0; i < 4; ++i) {
+    static const unsigned int indices[6] = {3, 12, 13, 14, 15, 16};
+    for (unsigned int i = 0; i < 6; ++i) {
         unsigned int slot, loaded;
         assert(assets_load_named_bank(&api, "data/LIONKING.EPF", animation_level1_bank_list,
             sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
@@ -259,6 +339,7 @@ int main(void)
     check_contact();
     check_attack_roar();
     check_attack_windows();
+    check_porcupines();
     setup();
     assert(engine_enemies_tick(&enemies, (RENDER_OWNER){700, 0}) == 0);
     assert(enemies.culled == 1 && !lower_lizard()->object);

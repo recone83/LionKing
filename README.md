@@ -1357,7 +1357,7 @@ samples while map movement/jumping continues; Escape exits with zero.
 Host checks that link `src/dos64/start.c` now also need
 `src/engine/music.c`; the normal build already includes it.
 
-### LEVEL1 lizards and real player contacts
+### LEVEL1 enemies and real player contacts
 
 `LIONKING.EXE --map` now activates the 14 original lizard markers (type 14)
 from LEVEL1's fourth map plane. The first two on the lower route start at
@@ -1377,8 +1377,8 @@ their original marker.
 
 Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `DUST` banks and DS
 animation streams are used, including the original shared death effect.
-Map graphics, contour/tag planes and markers are not modified. Only
-lizards are active in this block: hyenas, porcupines, pickups, world hazards,
+Map graphics, contour/tag planes and markers are not modified. Lizards and
+porcupines are active: hyenas, the other enemy type, pickups, world hazards,
 enemy sound effects, health HUD and player death/restart are still pending.
 The preview still starts with its existing 100 health/roar values rather
 than a migrated level-start/status system. Roar recharge now follows the
@@ -1392,7 +1392,7 @@ threshold, both mirrored attack windows and their excluded boundary ticks,
 stun timing, obstacle braking/resume, culling, death and
 unchanged map bytes. It passes Address/UndefinedBehavior sanitizer checks.
 `tools/check_scene.c --map` runs the actual DOS64 adapter with movement,
-roar, jumping and audio mocks: three spawns, 124 contacts, one stun, two
+roar, jumping and audio mocks: four spawns, 124 contacts, two stuns, two
 damage transitions, one landing and 886410 PCM frames in its 20-second
 fixture, with clean Escape/audio/log shutdown. The unchanged default demo
 still matches 128064000 ARGB pixels. Host scene builds now also need
@@ -1422,3 +1422,29 @@ remains pixel-identical for all 2000 successive frame comparisons. The
 original sprite poses, per-frame anchors and movement commands are retained;
 they are not recentered artificially when switching animations. The default
 non-map scene keeps its previous camera and exact-pixel output.
+
+The five original type-10 markers now activate porcupines using `PORCUWLK`
+and `PORCUTRN`, not recolored lizards. The lower-route marker is at
+X896/Y1248. Patrol speed is 0xa000 (5/8 pixel per tick); obstacle pauses
+are 120/30 ticks with braking 0x800. Jumping onto an upright porcupine
+damages Simba rather than defeating it. Rolling into it, or a roar pulse
+of at least 8 after distance attenuation, flips it upside down. The
+original inverted pose remains protected from contact for 20 ticks.
+An airborne contact after that interval starts Simba's rebound and the
+porcupine's falling removal; fallen enemies do not respawn in this run.
+The focused enemy test uses actual animation bounds and renders every
+inversion/fall tick, including culling and subsequent no-respawn checks.
+An isolated native QEMU run also displayed Simba and a real porcupine
+together, accepted movement and roar, and closed with exit code zero on
+Escape. The closed log recorded all 19 enemy markers, 49 contacts, four
+damage/recoil events and 1531037 submitted music frames. Combined counters
+now use `Enemy` labels; marker counts remain separate for each class.
+
+LEVEL1 is **not complete yet**. The authoritative fourth-plane inventory
+contains 47 nonzero markers of 13 types, not just the enemies on the lower
+route. Its counts are: 1:1, 3:2, 9:9, 10:5, 11:4, 14:14, 16:1, 17:3,
+18:4, 40:1, 41:1, 43:1, 49:1. Remaining work includes the other enemy
+type and hyena, proximity emitters, pickups/upgrades, checkpoints and
+special objects, original sound effects/status HUD, death/restart and
+the original level-completion transition. Unmigrated types are not
+substituted with generic enemy or pickup behavior.

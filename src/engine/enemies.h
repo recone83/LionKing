@@ -20,11 +20,14 @@ typedef struct {
     unsigned char facing;
     unsigned char turn_after_jump;
     unsigned char destroyed;
+    unsigned char marker_type;
 } ENGINE_LIZARD;
 
 typedef struct {
     ENGINE_LIZARD lizards[ENGINE_LIZARD_CAPACITY];
     unsigned int count;
+    unsigned int lizard_count;
+    unsigned int porcupine_count;
     unsigned int spawned;
     unsigned int culled;
     unsigned int attacks;

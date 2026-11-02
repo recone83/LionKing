@@ -23,7 +23,7 @@ static unsigned char level_music[49887];
 static MUSIC_PLAYER music_player;
 static MUSIC_OUTPUT music_output;
 static ENGINE_ENEMIES map_enemies;
-static unsigned char enemy_sprites[4][32768];
+static unsigned char enemy_sprites[6][32768];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -936,14 +936,14 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: cannot initialize map follow camera.\n");
             return 1;
         }
-        static const unsigned int indices[4] = {3, 12, 13, 14};
-        for (unsigned int i = 0; i < 4; ++i) {
+        static const unsigned int indices[6] = {3, 12, 13, 14, 15, 16};
+        for (unsigned int i = 0; i < 6; ++i) {
             unsigned int slot, loaded;
             if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_level1_bank_list,
                 sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
                 enemy_sprites[i], sizeof(enemy_sprites[i]), &dictionary, &slot, &loaded) != 0 ||
                 slot != 62 + indices[i]) {
-                lk_platform_log("Lion King: cannot load original LEVEL1 lizard banks.\n");
+                lk_platform_log("Lion King: cannot load original LEVEL1 enemy banks.\n");
                 return 1;
             }
             banks[slot] = (RENDER_SPRITE_BANK){enemy_sprites[i], loaded};
@@ -962,7 +962,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 "Starting X160 is a preview choice; Y is found on the real contour.\n"
                 "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
                 "Original LEVEL1 parallax and foreground/object layer order are active.\n"
-                "Original lizard markers, patrol/turn/attack/roar/contact/death are active.\n"
+                "Original lizard and porcupine markers, movement/roar/contact/removal are active.\n"
                 "Ctrl: roar. Other enemy types, sound effects and health HUD remain unported.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
         } else {
@@ -1108,15 +1108,16 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         flight ? "Original player flight preview finished.\n" :
         "Original player deflection preview finished.\n");
     if (preview.map_mode) {
-        log_map_measurement("Lizard map markers: ", map_enemies.count);
-        log_map_measurement("Lizard spawns: ", map_enemies.spawned);
-        log_map_measurement("Lizard culls: ", map_enemies.culled);
+        log_map_measurement("Lizard map markers: ", map_enemies.lizard_count);
+        log_map_measurement("Porcupine map markers: ", map_enemies.porcupine_count);
+        log_map_measurement("Enemy spawns: ", map_enemies.spawned);
+        log_map_measurement("Enemy culls: ", map_enemies.culled);
         log_map_measurement("Lizard attacks: ", map_enemies.attacks);
-        log_map_measurement("Lizard turns: ", map_enemies.turns);
-        log_map_measurement("Lizard obstacle jumps: ", map_enemies.jumps);
-        log_map_measurement("Lizard roar stuns: ", map_enemies.stuns);
-        log_map_measurement("Lizard contacts: ", map_enemies.contacts);
-        log_map_measurement("Lizard defeats: ", map_enemies.defeated);
+        log_map_measurement("Enemy turns: ", map_enemies.turns);
+        log_map_measurement("Enemy obstacle jumps: ", map_enemies.jumps);
+        log_map_measurement("Enemy roar stuns: ", map_enemies.stuns);
+        log_map_measurement("Enemy contacts: ", map_enemies.contacts);
+        log_map_measurement("Enemy defeats: ", map_enemies.defeated);
         log_map_measurement("Player health remaining: ", (unsigned int)preview.air.health);
         log_map_measurement("Music submitted frames: ", (unsigned int)music_output.submitted);
         log_map_measurement("Music tracker rows: ", music_player.rows_played);

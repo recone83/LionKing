@@ -137,10 +137,12 @@ static int __attribute__((ms_abi)) close_file(void *file)
         size_t count = fread(text, 1, sizeof(text) - 1, file);
         assert(count < sizeof(text) - 1);
         text[count] = 0;
-        map_spawns = map_counter(text, "Lizard spawns: ");
-        map_stuns = map_counter(text, "Lizard roar stuns: ");
-        map_defeats = map_counter(text, "Lizard defeats: ");
-        map_contacts = map_counter(text, "Lizard contacts: ");
+        assert(map_counter(text, "Lizard map markers: ") == 14);
+        assert(map_counter(text, "Porcupine map markers: ") == 5);
+        map_spawns = map_counter(text, "Enemy spawns: ");
+        map_stuns = map_counter(text, "Enemy roar stuns: ");
+        map_defeats = map_counter(text, "Enemy defeats: ");
+        map_contacts = map_counter(text, "Enemy contacts: ");
         map_jumps = map_counter(text, "Map landing transitions: ");
     }
     if (file == log_file) log_file = 0;

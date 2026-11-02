@@ -72,25 +72,30 @@ static int supported_gravity(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 
 static int walking(ENGINE_LIZARD *lizard)
 {
-    lizard->handler = 0x1127e;
+    lizard->handler = lizard->marker_type == 10 ? 0x1181c : 0x1127e;
     lizard->body.motion.velocity_y = 0;
     lizard->timer = 100;
     lizard->pause = 0;
-    if (script(lizard, 0x13ae0) != 0) return -1;
+    if (script(lizard, lizard->marker_type == 10 ? 0x13fef : 0x13ae0) != 0) return -1;
     return animate(lizard);
 }
 
 static int turn(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard, int pause)
 {
+    int porcupine = lizard->marker_type == 10;
+    uint32_t speed = porcupine ? 0xa000 : 0x8000;
     lizard->facing ^= 1;
-    lizard->body.motion.velocity_x = lizard->facing ? UINT32_C(0xffff8000) : 0x8000;
+    lizard->body.motion.velocity_x = lizard->facing ? 0U - speed : speed;
     lizard->body.node->pass_flags = (unsigned char)(
         (lizard->body.node->pass_flags & 0xf7) | (lizard->facing ? 8 : 0));
-    lizard->handler = 0x1127e;
-    lizard->timer = pause ? 100 : 30;
-    lizard->pause = pause ? 20 : 0;
+    lizard->handler = porcupine ? 0x1181c : 0x1127e;
+    if (!porcupine) {
+        lizard->timer = pause ? 100 : 30;
+        lizard->pause = pause ? 20 : 0;
+    }
     ++enemies->turns;
-    return script(lizard, 0x13ad2);
+    if (script(lizard, porcupine ? 0x13fe1 : 0x13ad2) != 0) return -1;
+    return porcupine ? animate(lizard) : 0;
 }
 
 static int dying(ENGINE_LIZARD *lizard)
@@ -191,18 +196,113 @@ static int jump_obstacle(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
             (level == 2 && value > 153) || (level == 3 && value > 102) ||
             (level == 4 && value > 51))) continue;
         lizard->handler = 0x11a51;
-        lizard->timer = side ? 10 : 70;
+        lizard->timer = lizard->marker_type == 10 ? (side ? 30 : 120) : (side ? 10 : 70);
         lizard->turn_after_jump = (unsigned char)side;
         lizard->saved_velocity = lizard->body.motion.velocity_x;
         ++enemies->jumps;
-        if (script(lizard, 0x13b67) != 0 || animate(lizard) != 0) return -1;
+        if (script(lizard, lizard->marker_type == 10 ? 0x13ffd : 0x13b67) != 0 ||
+            animate(lizard) != 0) return -1;
         return 1;
     }
     return 0;
 }
 
+static int porcupine_flip(ENGINE_LIZARD *enemy)
+{
+    enemy->handler = 0x11b6b;
+    enemy->body.node->pass_flags |= 0x10;
+    enemy->body.motion.velocity_y = UINT32_C(0xfffa0000);
+    enemy->body.motion.velocity_x = 0;
+    enemy->body.owner.y = signed_word((unsigned short)enemy->body.owner.y - 20U);
+    enemy->timer = 20;
+    return 0;
+}
+
+static void porcupine_fall(ENGINE_LIZARD *enemy)
+{
+    enemy->handler = 0x11c81;
+    enemy->body.motion.velocity_y = UINT32_C(0xfffc0000);
+    enemy->body.motion.velocity_x = 0;
+    enemy->cell_x = 0;
+}
+
+static int update_porcupine(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    short hit;
+    if (enemy->handler == 0x11c81) {
+        if (engine_motion_gravity(&enemy->body.motion, &enemy->body.owner) != 0) return -1;
+        return animate(enemy);
+    }
+    if (enemy->handler == 0x11b6b) {
+        if (blocked(enemy->kind, 0) || blocked(enemy->kind, 1)) porcupine_fall(enemy);
+        if (!enemy->timer) {
+            if (render_objects_hit(enemy->body.node, player->player.body.node, &hit) != 0)
+                return -1;
+            if (hit) {
+                ++enemies->contacts;
+                player->damage_source = player->contact_source = &enemy->body.owner;
+                if (player->player.flags_high & 0x10) {
+                    player->player.flags_high |= 0x20;
+                    porcupine_fall(enemy);
+                } else {
+                    player->player.flags_high |= 4;
+                }
+            }
+        } else {
+            --enemy->timer;
+        }
+        enemy->body.owner.y = signed_word((unsigned short)enemy->body.owner.y + 20U);
+        if (supported_gravity(enemies, enemy) != 0) return -1;
+        enemy->body.owner.y = signed_word((unsigned short)enemy->body.owner.y - 20U);
+        return animate(enemy);
+    }
+    if (render_objects_hit(enemy->body.node, player->player.body.node, &hit) != 0) return -1;
+    if (hit) {
+        ++enemies->contacts;
+        if (player->player.flags_high & 8) return porcupine_flip(enemy);
+        player->damage_source = player->contact_source = &enemy->body.owner;
+        player->player.flags_high |= 4;
+        return 0;
+    }
+    if (player->roar_pulse) {
+        int dx = enemy->body.owner.x - player->player.body.owner.x;
+        int dy = enemy->body.owner.y - player->player.body.owner.y;
+        int distance = dx < 0 ? -dx : dx;
+        int vertical = dy < 0 ? -dy : dy;
+        if (vertical > distance) distance = vertical;
+        int strength = player->roar_pulse;
+        if (distance > 50) strength -= (distance - 50) >> 3;
+        if (strength >= 8) {
+            ++enemies->stuns;
+            return porcupine_flip(enemy);
+        }
+    }
+    if (enemy->handler == 0x11a51) {
+        if (engine_motion_brake_x(&enemy->body.motion,
+            enemy->facing ? UINT32_C(0xfffff800) : 0x800) != 0) return -1;
+        if (enemy->timer) {
+            --enemy->timer;
+            if (engine_motion_x(&enemy->body.motion, &enemy->body.owner) != 0 ||
+                supported_gravity(enemies, enemy) != 0) return -1;
+            return animate(enemy);
+        }
+        enemy->body.motion.velocity_x = enemy->saved_velocity;
+        return enemy->turn_after_jump ? turn(enemies, enemy, 0) : walking(enemy);
+    }
+    if (enemy->handler != 0x1181c) return -1;
+    int obstacle = jump_obstacle(enemies, enemy);
+    if (obstacle < 0) return -1;
+    if (obstacle) return 0;
+    if (blocked(enemy->kind, enemy->facing)) return turn(enemies, enemy, 0);
+    if (engine_motion_x(&enemy->body.motion, &enemy->body.owner) != 0 ||
+        supported_gravity(enemies, enemy) != 0) return -1;
+    return animate(enemy);
+}
+
 static int update_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 {
+    if (lizard->marker_type == 10) return update_porcupine(enemies, lizard);
     if (lizard->handler == 0x11609) {
         if (!lizard->timer) return remove_lizard(enemies, lizard, 1);
         --lizard->timer;
@@ -307,9 +407,13 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
             if (offset + 2 > map->size) return -1;
             unsigned int tile = word(map->map + offset);
             unsigned int type = ((tile & 0xfe0) >> 2) + ((tile & 0x1f) >> 1);
-            if (type != 14) continue;
+            if (type != 14 && type != 10) continue;
             if (enemies->count == ENGINE_LIZARD_CAPACITY) return -1;
-            enemies->lizards[enemies->count++].marker = (RENDER_OWNER){
+            ENGINE_LIZARD *enemy = &enemies->lizards[enemies->count++];
+            enemy->marker_type = (unsigned char)type;
+            if (type == 14) ++enemies->lizard_count;
+            else ++enemies->porcupine_count;
+            enemy->marker = (RENDER_OWNER){
                 (short)(col * 16), (short)(row * 16)};
         }
     }
@@ -340,7 +444,8 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
         if (!lizard->object) {
             if (!near_window(lizard->marker, camera)) continue;
             lizard->body.owner = lizard->marker;
-            lizard->body.motion = (ENGINE_MOTION){0, 0, 0x8000, 0};
+            lizard->body.motion = (ENGINE_MOTION){0, 0,
+                lizard->marker_type == 10 ? 0xa000 : 0x8000, 0};
             lizard->body.render_pool = enemies->renders;
             lizard->body.animation = (ANIMATION_PROGRAM){0};
             lizard->facing = lizard->kind = 0;
@@ -357,9 +462,11 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
             }
             if (walking(lizard) != 0) return -1;
             ++enemies->spawned;
-        } else if ((lizard->handler == 0x1127e || lizard->handler == 0x11a51) &&
+        } else if ((lizard->handler == 0x1127e || lizard->handler == 0x11a51 ||
+            lizard->marker_type == 10) &&
             !near_window(lizard->body.owner, camera)) {
-            if (remove_lizard(enemies, lizard, 0) != 0) return -1;
+            if (remove_lizard(enemies, lizard,
+                lizard->marker_type == 10 && lizard->handler == 0x11c81) != 0) return -1;
         } else if (update_lizard(enemies, lizard) != 0) {
             return -1;
         }
