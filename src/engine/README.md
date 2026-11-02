@@ -489,3 +489,30 @@ wykonanie kontynuuje; tę asymetrię zachowano.
 `--walls` łączy oba chwyty, odbicia, ponowne chwyty, przejścia na
 krawędź/podciąganie i odczepienie do lotu. W/Space/Down umożliwiają
 ręczny test. Kontakty/podparcie są jawnymi atrapami testowymi.
+
+Pierwsza integracja mapy (`--map`) nie korzysta z tych atrap. W `tiles.c`
+dodano jawny widok kolizji oryginalnej mapy i `CONTOUR.CON`:
+`engine_map_ground`, `engine_map_edge`, `engine_map_ledge_height`.
+Konfiguracja `0x11645` wybiera warstwę 0; jej tablica ma cztery płaszczyzny
+po width*height*2 bajtów. Kolizje odczytują komórki 16x16, co cztery
+bajty, ze skokiem wiersza width*4. Płaszczyzna 1 zawiera kontury,
+płaszczyzna 2 rodzaj kontaktu.
+
+`0x16b70`: pierwsza komórka to (Y-12)/16, druga jest niżej o 16.
+Indeks konturu = ((tile & 0xfe0)>>2)+((tile & 0x1f)>>1).
+Wysokość = (contour[index*16+(X&15)]&31)-1, delta od pozycji aktora
+musi mieścić się w [-12,12]. BL zwraca rodzaj trafionego wiersza,
+CL rodzaj poprzedniego (zero przy pierwszym trafieniu). Podparcie
+przesuwa Y, natomiast lot otrzymuje deltę bez natychmiastowego przesunięcia.
+
+Zapytanie krawędzi używa +10/+12 z aktualnego deskryptora animacji,
+odbicia facing i sąsiedniej komórki z regułami `0x171b3`.
+`0x17515` dodaje 8 przed odjęciem 8 w `0x16d54`, dlatego wysokość
+krawędzi jest czytana z wiersza Y/16, nie (Y-8)/16.
+Zachowano bazę DS bez przesuwania adresów danych.
+
+Scena `--map` wybiera X160 i szuka rzeczywistej powierzchni dla startu,
+przewija kamerę w obu osiach i wyłącza skróty kontaktów testowych.
+Na tym etapie nie przeniesiono blokowania boków/sufitu, obiektów
+dynamicznych ani pełnej obsługi pułapek. Poprzednie tryby nadal służą
+do izolowanego sprawdzania handlerów z atrapami.

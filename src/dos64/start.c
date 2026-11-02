@@ -15,6 +15,7 @@ static unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
 static DOS64_COLOR palette[256];
 static unsigned char packed[79311];
 static unsigned char map[580488];
+static unsigned char map_contours[4096];
 static unsigned char sprite[32768];
 static RESOURCE_DICTIONARY dictionary;
 static RENDER_POOL render_pool;
@@ -61,6 +62,20 @@ static int log_idle_event(unsigned int target)
     }
     lk_platform_log("Idle script event recorded; game object side effects not executed in preview.\n");
     return 0;
+}
+
+static void log_map_measurement(const char *label, unsigned int value)
+{
+    char text[12];
+    unsigned int end = sizeof(text) - 1;
+    text[end] = 0;
+    text[--end] = '\n';
+    do {
+        text[--end] = (char)('0' + value % 10);
+        value /= 10;
+    } while (value);
+    lk_platform_log(label);
+    lk_platform_log(text + end);
 }
 
 static int record_preview_event(void *context, unsigned int target)
@@ -209,6 +224,13 @@ typedef struct {
     unsigned int wall_variant;
     unsigned int wall_case;
     int fixture_wall_contact;
+    int map_mode;
+    ENGINE_MAP_COLLISION collision;
+    short map_spawn_y;
+    unsigned int map_contacts;
+    unsigned int map_height_changes;
+    unsigned int map_landings;
+    unsigned int map_edge_contacts;
     unsigned long long jump_begin;
 } DEFLECTION_PREVIEW;
 
@@ -221,7 +243,9 @@ static int preview_player_contact(void *context, short *touching)
 
 static int preview_ledge_height(void *context, short x, short y, short *height)
 {
-    (void)context; (void)x; (void)y;
+    DEFLECTION_PREVIEW *preview = context;
+    if (preview->map_mode) return engine_map_ledge_height(&preview->collision, x, y, height);
+    (void)x; (void)y;
     *height = 16;
     return 0;
 }
@@ -230,6 +254,27 @@ static int preview_player_support(void *context, short *supported)
 {
     DEFLECTION_PREVIEW *preview = context;
     ENGINE_FALLING_OBJECT *body = &preview->air.player.body;
+    if (preview->map_mode) {
+        if (preview->air.player.flags_high & 0x80) {
+            *supported = -1;
+            preview->air.contact_kind = preview->air.surface_kind = 0;
+            return 0;
+        }
+        ENGINE_MAP_GROUND ground;
+        if (engine_map_ground(&preview->collision, body->owner.x, body->owner.y, &ground) != 0) {
+            lk_platform_log("Lion King: invalid map support query.\n");
+            return -1;
+        }
+        *supported = ground.supported;
+        preview->air.contact_kind = ground.kind;
+        preview->air.surface_kind = ground.surface_kind;
+        if (ground.supported) {
+            ++preview->map_contacts;
+            if (ground.delta_y) ++preview->map_height_changes;
+            body->owner.y = (short)(body->owner.y + ground.delta_y);
+        }
+        return 0;
+    }
     *supported = body->owner.y >= preview->fixture_floor;
     if (*supported) {
         body->owner.y = preview->fixture_floor;
@@ -314,6 +359,18 @@ static int preview_player_transition(void *context, const ENGINE_PLAYER_CALL *ca
 static int preview_player_ground(void *context, short *kind, short *delta_y)
 {
     DEFLECTION_PREVIEW *preview = context;
+    if (preview->map_mode) {
+        ENGINE_FALLING_OBJECT *body = &preview->air.player.body;
+        ENGINE_MAP_GROUND ground;
+        if (engine_map_ground(&preview->collision, body->owner.x, body->owner.y, &ground) != 0) {
+            lk_platform_log("Lion King: invalid map landing query.\n");
+            return -1;
+        }
+        *kind = ground.supported;
+        *delta_y = ground.delta_y;
+        preview->air.contact_kind = ground.kind;
+        return 0;
+    }
     *kind = preview->air.player.body.owner.y >= preview->fixture_floor ? 1 : 0;
     *delta_y = (short)(preview->fixture_floor - preview->air.player.body.owner.y);
     return 0;
@@ -322,6 +379,13 @@ static int preview_player_ground(void *context, short *kind, short *delta_y)
 static int preview_player_edge(void *context, short *hit, short *kind, short *x, short *y)
 {
     DEFLECTION_PREVIEW *preview = context;
+    if (preview->map_mode) {
+        int result = engine_map_edge(&preview->collision, preview->air.player.body.node,
+            hit, kind, x, y);
+        if (result != 0) lk_platform_log("Lion King: invalid map edge query.\n");
+        else if (*hit) ++preview->map_edge_contacts;
+        return result;
+    }
     *hit = *kind = *x = *y = 0;
     unsigned int handler = preview->air.player.handler;
     if (preview->fixture_wall_contact && (handler == 0xdc42U || handler == 0xdeafU) &&
@@ -342,6 +406,10 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
     DEFLECTION_PREVIEW *preview = context;
     if (preview->ground_mode) {
         if (call->handler == 0xef04U) {
+            if (preview->map_mode) {
+                lk_platform_log("Lion King: map hazard damage/source handling is not migrated.\n");
+                return -1;
+            }
             lk_platform_log("Original damage/recoil handler selected; source is a test fixture.\n");
             return engine_player_damage(&scene_objects, preview->object, &preview->air);
         }
@@ -354,8 +422,10 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
             return engine_player_begin_action(&scene_objects, preview->object, &preview->air, call);
         }
         if (call->handler == 0xe775U || call->handler == 0xe8dfU) {
-            return engine_player_begin_ledge(&scene_objects, preview->object, &preview->air,
+            int result = engine_player_begin_ledge(&scene_objects, preview->object, &preview->air,
                 call->handler, kind, x, y);
+            if (result != 0) lk_platform_log("Lion King: map contact selected an unported edge branch.\n");
+            return result;
         }
         if (call->handler == 0xf5f1U || call->handler == 0xf618U || call->handler == 0xf672U) {
             return engine_player_rebound(&scene_objects, preview->object, &preview->air, call->handler);
@@ -380,6 +450,7 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
         return preview_player_ready(preview);
     }
     if (preview->ground_mode) {
+        if (preview->map_mode) ++preview->map_landings;
         if (call->handler == 0xb253U || call->handler == 0xb19fU) {
             return engine_player_begin_recovery(&scene_objects, preview->object,
                 &preview->air, call);
@@ -396,6 +467,7 @@ static int begin_player_preview(DEFLECTION_PREVIEW *preview)
 {
     if (preview->ground_mode) {
         preview->air.player.body.owner = (RENDER_OWNER){160, 160};
+        if (preview->map_mode) preview->air.player.body.owner.y = preview->map_spawn_y;
         preview->air.player.body.motion = (ENGINE_MOTION){0};
         ENGINE_PLAYER_CALL call = {0xc8d5, 0x6148, 0};
         return preview_ground_ready(preview, &call);
@@ -437,6 +509,12 @@ static void update_player_preview(void *context)
         int request_ledge = preview->input_taps & 0x2000;
         int request_perch = preview->input_taps & 0x4000;
         int request_wall = preview->input_taps & 0x8000;
+        if (preview->map_mode && (request_hit || request_terrain || contact_actions ||
+            request_ledge || request_perch || request_wall)) {
+            lk_platform_log("Synthetic contact controls are disabled in map mode.\n");
+            request_hit = request_terrain = request_ledge = request_perch = request_wall = 0;
+            contact_actions = 0;
+        }
         if (!preview->manual && preview->wall_demo) {
             unsigned long long elapsed = lk_platform_time_ns() - preview->jump_begin;
             unsigned int phase = (unsigned int)(elapsed / 4000000000ULL) + 1;
@@ -714,6 +792,36 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.contact_demo = mode == 4;
     preview.ledge_demo = mode == 5;
     preview.wall_demo = mode == 6;
+    preview.map_mode = mode == 7;
+    if (preview.map_mode) {
+        unsigned int contour_size;
+        if (resources_load_entry(&resource_api, "LIONKING.EPF", "CONTOUR.CON",
+            packed, sizeof(packed), map_contours, sizeof(map_contours),
+            &dictionary, &contour_size) != 0 ||
+            engine_map_collision_initialize(&preview.collision, map, map_size,
+                map_contours, contour_size) != 0) {
+            lk_platform_log("Lion King: cannot initialize real map collision.\n");
+            return 1;
+        }
+        int found = 0;
+        for (short y = 12; y < (int)preview.collision.height * 8; ++y) {
+            ENGINE_MAP_GROUND ground;
+            if (engine_map_ground(&preview.collision, 160, y, &ground) != 0) {
+                lk_platform_log("Lion King: invalid map spawn query.\n");
+                return 1;
+            }
+            if (ground.supported && !ground.delta_y) {
+                preview.map_spawn_y = y;
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            lk_platform_log("Lion King: no supported preview start at map X160.\n");
+            return 1;
+        }
+        preview.manual = 1;
+    }
     preview.fixture_floor = 160;
     preview.air.player.body.render_pool = &render_pool;
     preview.air.player.body.node = render_acquire_node(&render_pool,
@@ -730,7 +838,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.air.sound = preview_player_sound;
     preview.air.support = preview_player_support;
     preview.air.animation_event = record_player_idle_event;
-    preview.air.damage_source = &preview.damage_source;
+    preview.air.damage_source = preview.map_mode ? 0 : &preview.damage_source;
     preview.air.contact = preview_player_contact;
     preview.air.ledge_height = preview_ledge_height;
     preview.air.health = 100;
@@ -740,7 +848,15 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         return 1;
     }
     if (preview.ground_mode) {
-        lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
+        if (preview.map_mode) {
+            lk_platform_log("Real LEVEL1.MAP collision and CONTOUR.CON are active.\n"
+                "Left/Right: move; Space: jump; Down: crouch/roll; Escape: exit.\n"
+                "Floor, slopes, landing and edge queries use map planes, not a fixed Y.\n"
+                "Starting X160 is a preview choice; Y is found on the real contour.\n"
+                "Ceiling and lateral blocking, dynamic map objects and hazards remain unported.\n"
+                "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
+        } else {
+            lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
             "Left/Right: run; Down: crouch; Space: jump/hold; Ctrl: roar. Escape: exit.\n"
             "H: diagnostic hit/recoil; T: diagnostic terrain contact (6/9/5/8).\n"
             "B: contact rebound; R: thrown launch; F: tether target then release (fixtures).\n"
@@ -751,11 +867,12 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             "--walls: opposite catches, free leaps, ledge transfers and detaches.\n"
             "Ground Y=160, damage source, terrain, initial meters and camera are fixtures.\n"
             "Enemy response to roar, meter recharge/immunity ticking and map collision unported.\n");
-        lk_platform_log(preview.wall_demo ?
+            lk_platform_log(preview.wall_demo ?
             "Before input: both wall catches -> free leaps -> ledge climbs -> detaches.\n" : preview.ledge_demo ?
             "Before input: left/right ledge climb -> left/right ledge drop.\n" : preview.contact_demo ?
             "Before input: right/left rebounds -> thrown launch -> tether/release.\n" :
             "Before input: running/jumping/roaring/damage demo. --jump: previous jump fixture.\n");
+        }
     } else if (preview.jump) {
         lk_platform_log("Original Simba jump test: ascent -> air -> landing, repeatable.\n"
             "Space: take control/jump; hold for height. Left/Right: direction. Escape: exit.\n"
@@ -820,11 +937,13 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 return 1;
             }
         }
-        unsigned short camera_x = 0;
+        unsigned short camera_x = 0, camera_y = 0;
         if (preview.ground_mode) {
             RENDER_OWNER camera = {
                 preview.air.player.body.owner.x > 160 ?
-                    (short)(preview.air.player.body.owner.x - 160) : 0, 0
+                    (short)(preview.air.player.body.owner.x - 160) : 0,
+                preview.map_mode && preview.air.player.body.owner.y > 120 ?
+                    (short)(preview.air.player.body.owner.y - 120) : 0
             };
             RENDER_VIEWPORT viewport;
             if (render_prepare_viewport(&camera,
@@ -835,15 +954,17 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 return 1;
             }
             camera_x = viewport.x;
+            camera_y = viewport.y;
             preview.air.player.body.node->flags |= 0x40;
         }
         unsigned char *view = pixels + LK_WIDTH;
         for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) {
             view[i] = 0;
         }
-        if (render_map_tile_pass(map, map_size, 0, camera_x, 0, 0, view) != 0 ||
-            render_map_tile_pass(map, map_size, 0, camera_x, 0, 1, view) != 0 ||
-            render_object_pass(&render_pool, 0, (short)-(int)camera_x, 0, banks, 34, view) != 0 ||
+        if (render_map_tile_pass(map, map_size, 0, camera_x, camera_y, 0, view) != 0 ||
+            render_map_tile_pass(map, map_size, 0, camera_x, camera_y, 1, view) != 0 ||
+            render_object_pass(&render_pool, 0, (short)-(int)camera_x, (short)-(int)camera_y,
+                banks, 34, view) != 0 ||
             vga_present_frame(&frame) != 0) {
             lk_platform_log("Lion King: cannot render player deflection preview.\n");
             return 1;
@@ -859,6 +980,14 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         preview.jump ? "Original player jump preview finished.\n" :
         flight ? "Original player flight preview finished.\n" :
         "Original player deflection preview finished.\n");
+    if (preview.map_mode) {
+        log_map_measurement("Map supported queries: ", preview.map_contacts);
+        log_map_measurement("Map contour height adjustments: ", preview.map_height_changes);
+        log_map_measurement("Map landing transitions: ", preview.map_landings);
+        log_map_measurement("Map edge contacts: ", preview.map_edge_contacts);
+        log_map_measurement("Map final X: ", (unsigned short)preview.air.player.body.owner.x);
+        log_map_measurement("Map final Y: ", (unsigned short)preview.air.player.body.owner.y);
+    }
     return 0;
 }
 
@@ -991,6 +1120,9 @@ static int run_preview(const DOS64_API *api)
     }
     if (argument_requested(api->Arguments, "--walls")) {
         return run_deflection_preview(api, 6);
+    }
+    if (argument_requested(api->Arguments, "--map")) {
+        return run_deflection_preview(api, 7);
     }
     if (!argument_requested(api->Arguments, "--idle") &&
         !argument_requested(api->Arguments, "--manual") &&
