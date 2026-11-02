@@ -384,9 +384,9 @@ inicjalizacje lewego/prawego kucania. Turlanie wybiera się z prędkością
 większą niż 3, odejmuje/dodaje `0xe00`, może odbić prędkość na oryginalnych
 flagach granicy i wraca do biegu przy progu 2. Żądanie próbki 6 jest jawne.
 
-Strzałki poziome biegną, Down kuca/turla, Spacja skacze. Po lądowaniu
+Strzałki poziome biegną, Down kuca/turla, Spacja skacze, Ctrl ryczy. Po lądowaniu
 nie ma już atrapowej pauzy ani zerowania pędu przez podgląd. Fixture
-pozostały tylko płaska ziemia Y=160, sondy, wejście demo i polityka
+to płaska ziemia Y=160, sondy, wejście demo i polityka
 śledzenia X przez kamerę. Rzeczywiste kolizje mapy i specjalne stany
 nie zostały podmienione fikcyjnym poziomem.
 Diagnostyka wszystkich podglądów trafia do `LIONKING.LOG` w bieżącym
@@ -396,3 +396,28 @@ dopiero po zatrzymaniu renderowania.
 [check_player_ground.c](../../tools/check_player_ground.c) sprawdza
 bezpośrednio przeniesione gałęzie i trajektorie; domyślny
 [check_scene.c](../../tools/check_scene.c) sprawdza spięty blok.
+
+Kolejny blok dodaje ryk `0x1ec69`, animację reakcji `0x1ee35`,
+ogłuszenie `0x1ee60`, selektor obrażeń `0x1ef04`, odrzut
+`0x1f017/0x1f160`, ślizg `0x1f80d` oraz naziemne/powietrzne
+stany pochyłości `0x1fe3c/0x1ff83`. Wszystkie używają oryginalnych
+strumieni DS i istniejącego interpretera animacji.
+
+Helper `0x1a6ff` wykonuje grawitację `0x4e00` również dla dorosłego
+Simby, zeruje rodzaj kontaktu w locie i zatrzymuje Vy przy podparciu.
+Odrzut ma Vy=-3, Vx=+1/-1, licznik 18/40, blokadę granic oraz
+oryginalną asymetrię testu bitu formy. Obrażenia zmniejszają dodatnie
+HP, ustawiają odporność 100 i wybierają stronę na podstawie źródła;
+przeniesiono też wyjątek ogłuszenia przy podparciu.
+
+Ryk przenosi ładunek do jednoklatkowego impulsu w ticku 14/30,
+kończy w ticku 55/94, zachowuje kierunek z parametru counter.
+Próbki 2/3/4/5 są jawnie zgłaszane bez odtwarzania; `0x1510c`
+w oryginale jest RET, więc nie dorobiono mu efektów.
+
+Domyślne demo trwa 12 sekund: ruch/skoki, dwa ryki, testowe trafienie.
+H wstrzykuje trafienie, T cyklicznie kontakt terenu 6/9/5/8 na 60
+ticków. Źródło obrażeń, te kontakty i początkowe mierniki to fixture.
+Odnawianie ryku, odliczanie odporności i reakcje przeciwników pozostają
+nieprzeniesione. [check_player_actions.c](../../tools/check_player_actions.c)
+obejmuje kierunki, timingi, maski, odrzut, ogłuszenie i przejścia ślizgu.

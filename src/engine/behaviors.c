@@ -928,7 +928,7 @@ static int step_player_ground(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         }
         if (state->pressed & 0x40) {
             return player_air_transition(state, 0xec69,
-                player->form ? 0x596eU : 0x61feU, 1, 0, 0, 0);
+                player->form ? 0x596eU : 0x61feU, right ? 0 : 1, 0, 0, 0);
         }
         if (player->form && (state->auxiliary_controls & 7)) {
             return player_adult_action(state, 0);
@@ -1032,6 +1032,293 @@ int engine_player_begin_ground(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         body->animation.counter = 0;
     }
     return status;
+}
+
+/* 0x1a6ff: ascent always uses the generic 0x4e00 gravity, even for adult Simba. */
+static int player_supported_gravity(ENGINE_PLAYER_AIR *state, short *grounded)
+{
+    ENGINE_FALLING_OBJECT *body = &state->player.body;
+    *grounded = 0;
+    if (body->motion.velocity_y < UINT32_C(0x80000000)) {
+        short supported;
+        if (player_support(state, &supported) != 0) {
+            return -1;
+        }
+        if (supported) {
+            body->motion.velocity_y = 0;
+            *grounded = -1;
+            return 0;
+        }
+    }
+    if (engine_motion_gravity(&body->motion, &body->owner) != 0) {
+        return -1;
+    }
+    state->contact_kind = 0;
+    return 0;
+}
+
+static int player_action_handler(unsigned int handler)
+{
+    return handler == 0xec69U || handler == 0xee35U || handler == 0xee60U ||
+        handler == 0xf017U || handler == 0xf160U || handler == 0xf80dU ||
+        handler == 0xfe3cU || handler == 0xff83U;
+}
+
+static int player_terrain_fall(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, int right)
+{
+    ENGINE_PLAYER_CALL call = {right ? 0xaa97U : 0xae53U,
+        state->player.form ? 0x591aU : 0x6116U, 10};
+    return engine_player_begin_air(pool, object, state, &call);
+}
+
+static int step_player_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state)
+{
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    ENGINE_FALLING_OBJECT *body = &player->body;
+    unsigned int handler = player->handler;
+    if (handler == 0xf80dU || handler == 0xfe3cU || handler == 0xff83U) {
+        if (!player->immunity && (player->flags_high & 4)) {
+            return engine_player_damage(pool, object, state);
+        }
+        short grounded = 0;
+        unsigned int side = body->animation.state & 0xffffU;
+        if (handler == 0xfe3cU || handler == 0xff83U) {
+            if (player_supported_gravity(state, &grounded) != 0) {
+                return -1;
+            }
+            if (handler == 0xff83U) {
+                if (!grounded) {
+                    return player_ground_animation(state);
+                }
+                if (state->contact_kind == 7) {
+                    if (state->pressed & 8) {
+                        side = 0;
+                        body->motion.velocity_x = UINT32_C(0x40000);
+                    }
+                    if (state->pressed & 4) {
+                        side = 1;
+                        body->motion.velocity_x = UINT32_C(0xfffc0000);
+                    }
+                }
+                body->animation.state = side;
+                return engine_player_begin_terrain(pool, object, state, 0xfe3c,
+                    player_word(side), body->motion.velocity_x);
+            }
+            if (!grounded) {
+                return engine_player_begin_terrain(pool, object, state, 0xff83,
+                    player_word(side), body->motion.velocity_x);
+            }
+        }
+        unsigned char kind = state->contact_kind;
+        if (side == 1 && (handler == 0xf80dU ?
+            kind != 6 && !(state->flags & 0x10) :
+            kind != 7 && kind != 5 && kind != 0xd8)) {
+            if (handler == 0xf80dU) player->flags_high &= 0xf7;
+            return player_terrain_fall(pool, object, state, 0);
+        }
+        if (side == 0 && (handler == 0xf80dU ?
+            kind != 9 && !(state->flags & 0x20) :
+            kind != 7 && kind != 8 && kind != 0xd9)) {
+            if (handler == 0xf80dU) player->flags_high &= 0xf7;
+            return player_terrain_fall(pool, object, state, 1);
+        }
+        if (handler == 0xf80dU) {
+            state->flags &= 0xffcfU;
+        }
+        if (engine_motion_x(&body->motion, &body->owner) != 0 ||
+            (handler == 0xf80dU && player_supported_gravity(state, &grounded) != 0)) {
+            return -1;
+        }
+        return player_ground_animation(state);
+    }
+    if (handler == 0xee35U) {
+        return player_ground_animation(state);
+    }
+    if (handler == 0xec69U) {
+        if (!player->immunity && (player->flags_high & 4)) {
+            state->roar_charge = state->roar_pulse = 0;
+            return engine_player_damage(pool, object, state);
+        }
+        unsigned int pulse_age = player->form ? 30 : 14;
+        if (player->age == pulse_age) {
+            /* 0x1510c is a RET in the original executable. */
+            ++player->age;
+            state->roar_pulse = state->roar_charge;
+            state->roar_charge = 0;
+            return 0;
+        }
+        if (player->age == pulse_age + 1) {
+            state->roar_pulse = 0;
+        }
+        if (player->age == (player->form ? 94 : 55)) {
+            return player_ground_call(pool, object, state,
+                body->animation.counter ? 0xc2cdU : 0xc8d5U,
+                player->form ? 0x5856U : 0x5f84U);
+        }
+        if (player->age == (player->form ? 38 : 8) &&
+            state->sound(player->context, player->form ? 3 : 2) != 0) {
+            return -1;
+        }
+        ++player->age;
+        return player_ground_animation(state);
+    }
+    if (handler == 0xee60U) {
+        if (!body->animation.state) {
+            return player_ground_animation(state);
+        }
+        return player_ground_call(pool, object, state,
+            body->node->pass_flags & 8 ? 0xc2cdU : 0xc8d5U,
+            player->form ? 0x5856U : 0x5f84U);
+    }
+    int left = handler == 0xf017U;
+    /* The original right recoil tests form bit 0, not simply form != 0. */
+    if ((state->boundary_controls & (left ? 8 : 4)) ||
+        ((left ? player->form != 0 : (player->form & 1) != 0) &&
+            player_word(body->animation.counter) == 12)) {
+        body->motion.velocity_x = 0;
+    }
+    if (body->animation.counter) {
+        short grounded;
+        if (engine_motion_x(&body->motion, &body->owner) != 0 ||
+            player_supported_gravity(state, &grounded) != 0 ||
+            player_ground_animation(state) != 0) {
+            return -1;
+        }
+        --body->animation.counter;
+        return 0;
+    }
+    short supported;
+    if (player_support(state, &supported) != 0) {
+        return -1;
+    }
+    player->flags_high &= 0xfb;
+    if (!supported) {
+        return player_ground_fall(pool, object, state, !left);
+    }
+    return player_ground_call(pool, object, state, left ? 0xc2cdU : 0xc8d5U,
+        player->form ? 0x5856U : 0x5f84U);
+}
+
+static void update_player_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_PLAYER_AIR *state = object->context;
+    if (!state || !valid_state(&state->player.body) ||
+        !player_action_handler(state->player.handler) || !state->sound ||
+        step_player_action(pool, object, state) != 0) {
+        pool->update_status = -1;
+    }
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_player_action_behavior = {update_player_action};
+
+int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->player.collision_flags || !state->sound ||
+        !call || (call->handler != 0xec69U && call->handler != 0xee35U &&
+            call->handler != 0xee60U && call->handler != 0xf017U && call->handler != 0xf160U)) {
+        return -1;
+    }
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    ENGINE_FALLING_OBJECT *body = &player->body;
+    object->context = state;
+    object->behavior = &engine_player_action_behavior;
+    if (player->handler == call->handler) {
+        return step_player_action(pool, object, state);
+    }
+    unsigned int script = call->handler == 0xec69U ? call->script :
+        call->handler == 0xee35U ? 0x5ff2U : call->handler == 0xee60U ? 0x589cU :
+        player->form ? 0x5864U : 0x621aU;
+    if (player_air_script(player, script) != 0) {
+        return -1;
+    }
+    player->handler = call->handler;
+    if (call->handler == 0xec69U) {
+        player->age = 0;
+        body->animation.counter = call->counter;
+        return 0;
+    }
+    if (call->handler == 0xee35U) {
+        return player_ground_animation(state);
+    }
+    if (call->handler == 0xee60U) {
+        body->animation.state = 0;
+        player->immunity = 0;
+        return 0;
+    }
+    body->animation.counter = player->form ? 40 : 18;
+    player_facing(player, call->handler == 0xf017U);
+    body->motion.velocity_y = UINT32_C(0xfffd0000);
+    body->motion.velocity_x = call->handler == 0xf017U ? UINT32_C(0x10000) :
+        UINT32_C(0xffff0000);
+    return 0;
+}
+
+int engine_player_begin_terrain(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int handler, short side, uint32_t velocity)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->player.collision_flags || !state->sound ||
+        (handler != 0xf80dU && handler != 0xfe3cU && handler != 0xff83U)) {
+        return -1;
+    }
+    object->context = state;
+    object->behavior = &engine_player_action_behavior;
+    if (state->player.handler == handler) {
+        return step_player_action(pool, object, state);
+    }
+    if (player_air_script(&state->player, handler == 0xfe3cU ? 0x620cU : 0x61e2U) != 0) {
+        return -1;
+    }
+    state->player.handler = handler;
+    state->player.body.animation.state = (unsigned short)side;
+    state->player.body.motion.velocity_x = velocity;
+    if (handler != 0xff83U) {
+        player_facing(&state->player, side != 0);
+    }
+    if (handler == 0xf80dU) {
+        state->player.flags_high |= 8;
+    }
+    return 0;
+}
+
+int engine_player_damage(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->damage_source || !state->sound || !state->player.collision_flags) {
+        return -1;
+    }
+    short source_x = state->damage_source->x;
+    state->roar_charge = 0;
+    state->player.immunity = 100;
+    state->flags &= 0x5ff7U;
+    state->player.flags_high &= 0xd4;
+    state->player_flags &= 0xfffdU;
+    if (state->sound(state->player.context, state->player.form ? 5 : 4) != 0) {
+        return -1;
+    }
+    /* The adjacent 0x1510c call is a RET, not a native audio/effect implementation. */
+    if (state->health > 0) {
+        --state->health;
+    }
+    if (state->player_flags & 0x20) {
+        short grounded;
+        if (player_supported_gravity(state, &grounded) != 0) {
+            return -1;
+        }
+        if (grounded) {
+            state->player.flags_high &= 0xfb;
+            state->player_flags &= 0xffdfU;
+            ENGINE_PLAYER_CALL call = {0xee60, 0, 0};
+            return engine_player_begin_action(pool, object, state, &call);
+        }
+    }
+    ENGINE_PLAYER_CALL call = {source_x < state->player.body.owner.x ? 0xf017U : 0xf160U, 0, 0};
+    return engine_player_begin_action(pool, object, state, &call);
 }
 
 static void update_falling(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)

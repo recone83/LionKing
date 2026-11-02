@@ -119,6 +119,10 @@ typedef struct {
     unsigned short action_timer;
     short progress;
     short progress_limit;
+    unsigned short roar_charge;
+    unsigned short roar_pulse;
+    short health;
+    const RENDER_OWNER *damage_source;
     ENGINE_PLAYER_GROUND ground;
     ENGINE_PLAYER_SUPPORT support;
     ENGINE_PLAYER_EDGE edge;
@@ -141,6 +145,13 @@ int engine_player_begin_recovery(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object
 extern const ENGINE_OBJECT_BEHAVIOR engine_player_ground_behavior;
 int engine_player_begin_ground(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call);
+extern const ENGINE_OBJECT_BEHAVIOR engine_player_action_behavior;
+int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call);
+int engine_player_damage(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state);
+int engine_player_begin_terrain(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, unsigned int handler, short side, uint32_t velocity);
 
 typedef struct {
     ENGINE_FALLING_OBJECT body;

@@ -42,6 +42,9 @@ static unsigned short ground_taps;
 static unsigned int ground_logs, run_frames, turn_frames, idle_frames, scroll_frames;
 static unsigned int ground_jumps, ground_jump_logs;
 static short min_world_x = 160, max_world_x = 160;
+static RENDER_OWNER damage_source;
+static int demo_hit;
+static unsigned int action_frames, roar_sounds, damage_sounds;
 
 static int idle_event(void *context, unsigned int target)
 {
@@ -186,18 +189,32 @@ static void update_reference(void *context)
             (api.Input.KeyDown[0x4f] ? 8 : 0) | (api.Input.KeyDown[0x2c] ? 0x20 : 0) |
             (api.Input.KeyDown[0x51] ? 2 : 0);
         if (!ground_manual) {
-            unsigned long long phase = now % 6000000000ULL;
+            unsigned long long phase = now % 12000000000ULL;
             held = phase < 1800000000ULL ? 8 : phase < 2100000000ULL ? 0 :
                 phase < 4300000000ULL ? 4 : phase < 5200000000ULL ? 8 :
-                phase < 5700000000ULL ? 2 : 0;
+                phase < 5700000000ULL ? 2 :
+                (phase >= 6200000000ULL && phase < 6400000000ULL) ||
+                (phase >= 8100000000ULL && phase < 8300000000ULL) ? 0x40 :
+                phase >= 7600000000ULL && phase < 7800000000ULL ? 4 : 0;
             if ((phase >= 800000000ULL && phase < 1300000000ULL) ||
                 (phase >= 3100000000ULL && phase < 3600000000ULL)) held |= 0x20;
+            if (phase < 10000000000ULL) {
+                demo_hit = 0;
+            } else if (!demo_hit) {
+                damage_source.x = (short)(player->body.owner.x +
+                    (player->body.node->pass_flags & 8 ? 16 : -16));
+                player->immunity = 0;
+                player->flags_high |= 4;
+                assert(engine_player_damage(&objects, player_object, &player_air) == 0);
+                demo_hit = 1;
+            }
         }
         player_air.pressed = held | (ground_taps & 0x20);
         player->controls = (unsigned char)ground_taps;
         ground_taps = 0;
         unsigned int before = player->handler;
         assert(engine_update_objects(&objects, &api.Input) == 0);
+        action_frames += player_object->behavior == &engine_player_action_behavior;
         airborne = player_object->behavior == &engine_player_jump_behavior ||
             player_object->behavior == &engine_player_air_behavior;
         ground_jumps += player->handler != before &&
@@ -291,7 +308,8 @@ static int flight_edge(void *context, short *hit, short *kind, short *x, short *
 static int ground_support(void *context, short *supported)
 {
     (void)context;
-    *supported = player->body.owner.y == 160;
+    *supported = player->body.owner.y >= 160;
+    if (*supported) player->body.owner.y = 160;
     player_air.contact_kind = player_air.surface_kind = 0;
     return 0;
 }
@@ -299,7 +317,9 @@ static int ground_support(void *context, short *supported)
 static int ground_sound(void *context, unsigned short sample)
 {
     (void)context;
-    assert(sample == 4 || sample == 6);
+    assert(sample >= 2 && sample <= 6);
+    roar_sounds += sample == 2;
+    damage_sounds += sample == 4;
     return 0;
 }
 
@@ -307,6 +327,9 @@ static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
     short kind, short x, short y)
 {
     (void)context; (void)kind; (void)x; (void)y;
+    if (ground_test && call->handler == 0xec69U) {
+        return engine_player_begin_action(&objects, player_object, &player_air, call);
+    }
     assert(call->handler == 0xc8d5 || call->handler == 0xc2cd ||
         call->handler == 0xcdc2 || call->handler == 0xd108 ||
         call->handler == 0xb253 || call->handler == 0xb19f);
@@ -531,6 +554,9 @@ int main(int argc, char **argv)
         player_air.support = ground_support;
         player_air.animation_event = idle_event;
         player_air.sound = ground_sound;
+        player_air.damage_source = &damage_source;
+        player_air.health = 100;
+        player_air.roar_charge = 100;
         begin_reference_player();
     } else {
         assert(assets_load_named_bank(&api, "LIONKING.EPF", animation_level6_bank_list,
@@ -549,9 +575,10 @@ int main(int argc, char **argv)
             "%u scrolling, %u jumps/%u landings, world X %d..%d\n",
             object_frames, moving_frames, airborne_frames, run_frames, turn_frames, idle_frames,
             scroll_frames, ground_jumps, flight_transitions, min_world_x, max_world_x);
-        assert(object_frames > 1800 && moving_frames > 500 && run_frames > 200 &&
+        assert(object_frames > 1800 && moving_frames > 300 && run_frames > 200 &&
             idle_frames > 100 && turn_frames > 10 && scroll_frames > 500 &&
-            ground_jumps >= 6 && flight_transitions >= 6 && max_world_x - min_world_x > 100);
+            ground_jumps >= 4 && flight_transitions >= 4 && max_world_x - min_world_x > 100);
+        assert(ground_steering || (action_frames > 100 && roar_sounds >= 2 && damage_sounds == 1));
         assert(!ground_steering || ground_manual);
         printf("PASS: default original idle/run/turn/jump/landing%s, %llu exact ARGB pixels, "
             "continuous world motion and camera, Escape\n",

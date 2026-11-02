@@ -191,14 +191,24 @@ typedef struct {
     int jump_requested;
     int ground_mode;
     unsigned short input_taps;
+    RENDER_OWNER damage_source;
+    unsigned char fixture_terrain;
+    unsigned int terrain_variant;
+    unsigned int terrain_ticks;
+    int demo_hit;
     unsigned long long jump_begin;
 } DEFLECTION_PREVIEW;
 
 static int preview_player_support(void *context, short *supported)
 {
     DEFLECTION_PREVIEW *preview = context;
-    *supported = preview->air.player.body.owner.y == 160;
-    preview->air.contact_kind = preview->air.surface_kind = 0;
+    ENGINE_FALLING_OBJECT *body = &preview->air.player.body;
+    *supported = body->owner.y >= 160;
+    if (*supported) {
+        body->owner.y = 160;
+    }
+    preview->air.contact_kind = preview->fixture_terrain;
+    preview->air.surface_kind = 0;
     return 0;
 }
 
@@ -234,11 +244,12 @@ static int preview_player_ready(DEFLECTION_PREVIEW *preview)
 static int preview_player_sound(void *context, unsigned short sample)
 {
     (void)context;
-    if (sample != 4 && sample != 6) {
-        lk_platform_log("Lion King: unexpected player recovery sound.\n");
+    if (sample < 2 || sample > 6) {
+        lk_platform_log("Lion King: unexpected player sound.\n");
         return -1;
     }
-    lk_platform_log(sample == 4 ?
+    lk_platform_log(sample <= 3 ?
+        "Original roar sample requested; audio output unported.\n" : sample <= 5 ?
         "Original recovery sample 4 requested; audio output unported.\n" :
         "Original roll sample 6 requested; audio output unported.\n");
     return 0;
@@ -291,9 +302,22 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
     short kind, short x, short y)
 {
     DEFLECTION_PREVIEW *preview = context;
-    (void)kind;
-    (void)x;
-    (void)y;
+    if (preview->ground_mode) {
+        if (call->handler == 0xef04U) {
+            lk_platform_log("Original damage/recoil handler selected; source is a test fixture.\n");
+            return engine_player_damage(&scene_objects, preview->object, &preview->air);
+        }
+        if (call->handler == 0xec69U || call->handler == 0xee35U ||
+            call->handler == 0xee60U || call->handler == 0xf017U || call->handler == 0xf160U) {
+            lk_platform_log("Original player action handler selected.\n");
+            return engine_player_begin_action(&scene_objects, preview->object, &preview->air, call);
+        }
+        if (call->handler == 0xf80dU || call->handler == 0xfe3cU) {
+            uint32_t velocity = ((uint32_t)(unsigned short)x << 16) | (unsigned short)y;
+            return engine_player_begin_terrain(&scene_objects, preview->object,
+                &preview->air, call->handler, kind, velocity);
+        }
+    }
     if (call->handler != 0xc8d5U && call->handler != 0xc2cdU &&
         call->handler != 0xcdc2U && call->handler != 0xd108U &&
         call->handler != 0xb253U && call->handler != 0xb19fU) {
@@ -356,20 +380,52 @@ static void update_player_preview(void *context)
         unsigned short held = (preview->api->Input.KeyDown[0x50] ? 4 : 0) |
             (preview->api->Input.KeyDown[0x4f] ? 8 : 0) |
             (preview->api->Input.KeyDown[0x2c] ? 0x20 : 0) |
-            (preview->api->Input.KeyDown[0x51] ? 2 : 0);
+            (preview->api->Input.KeyDown[0x51] ? 2 : 0) |
+            (preview->api->Input.KeyDown[0xe0] || preview->api->Input.KeyDown[0xe4] ? 0x40 : 0);
+        int request_hit = preview->input_taps & 0x100;
+        int request_terrain = preview->input_taps & 0x200;
         if (!preview->manual) {
-            unsigned long long phase = (lk_platform_time_ns() - preview->jump_begin) % 6000000000ULL;
+            unsigned long long phase = (lk_platform_time_ns() - preview->jump_begin) % 12000000000ULL;
             held = phase < 1800000000ULL ? 8 : phase < 2100000000ULL ? 0 :
                 phase < 4300000000ULL ? 4 : phase < 5200000000ULL ? 8 :
-                phase < 5700000000ULL ? 2 : 0;
+                phase < 5700000000ULL ? 2 :
+                (phase >= 6200000000ULL && phase < 6400000000ULL) ||
+                (phase >= 8100000000ULL && phase < 8300000000ULL) ? 0x40 :
+                phase >= 7600000000ULL && phase < 7800000000ULL ? 4 : 0;
             if ((phase >= 800000000ULL && phase < 1300000000ULL) ||
                 (phase >= 3100000000ULL && phase < 3600000000ULL)) {
                 held |= 0x20;
             }
+            if (phase < 10000000000ULL) {
+                preview->demo_hit = 0;
+            } else if (!preview->demo_hit) {
+                request_hit = 1;
+                preview->demo_hit = 1;
+            }
         }
-        preview->air.pressed = held | (preview->input_taps & 0x20);
+        preview->air.pressed = held | (preview->input_taps & 0x60);
         preview->air.player.controls = (unsigned char)preview->input_taps;
         preview->input_taps = 0;
+        if (preview->terrain_ticks && !--preview->terrain_ticks) {
+            preview->fixture_terrain = 0;
+        }
+        if (request_terrain) {
+            static const unsigned char kinds[] = {6, 9, 5, 8};
+            preview->fixture_terrain = kinds[preview->terrain_variant++ & 3];
+            preview->terrain_ticks = 60;
+            lk_platform_log("Synthetic terrain contact enabled for original slide handlers.\n");
+        }
+        if (request_hit) {
+            int left = preview->air.player.body.node->pass_flags & 8;
+            preview->damage_source.x = (short)(preview->air.player.body.owner.x + (left ? 16 : -16));
+            preview->air.player.immunity = 0;
+            preview->air.player.flags_high |= 4;
+            ENGINE_PLAYER_CALL damage = {0xef04, 0, 0};
+            if (preview_player_landed(preview, &damage, 0, 0, 0) != 0) {
+                preview->failed = 1;
+                return;
+            }
+        }
         unsigned int before = preview->air.player.handler;
         if (engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
             preview->failed = 1;
@@ -491,15 +547,20 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.air.sound = preview_player_sound;
     preview.air.support = preview_player_support;
     preview.air.animation_event = record_player_idle_event;
+    preview.air.damage_source = &preview.damage_source;
+    preview.air.health = 100;
+    preview.air.roar_charge = 100;
     if (!preview.air.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
         lk_platform_log("Lion King: cannot initialize original player deflection.\n");
         return 1;
     }
     if (preview.ground_mode) {
         lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
-            "Left/Right: run; Down: crouch; Space: jump/hold for height. Escape: exit.\n"
-            "Before input: automatic running/jumping demo. --jump: previous jump fixture.\n"
-            "Ground Y=160 and camera following are fixtures; map collision/special states unported.\n");
+            "Left/Right: run; Down: crouch; Space: jump/hold; Ctrl: roar. Escape: exit.\n"
+            "H: diagnostic hit/recoil; T: diagnostic terrain contact (6/9/5/8).\n"
+            "Before input: running/jumping/roaring/damage demo. --jump: previous jump fixture.\n"
+            "Ground Y=160, damage source, terrain, initial meters and camera are fixtures.\n"
+            "Enemy response to roar, meter recharge/immunity ticking and map collision unported.\n");
     } else if (preview.jump) {
         lk_platform_log("Original Simba jump test: ascent -> air -> landing, repeatable.\n"
             "Space: take control/jump; hold for height. Left/Right: direction. Escape: exit.\n"
@@ -529,9 +590,13 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             unsigned short taps = (api->Input.KeyPressed[0x50] ? 4 : 0) |
                 (api->Input.KeyPressed[0x4f] ? 8 : 0) |
                 (api->Input.KeyPressed[0x2c] ? 0x20 : 0) |
-                (api->Input.KeyPressed[0x51] ? 2 : 0);
+                (api->Input.KeyPressed[0x51] ? 2 : 0) |
+                (api->Input.KeyPressed[0xe0] || api->Input.KeyPressed[0xe4] ? 0x40 : 0) |
+                (api->Input.KeyPressed[0x0b] ? 0x100 : 0) |
+                (api->Input.KeyPressed[0x17] ? 0x200 : 0);
             if (taps || api->Input.KeyDown[0x50] || api->Input.KeyDown[0x4f] ||
-                api->Input.KeyDown[0x2c] || api->Input.KeyDown[0x51]) {
+                api->Input.KeyDown[0x2c] || api->Input.KeyDown[0x51] ||
+                api->Input.KeyDown[0xe0] || api->Input.KeyDown[0xe4]) {
                 preview.manual = 1;
             }
             preview.input_taps |= taps;
