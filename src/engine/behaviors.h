@@ -100,6 +100,7 @@ typedef int (*ENGINE_PLAYER_EDGE)(void *context, short *hit, short *kind,
 typedef int (*ENGINE_PLAYER_AIR_TRANSITION)(void *context,
     const ENGINE_PLAYER_CALL *call, short kind, short x, short y);
 typedef int (*ENGINE_PLAYER_SOUND)(void *context, unsigned short sample);
+typedef int (*ENGINE_PLAYER_SUPPORT)(void *context, short *supported);
 
 typedef struct {
     ENGINE_PLAYER_DEFLECTION player;
@@ -113,10 +114,17 @@ typedef struct {
     unsigned char surface_kind;
     unsigned char jump_boost;
     unsigned int jump_air_script;
+    unsigned char auxiliary_controls;
+    unsigned char boundary_controls;
+    unsigned short action_timer;
+    short progress;
+    short progress_limit;
     ENGINE_PLAYER_GROUND ground;
+    ENGINE_PLAYER_SUPPORT support;
     ENGINE_PLAYER_EDGE edge;
     ENGINE_PLAYER_AIR_TRANSITION transition;
     ENGINE_PLAYER_SOUND sound;
+    ANIMATION_EVENT animation_event;
 } ENGINE_PLAYER_AIR;
 
 extern const ENGINE_OBJECT_BEHAVIOR engine_player_air_behavior;
@@ -129,6 +137,9 @@ extern const ENGINE_OBJECT_BEHAVIOR engine_player_recovery_behavior;
 int engine_player_begin_jump(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call, unsigned int air_script);
 int engine_player_begin_recovery(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call);
+extern const ENGINE_OBJECT_BEHAVIOR engine_player_ground_behavior;
+int engine_player_begin_ground(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call);
 
 typedef struct {

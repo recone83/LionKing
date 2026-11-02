@@ -37,6 +37,11 @@ static unsigned long long jump_begin;
 static unsigned int jump_count, jump_logs, ready_logs;
 static short jump_min_y[16];
 static unsigned int idle_events, idle_logs;
+static int ground_test, ground_steering, ground_manual;
+static unsigned short ground_taps;
+static unsigned int ground_logs, run_frames, turn_frames, idle_frames, scroll_frames;
+static unsigned int ground_jumps, ground_jump_logs;
+static short min_world_x = 160, max_world_x = 160;
 
 static int idle_event(void *context, unsigned int target)
 {
@@ -76,6 +81,8 @@ static void __attribute__((ms_abi)) log_text(const char *text)
         ++ready_logs;
     }
     if (strstr(text, "Idle script event recorded")) ++idle_logs;
+    if (strstr(text, "Original player ground handler selected")) ++ground_logs;
+    if (strstr(text, "Original running/standing jump selected")) ++ground_jump_logs;
 }
 static void * __attribute__((ms_abi)) open_file(const char *path, const char *mode)
 {
@@ -98,6 +105,18 @@ static void __attribute__((ms_abi)) poll(void)
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
+    if (ground_steering && iteration <= 1400) {
+        unsigned int phase = iteration % 400;
+        unsigned int key = phase < 200 ? 0x4f : 0x50;
+        if (phase < 160 || (phase >= 200 && phase < 350)) {
+            api.Input.KeyDown[key] = 1;
+            api.Input.KeyPressed[key] = phase == 1 || phase == 200;
+        }
+        if ((phase >= 65 && phase < 115) || (phase >= 265 && phase < 280)) {
+            api.Input.KeyDown[0x2c] = 1;
+            api.Input.KeyPressed[0x2c] = phase == 65 || phase == 265;
+        }
+    }
     if (jump_steering) {
         unsigned int within = iteration % 250;
         if (iteration <= 1000 && within >= 51 &&
@@ -124,11 +143,44 @@ static void __attribute__((ms_abi)) poll(void)
         jump_manual = 1;
         jump_requested = player_completed;
     }
+    if (ground_test) {
+        unsigned short taps = (api.Input.KeyPressed[0x50] ? 4 : 0) |
+            (api.Input.KeyPressed[0x4f] ? 8 : 0) | (api.Input.KeyPressed[0x2c] ? 0x20 : 0) |
+            (api.Input.KeyPressed[0x51] ? 2 : 0);
+        if (taps || api.Input.KeyDown[0x50] || api.Input.KeyDown[0x4f] ||
+            api.Input.KeyDown[0x2c] || api.Input.KeyDown[0x51]) {
+            ground_manual = 1;
+        }
+        ground_taps |= taps;
+    }
     assert(iteration <= 2002);
 }
 static void update_reference(void *context)
 {
     (void)context;
+    if (ground_test) {
+        unsigned short held = (api.Input.KeyDown[0x50] ? 4 : 0) |
+            (api.Input.KeyDown[0x4f] ? 8 : 0) | (api.Input.KeyDown[0x2c] ? 0x20 : 0) |
+            (api.Input.KeyDown[0x51] ? 2 : 0);
+        if (!ground_manual) {
+            unsigned long long phase = now % 6000000000ULL;
+            held = phase < 1800000000ULL ? 8 : phase < 2100000000ULL ? 0 :
+                phase < 4300000000ULL ? 4 : phase < 5200000000ULL ? 8 :
+                phase < 5700000000ULL ? 2 : 0;
+            if ((phase >= 800000000ULL && phase < 1300000000ULL) ||
+                (phase >= 3100000000ULL && phase < 3600000000ULL)) held |= 0x20;
+        }
+        player_air.pressed = held | (ground_taps & 0x20);
+        player->controls = (unsigned char)ground_taps;
+        ground_taps = 0;
+        unsigned int before = player->handler;
+        assert(engine_update_objects(&objects, &api.Input) == 0);
+        airborne = player_object->behavior == &engine_player_jump_behavior ||
+            player_object->behavior == &engine_player_air_behavior;
+        ground_jumps += player->handler != before &&
+            player_object->behavior == &engine_player_jump_behavior;
+        return;
+    }
     if (jump_test) {
         unsigned short directions = (api.Input.KeyDown[0x50] ? 4 : 0) |
             (api.Input.KeyDown[0x4f] ? 8 : 0);
@@ -182,7 +234,7 @@ static int player_probe(void *context, short x, short y, short *hit)
 {
     (void)context;
     assert(x == player->body.owner.x && y == player->body.owner.y);
-    *hit = !jump_test && (player_variant & 4) ? -1 : 0;
+    *hit = !jump_test && !ground_test && (player_variant & 4) ? -1 : 0;
     return 0;
 }
 static int player_transition(void *context, const ENGINE_PLAYER_CALL *call)
@@ -213,6 +265,21 @@ static int flight_edge(void *context, short *hit, short *kind, short *x, short *
     *hit = *kind = *x = *y = 0;
     return 0;
 }
+static int ground_support(void *context, short *supported)
+{
+    (void)context;
+    *supported = player->body.owner.y == 160;
+    player_air.contact_kind = player_air.surface_kind = 0;
+    return 0;
+}
+
+static int ground_sound(void *context, unsigned short sample)
+{
+    (void)context;
+    assert(sample == 4 || sample == 6);
+    return 0;
+}
+
 static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
     short kind, short x, short y)
 {
@@ -221,6 +288,17 @@ static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
         call->handler == 0xcdc2 || call->handler == 0xd108 ||
         call->handler == 0xb253 || call->handler == 0xb19f);
     assert(player->body.owner.y == 160);
+    if (ground_test) {
+        assert(call->handler != 0xb253 && call->handler != 0xb19f);
+        airborne = 0;
+        if (player->handler == call->handler) {
+            player_object->behavior = &engine_player_ground_behavior;
+        } else {
+            assert(engine_player_begin_ground(&objects, player_object, &player_air, call) == 0);
+        }
+        ++flight_transitions;
+        return 0;
+    }
     if (jump_test) {
         assert(call->handler != 0xb253 && call->handler != 0xb19f);
         assert(animation_program_initialize(&player->body.animation, animation_movement_data,
@@ -238,6 +316,14 @@ static int flight_landed(void *context, const ENGINE_PLAYER_CALL *call,
 }
 static void begin_reference_player(void)
 {
+    if (ground_test) {
+        player->body.owner = (RENDER_OWNER){160, 160};
+        player->body.motion = (ENGINE_MOTION){0};
+        ENGINE_PLAYER_CALL call = {0xc8d5, 0x6148, 0};
+        assert(engine_player_begin_ground(&objects, player_object, &player_air, &call) == 0);
+        previous_player_position = player->body.owner;
+        return;
+    }
     if (jump_test) {
         player->body.owner = (RENDER_OWNER){160, 160};
         player->body.motion = (ENGINE_MOTION){0};
@@ -264,17 +350,33 @@ static void begin_reference_player(void)
 }
 static void draw_reference_player(const DOS64_COLOR *image)
 {
-    if (!jump_test && player_completed &&
+    if (!jump_test && !ground_test && player_completed &&
         now - cycle_begin >= (flight_test ? 2000000000ULL : 1000000000ULL)) {
         player_variant = (player_variant + 1) & 7;
         cycle_begin = now;
         begin_reference_player();
     }
     memset(pixels, 0, sizeof(pixels));
-    assert(render_map_tile_pass(map, map_size, 0, 0, 0, 0, pixels) == 0);
-    assert(render_map_tile_pass(map, map_size, 0, 0, 0, 1, pixels) == 0);
+    unsigned short camera_x = 0;
+    if (ground_test) {
+        RENDER_OWNER view = {player->body.owner.x > 160 ? (short)(player->body.owner.x - 160) : 0, 0};
+        RENDER_VIEWPORT viewport;
+        assert(render_prepare_viewport(&view,
+            (unsigned short)(map[8] | (unsigned int)map[9] << 8),
+            (unsigned short)(map[12] | (unsigned int)map[13] << 8), 0, &viewport) == 0);
+        camera_x = viewport.x;
+        player->body.node->flags |= 0x40;
+        scroll_frames += camera_x != 0;
+        run_frames += player->handler == 0xcdc2 || player->handler == 0xd108;
+        turn_frames += player->handler == 0xbeb7 || player->handler == 0xc0a1;
+        idle_frames += player->handler == 0xc8d5 || player->handler == 0xc2cd;
+        if (player->body.owner.x < min_world_x) min_world_x = player->body.owner.x;
+        if (player->body.owner.x > max_world_x) max_world_x = player->body.owner.x;
+    }
+    assert(render_map_tile_pass(map, map_size, 0, camera_x, 0, 0, pixels) == 0);
+    assert(render_map_tile_pass(map, map_size, 0, camera_x, 0, 1, pixels) == 0);
     memcpy(background, pixels, sizeof(pixels));
-    assert(render_object_pass(&renders, 0, 0, 0, banks, 34, pixels) == 0);
+    assert(render_object_pass(&renders, 0, (short)-(int)camera_x, 0, banks, 34, pixels) == 0);
     unsigned int visible = 0;
     for (unsigned int i = 0; i < 64000; ++i) {
         assert(memcmp(&image[i], &palette[pixels[i]], sizeof(image[i])) == 0);
@@ -358,14 +460,18 @@ int main(int argc, char **argv)
 {
     assert(argc == 1 || (argc == 2 && (strcmp(argv[1], "--deflection") == 0 ||
         strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0 ||
-        strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0)));
+        strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0 ||
+        strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0)));
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
     jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
-    jump_test = argc == 1 || jump_steering;
-    flight_test = jump_test || steering_test || (argc == 2 && strcmp(argv[1], "--flight") == 0);
+    ground_steering = argc == 2 && strcmp(argv[1], "--ground-steering") == 0;
+    ground_test = argc == 1 || ground_steering;
+    jump_test = jump_steering || (argc == 2 && strcmp(argv[1], "--jump") == 0);
+    flight_test = ground_test || jump_test || steering_test ||
+        (argc == 2 && strcmp(argv[1], "--flight") == 0);
     deflection_test = argc == 2 && strcmp(argv[1], "--deflection") == 0;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION;
-    api.Arguments = jump_test ? "" : flight_test ? "--flight" :
+    api.Arguments = ground_test ? "" : jump_test ? "--jump" : flight_test ? "--flight" :
         deflection_test ? "--deflection" : "--emitters";
     api.Write = log_text; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
@@ -399,6 +505,9 @@ int main(int argc, char **argv)
         player_air.ground = flight_ground;
         player_air.edge = flight_edge;
         player_air.transition = flight_landed;
+        player_air.support = ground_support;
+        player_air.animation_event = idle_event;
+        player_air.sound = ground_sound;
         begin_reference_player();
     } else {
         assert(assets_load_named_bank(&api, "LIONKING.EPF", animation_level6_bank_list,
@@ -410,6 +519,22 @@ int main(int argc, char **argv)
     }
     engine_clock_reset(&clock, 0);
     assert(start(&api) == 0);
+    if (ground_test) {
+        assert(iteration == 2002 && shown == 2001 && !player_transitions &&
+            ground_logs == flight_transitions + 1 && ground_jumps == ground_jump_logs);
+        printf("Ground measurements: %u visible/%u moving/%u air, %u run/%u turn/%u idle/"
+            "%u scrolling, %u jumps/%u landings, world X %d..%d\n",
+            object_frames, moving_frames, airborne_frames, run_frames, turn_frames, idle_frames,
+            scroll_frames, ground_jumps, flight_transitions, min_world_x, max_world_x);
+        assert(object_frames > 1800 && moving_frames > 500 && run_frames > 200 &&
+            idle_frames > 100 && turn_frames > 10 && scroll_frames > 500 &&
+            ground_jumps >= 6 && flight_transitions >= 6 && max_world_x - min_world_x > 100);
+        assert(!ground_steering || ground_manual);
+        printf("PASS: default original idle/run/turn/jump/landing%s, %llu exact ARGB pixels, "
+            "continuous world motion and camera, Escape\n",
+            ground_steering ? " with manual input" : " demo", verified);
+        return 0;
+    }
     if (jump_test) {
         assert(iteration == 2002 && shown == 2001 && jump_logs == jump_count &&
             flight_transitions == jump_count && ready_logs == jump_count + 1 &&

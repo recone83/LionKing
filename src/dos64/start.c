@@ -182,8 +182,30 @@ typedef struct {
     int jump;
     int manual;
     int jump_requested;
+    int ground_mode;
+    unsigned short input_taps;
     unsigned long long jump_begin;
 } DEFLECTION_PREVIEW;
+
+static int preview_player_support(void *context, short *supported)
+{
+    DEFLECTION_PREVIEW *preview = context;
+    *supported = preview->air.player.body.owner.y == 160;
+    preview->air.contact_kind = preview->air.surface_kind = 0;
+    return 0;
+}
+
+static int preview_ground_ready(DEFLECTION_PREVIEW *preview,
+    const ENGINE_PLAYER_CALL *call)
+{
+    preview->airborne = 0;
+    lk_platform_log("Original player ground handler selected.\n");
+    if (preview->air.player.handler == call->handler) {
+        preview->object->behavior = &engine_player_ground_behavior;
+        return 0;
+    }
+    return engine_player_begin_ground(&scene_objects, preview->object, &preview->air, call);
+}
 
 static int preview_player_ready(DEFLECTION_PREVIEW *preview)
 {
@@ -205,11 +227,13 @@ static int preview_player_ready(DEFLECTION_PREVIEW *preview)
 static int preview_player_sound(void *context, unsigned short sample)
 {
     (void)context;
-    if (sample != 4) {
+    if (sample != 4 && sample != 6) {
         lk_platform_log("Lion King: unexpected player recovery sound.\n");
         return -1;
     }
-    lk_platform_log("Original recovery sample 4 requested; audio output unported.\n");
+    lk_platform_log(sample == 4 ?
+        "Original recovery sample 4 requested; audio output unported.\n" :
+        "Original roll sample 6 requested; audio output unported.\n");
     return 0;
 }
 
@@ -276,6 +300,13 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
         }
         return preview_player_ready(preview);
     }
+    if (preview->ground_mode) {
+        if (call->handler == 0xb253U || call->handler == 0xb19fU) {
+            return engine_player_begin_recovery(&scene_objects, preview->object,
+                &preview->air, call);
+        }
+        return preview_ground_ready(preview, call);
+    }
     preview->object->behavior = 0;
     preview->completed = 1;
     lk_platform_log("Player flight landed through original selector; next ground state unported.\n");
@@ -284,6 +315,12 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
 
 static int begin_player_preview(DEFLECTION_PREVIEW *preview)
 {
+    if (preview->ground_mode) {
+        preview->air.player.body.owner = (RENDER_OWNER){160, 160};
+        preview->air.player.body.motion = (ENGINE_MOTION){0};
+        ENGINE_PLAYER_CALL call = {0xc8d5, 0x6148, 0};
+        return preview_ground_ready(preview, &call);
+    }
     if (preview->jump) {
         preview->air.player.body.owner = (RENDER_OWNER){160, 160};
         preview->air.player.body.motion = (ENGINE_MOTION){0};
@@ -308,6 +345,37 @@ static int begin_player_preview(DEFLECTION_PREVIEW *preview)
 static void update_player_preview(void *context)
 {
     DEFLECTION_PREVIEW *preview = context;
+    if (preview->ground_mode) {
+        unsigned short held = (preview->api->Input.KeyDown[0x50] ? 4 : 0) |
+            (preview->api->Input.KeyDown[0x4f] ? 8 : 0) |
+            (preview->api->Input.KeyDown[0x2c] ? 0x20 : 0) |
+            (preview->api->Input.KeyDown[0x51] ? 2 : 0);
+        if (!preview->manual) {
+            unsigned long long phase = (lk_platform_time_ns() - preview->jump_begin) % 6000000000ULL;
+            held = phase < 1800000000ULL ? 8 : phase < 2100000000ULL ? 0 :
+                phase < 4300000000ULL ? 4 : phase < 5200000000ULL ? 8 :
+                phase < 5700000000ULL ? 2 : 0;
+            if ((phase >= 800000000ULL && phase < 1300000000ULL) ||
+                (phase >= 3100000000ULL && phase < 3600000000ULL)) {
+                held |= 0x20;
+            }
+        }
+        preview->air.pressed = held | (preview->input_taps & 0x20);
+        preview->air.player.controls = (unsigned char)preview->input_taps;
+        preview->input_taps = 0;
+        unsigned int before = preview->air.player.handler;
+        if (engine_update_objects(&scene_objects, &preview->api->Input) != 0) {
+            preview->failed = 1;
+            return;
+        }
+        preview->airborne = preview->object->behavior == &engine_player_jump_behavior ||
+            preview->object->behavior == &engine_player_air_behavior;
+        if (preview->air.player.handler != before &&
+            preview->object->behavior == &engine_player_jump_behavior) {
+            lk_platform_log("Original running/standing jump selected.\n");
+        }
+        return;
+    }
     if (preview->jump) {
         ENGINE_PLAYER_DEFLECTION *player = &preview->air.player;
         unsigned long long now = lk_platform_time_ns();
@@ -400,6 +468,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.api = api;
     preview.flight = flight;
     preview.jump = mode == 2;
+    preview.ground_mode = mode == 3;
     preview.air.player.body.render_pool = &render_pool;
     preview.air.player.body.node = render_acquire_node(&render_pool,
         &preview.air.player.body.owner, 0, 0,
@@ -413,11 +482,18 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     preview.air.edge = preview_player_edge;
     preview.air.transition = preview_player_landed;
     preview.air.sound = preview_player_sound;
+    preview.air.support = preview_player_support;
+    preview.air.animation_event = record_player_idle_event;
     if (!preview.air.player.body.node || !preview.object || begin_player_preview(&preview) != 0) {
         lk_platform_log("Lion King: cannot initialize original player deflection.\n");
         return 1;
     }
-    if (preview.jump) {
+    if (preview.ground_mode) {
+        lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
+            "Left/Right: run; Down: crouch; Space: jump/hold for height. Escape: exit.\n"
+            "Before input: automatic running/jumping demo. --jump: previous jump fixture.\n"
+            "Ground Y=160 and camera following are fixtures; map collision/special states unported.\n");
+    } else if (preview.jump) {
         lk_platform_log("Original Simba jump test: ascent -> air -> landing, repeatable.\n"
             "Space: take control/jump; hold for height. Left/Right: direction. Escape: exit.\n"
             "Before Space: automatic short/held jump demo. --flight: previous flip scene.\n"
@@ -431,7 +507,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     if (!flight) {
         lk_platform_log("Original Simba deflection test: --deflection, Escape exits.\n");
     }
-    if (!preview.jump) {
+    if (!preview.jump && !preview.ground_mode) {
         lk_platform_log("Eight automatic fixture cases: both selectors, both script ranges, probe off/on.\n"
             "Original motion and visual scripts; probe results and restarts are diagnostic.\n");
     }
@@ -442,6 +518,17 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     engine_clock_reset(&clock, begin);
     for (;;) {
         lk_platform_poll();
+        if (preview.ground_mode) {
+            unsigned short taps = (api->Input.KeyPressed[0x50] ? 4 : 0) |
+                (api->Input.KeyPressed[0x4f] ? 8 : 0) |
+                (api->Input.KeyPressed[0x2c] ? 0x20 : 0) |
+                (api->Input.KeyPressed[0x51] ? 2 : 0);
+            if (taps || api->Input.KeyDown[0x50] || api->Input.KeyDown[0x4f] ||
+                api->Input.KeyDown[0x2c] || api->Input.KeyDown[0x51]) {
+                preview.manual = 1;
+            }
+            preview.input_taps |= taps;
+        }
         if (preview.jump && api->Input.KeyPressed[0x2c]) {
             preview.manual = 1;
             preview.jump_requested = preview.completed;
@@ -450,7 +537,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
             break;
         }
         unsigned long long now = lk_platform_time_ns();
-        if (!preview.jump && preview.completed &&
+        if (!preview.jump && !preview.ground_mode && preview.completed &&
             now - begin >= (flight ? 2000000000ULL : 1000000000ULL)) {
             preview.variant = (preview.variant + 1) & 7;
             begin = now;
@@ -459,13 +546,30 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
                 return 1;
             }
         }
+        unsigned short camera_x = 0;
+        if (preview.ground_mode) {
+            RENDER_OWNER camera = {
+                preview.air.player.body.owner.x > 160 ?
+                    (short)(preview.air.player.body.owner.x - 160) : 0, 0
+            };
+            RENDER_VIEWPORT viewport;
+            if (render_prepare_viewport(&camera,
+                (unsigned short)(map[8] | (unsigned int)map[9] << 8),
+                (unsigned short)(map[12] | (unsigned int)map[13] << 8),
+                0, &viewport) != 0) {
+                lk_platform_log("Lion King: cannot prepare player viewport.\n");
+                return 1;
+            }
+            camera_x = viewport.x;
+            preview.air.player.body.node->flags |= 0x40;
+        }
         unsigned char *view = pixels + LK_WIDTH;
         for (unsigned int i = 0; i < LK_WIDTH * LK_HEIGHT; ++i) {
             view[i] = 0;
         }
-        if (render_map_tile_pass(map, map_size, 0, 0, 0, 0, view) != 0 ||
-            render_map_tile_pass(map, map_size, 0, 0, 0, 1, view) != 0 ||
-            render_object_pass(&render_pool, 0, 0, 0, banks, 34, view) != 0 ||
+        if (render_map_tile_pass(map, map_size, 0, camera_x, 0, 0, view) != 0 ||
+            render_map_tile_pass(map, map_size, 0, camera_x, 0, 1, view) != 0 ||
+            render_object_pass(&render_pool, 0, (short)-(int)camera_x, 0, banks, 34, view) != 0 ||
             vga_present_frame(&frame) != 0) {
             lk_platform_log("Lion King: cannot render player deflection preview.\n");
             return 1;
@@ -477,7 +581,8 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         }
         lk_platform_sleep(10);
     }
-    lk_platform_log(preview.jump ? "Original player jump preview finished.\n" :
+    lk_platform_log(preview.ground_mode ? "Original player ground preview finished.\n" :
+        preview.jump ? "Original player jump preview finished.\n" :
         flight ? "Original player flight preview finished.\n" :
         "Original player deflection preview finished.\n");
     return 0;
@@ -604,10 +709,13 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     if (argument_requested(api->Arguments, "--flight")) {
         return run_deflection_preview(api, 1);
     }
+    if (argument_requested(api->Arguments, "--jump")) {
+        return run_deflection_preview(api, 2);
+    }
     if (!argument_requested(api->Arguments, "--idle") &&
         !argument_requested(api->Arguments, "--manual") &&
         !argument_requested(api->Arguments, "--selftest")) {
-        return run_deflection_preview(api, 2);
+        return run_deflection_preview(api, 3);
     }
     LK_EPF_INFO archive;
     if (resources_open_archive(api, "LIONKING.EPF", &archive) != 0) {

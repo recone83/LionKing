@@ -950,9 +950,9 @@ previous scene regressions.
 Real native QEMU verification produced 14724 changed viewport pixels and
 repeated landing-boundary logs; Escape returned exit code zero.
 
-### Larger default test: controlled jumps and repeated landings
+### Controlled jumps and repeated landings (`--jump`)
 
-Run `bash build.sh`. The default preview now runs the original jump handlers
+Run `LIONKING.EXE --jump`. This preview runs the original jump handlers
 `0x1b604` / `0x1b7e7`, jump-hold helper `0x1b5ac`, airborne handlers and
 landing selectors. Before keyboard takeover it demonstrates short and held
 jumps in both directions, starting a new case every two seconds.
@@ -990,10 +990,50 @@ traced ascent ticks, including adult/young forms, fractions, word wrapping,
 probe ordering, gates, same-handler continuation and dependency errors.
 Compile it with the same engine source list as `check_player_air.c`.
 
-`build/check_scene` checks 20 seconds of actual default entry: 128064000
+`build/check_scene --jump` checks 20 seconds of the jump entry: 128064000
 exact ARGB pixels, 2001 visible frames, 350 moving frames, 768 airborne frames,
 and nine complete jumps/landings. `build/check_scene --jump-steering` tests
 four manual jumps, eight direction transitions, sustained idle events and
 Space height control: held jumps rise at least 40 pixels higher than short
 jumps. Real QEMU showed Simba jumping, 13824 changed viewport pixels,
 manual keyboard takeover and an Escape exit with code zero.
+
+### Default test: original ground locomotion and connected player states
+
+Run `bash build.sh`. Ground idle/input is no longer fabricated: the default
+preview connects ten more original handlers:
+
+| State | Original code addresses |
+| --- | --- |
+| Left/right ground idle | `0x1c2cd`, `0x1c8d5` |
+| Right/left running | `0x1cdc2`, `0x1d108` |
+| Turning to left/right | `0x1beb7`, `0x1c0a1` |
+| Left/right crouching | `0x1b9ca`, `0x1bc80` |
+| Right/left rolling | `0x1ea46`, `0x1eb56` |
+
+The original ground reset `0x1c28e` and existing capped acceleration helper
+complete this block. Running accelerates by `+/-0x4000`, preserves signed
+`+/-0x20000` minimum and `+/-0x40000` maximum, turns through the original
+animation, stops through the original idle scripts, and selects a different
+jump script from standing. Landing resumes the selected ground handler,
+not a synthetic frozen frame. Down crouches while idle; Down at sufficient
+running speed enters the original roll, slowing by `0xe00` per update.
+
+Left/Right run, Down crouches/rolls, Space jumps (hold to prolong ascent),
+and Escape exits. Any of those inputs takes over the automatic six-second
+demo. Manual input does not teleport/restart Simba. The renderer follows X
+using the existing original viewport clamps; camera-follow policy is a
+fixture, not the original full game camera controller.
+
+Ground support at Y=160, no walls/edges/ceiling hits and the automated
+input sequence remain explicit fixtures. Real level collision, damage,
+terrain-specific handlers, adult attacks and progression actions remain
+explicit callback boundaries. The ground code nevertheless preserves their
+selection, ordering and operands, including the left-crouch fallthrough and
+left-run flag asymmetry. Roll/recovery sound requests are logged, not played.
+Long-idle animation events also remain diagnostic.
+
+Earlier preview modes are retained: `--jump`, `--flight`, `--deflection`,
+`--emitters`, `--idle`, `--manual`. The focused ground harness is
+`tools/check_player_ground.c`; `build/check_scene` exercises the connected
+default entry and `--ground-steering` its manual controls.

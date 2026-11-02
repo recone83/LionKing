@@ -354,7 +354,7 @@ wykonuje się przed sondą, lewe po niej; początek skoku wykonuje AND `0xdf`.
 Regeneracja ustawia handler idle przed ostatnią animacją, nie wywołuje
 jeszcze jego pełnej logiki. Żądanie dźwięku 4/5 jest jawnym callbackiem.
 
-Domyślny podgląd demonstruje krótkie/długie skoki w obu kierunkach.
+Podgląd `--jump` demonstruje krótkie/długie skoki w obu kierunkach.
 Spacja przejmuje sterowanie, rozpoczyna skok na ziemi i podtrzymuje boost;
 strzałki zmieniają kierunek, Escape wychodzi. Zdarzenie Spacji jest
 zapamiętywane między odpytywaniem HID a tickiem gry. Po lądowaniu można
@@ -364,7 +364,31 @@ ani nie uruchamia skoków sam. `--flight` zachowuje wcześniejszy test.
 
 [check_player_jump.c](../../tools/check_player_jump.c) sprawdza 393210
 opóźnień, 393216 liczników regeneracji, 4608 kombinacji boost i 218
-niezależnych ticków trajektorii. Domyślny [check_scene.c](../../tools/check_scene.c)
+niezależnych ticków trajektorii. [check_scene.c](../../tools/check_scene.c) z `--jump`
 sprawdza dziewięć pełnych skoków i 128064000 pikseli; `--jump-steering`
 cztery skoki z klawiatury, osiem zmian kierunku, zdarzenia długiego idle
 i różnicę wysokości co najmniej 40 pikseli między krótkim i trzymanym skokiem.
+
+Domyślne wejście przenosi teraz pełne idle naziemne `0x1c2cd/0x1c8d5`,
+bieg `0x1cdc2/0x1d108`, obrót `0x1beb7/0x1c0a1`, kucanie
+`0x1b9ca/0x1bc80` i turlanie `0x1ea46/0x1eb56` z oryginalnego obiektu
+kodu. Reset `0x1c28e` zeruje prędkości i state, wykonuje AND `0xfd`
+maski kolizji i czyści bit `0x10`; nie zapisuje stałej z dekompilatora.
+Akceleracja korzysta z już przeniesionego helpera `0x1cda1/0x1a9da`.
+
+Powiązano idle -> bieg -> obrót -> skok -> lot -> lądowanie -> wybrany
+stan naziemny. Bieg wybiera skok `6172/5936` bez opóźnienia, idle
+`6180/5944` z 4/10 tickami. Zachowano różny skrypt dalszego lotu dla
+prawego wymuszonego skoku, lewy bieg kontynuujący po fladze 1 i różne
+inicjalizacje lewego/prawego kucania. Turlanie wybiera się z prędkością
+większą niż 3, odejmuje/dodaje `0xe00`, może odbić prędkość na oryginalnych
+flagach granicy i wraca do biegu przy progu 2. Żądanie próbki 6 jest jawne.
+
+Strzałki poziome biegną, Down kuca/turla, Spacja skacze. Po lądowaniu
+nie ma już atrapowej pauzy ani zerowania pędu przez podgląd. Fixture
+pozostały tylko płaska ziemia Y=160, sondy, wejście demo i polityka
+śledzenia X przez kamerę. Rzeczywiste kolizje mapy i specjalne stany
+nie zostały podmienione fikcyjnym poziomem.
+[check_player_ground.c](../../tools/check_player_ground.c) sprawdza
+bezpośrednio przeniesione gałęzie i trajektorie; domyślny
+[check_scene.c](../../tools/check_scene.c) sprawdza spięty blok.
