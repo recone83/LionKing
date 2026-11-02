@@ -917,7 +917,7 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
         return 1;
     }
     if (preview.map_mode) {
-        static const unsigned int indices[4] = {4, 12, 13, 14};
+        static const unsigned int indices[4] = {3, 12, 13, 14};
         for (unsigned int i = 0; i < 4; ++i) {
             unsigned int slot, loaded;
             if (assets_load_named_bank(&resource_api, "LIONKING.EPF", animation_level1_bank_list,

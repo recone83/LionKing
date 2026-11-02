@@ -46,7 +46,9 @@ static RENDER_OWNER damage_source;
 static int demo_hit;
 static unsigned int action_frames, roar_sounds, damage_sounds;
 static int map_test;
+static unsigned int stomp_jump;
 static unsigned int enemy_damage_logs, map_stuns, map_defeats, map_contacts;
+static unsigned int rebound_logs;
 static unsigned int map_spawns, map_jumps;
 static unsigned long long audio_written, audio_energy, audio_queued, audio_time;
 static unsigned int audio_stops;
@@ -95,6 +97,7 @@ static void record_log(const char *text)
     if (strstr(text, "Original running/standing jump selected")) ++ground_jump_logs;
     if (strstr(text, "damage/recoil handler selected from a real enemy contact"))
         ++enemy_damage_logs;
+    if (strstr(text, "Original rebound sample 0 requested")) ++rebound_logs;
 }
 static void __attribute__((ms_abi)) log_text(const char *text)
 {
@@ -192,6 +195,10 @@ static void __attribute__((ms_abi)) poll(void)
         api.Input.KeyDown[0x50] = iteration >= 1000 && iteration < 1200;
         api.Input.KeyDown[0x2c] = iteration >= 700 && iteration < 750;
         api.Input.KeyPressed[0x2c] = iteration == 700;
+        if (stomp_jump && iteration >= stomp_jump && iteration < stomp_jump + 6) {
+            api.Input.KeyDown[0x2c] = 1;
+            api.Input.KeyPressed[0x2c] = iteration == stomp_jump;
+        }
         api.Input.KeyDown[0xe0] = (iteration >= 450 && iteration < 462) ||
             (iteration >= 900 && iteration < 912) || (iteration >= 1400 && iteration < 1412);
     }
@@ -577,8 +584,9 @@ int main(int argc, char **argv)
         strcmp(argv[1], "--emitters") == 0 || strcmp(argv[1], "--steering") == 0 ||
         strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0 ||
         strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0 ||
-        strcmp(argv[1], "--map") == 0)));
-    map_test = argc == 2 && strcmp(argv[1], "--map") == 0;
+        strcmp(argv[1], "--map") == 0 || strcmp(argv[1], "--map-stomp") == 0)));
+    stomp_jump = argc == 2 && strcmp(argv[1], "--map-stomp") == 0 ? 60 : 0;
+    map_test = stomp_jump || (argc == 2 && strcmp(argv[1], "--map") == 0);
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
     jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
     ground_steering = argc == 2 && strcmp(argv[1], "--ground-steering") == 0;
@@ -604,9 +612,15 @@ int main(int argc, char **argv)
             "%u landings, %u changed frames, %llu audio frames\n", map_spawns, map_contacts,
             map_stuns, map_defeats, enemy_damage_logs, map_jumps, changed, audio_written);
         assert(iteration == 2002 && shown == 2001 && changed > 200 && map_spawns >= 2 &&
-            map_contacts > 0 && enemy_damage_logs > 0 && map_stuns > 0 && map_jumps > 0);
+            map_contacts > 0 && map_jumps > 0);
         assert(audio_written > 800000 && audio_energy > 0 && audio_stops == 1 && !log_file);
-        puts("PASS: real map lizards, actual contacts/recoil, roar, jumping, music and Escape with file-only logs");
+        if (stomp_jump) {
+            assert(map_defeats == 1 && rebound_logs == 1 && enemy_damage_logs == 0);
+            puts("PASS: real-map stomp, rendered lizard death, Simba rebound, continued gameplay/music and Escape");
+        } else {
+            assert(enemy_damage_logs > 0 && map_stuns > 0);
+            puts("PASS: real map lizards, actual contacts/recoil, roar, jumping, music and Escape with file-only logs");
+        }
         return 0;
     }
     assert(resources_load_entry(&api, "LIONKING.EPF",

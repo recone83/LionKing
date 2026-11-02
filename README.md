@@ -1375,8 +1375,8 @@ Walking into it instead costs one health point. Defeated lizards do not
 respawn during the current run; live ones culled by scrolling can return at
 their original marker.
 
-Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `HYENADIE` banks and DS
-animation streams are used, including the original shared death bank.
+Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `DUST` banks and DS
+animation streams are used, including the original shared death effect.
 Map graphics, contour/tag planes and markers are not modified. Only
 lizards are active in this block: hyenas, porcupines, pickups, world hazards,
 enemy sound effects, health HUD and player death/restart are still pending.
@@ -1397,6 +1397,11 @@ damage transitions, one landing and 886410 PCM frames in its 20-second
 fixture, with clean Escape/audio/log shutdown. The unchanged default demo
 still matches 128064000 ARGB pixels. Host scene builds now also need
 `src/engine/enemies.c`.
+`tools/check_scene.c --map-stomp` exercises a real descending contact:
+one lizard defeat, Simba's rebound, all subsequent death frames, continued
+movement/roar/jumping and music, then clean Escape. The enemy test also renders
+each death tick: DS stream `0x13887` references `DUST` slot 65, not
+`HYENADIE` slot 66.
 Native QEMU also showed Simba and a real lizard together, accepted movement,
 roar and jumping, recorded seven damage/recoil events with 93 health left,
 one stun and one landing, and returned exit code zero on Escape.

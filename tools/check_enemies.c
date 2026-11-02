@@ -148,7 +148,10 @@ static void check_contact(void)
     tick();
     assert(lizard->handler == 0x11609 && (player.player.flags_high & 0x20));
     assert(lizard->timer == 31 && player.health == 10);
-    for (unsigned int i = 0; i < 33; ++i) tick();
+    for (unsigned int i = 0; i < 33; ++i) {
+        assert(render_object_pass(&renders, 0, 0, -1080, banks, 81, pixels) == 0);
+        tick();
+    }
     assert(lizard->destroyed && !lizard->object && enemies.defeated == 1);
     assert(render_object_pass(&renders, 0, 0, -1080, banks, 81, pixels) == 0);
     assert(engine_enemies_tick(&enemies, (RENDER_OWNER){700, 0}) == 0);
@@ -239,7 +242,7 @@ int main(void)
         packed, sizeof(packed), contours, sizeof(contours), &dictionary, &contour_size) == 0);
     assert(engine_map_collision_initialize(&collision, map, size, contours, contour_size) == 0);
     memcpy(original_map, map, size);
-    static const unsigned int indices[4] = {4, 12, 13, 14};
+    static const unsigned int indices[4] = {3, 12, 13, 14};
     for (unsigned int i = 0; i < 4; ++i) {
         unsigned int slot, loaded;
         assert(assets_load_named_bank(&api, "data/LIONKING.EPF", animation_level1_bank_list,

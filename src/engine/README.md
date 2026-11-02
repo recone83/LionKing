@@ -596,7 +596,11 @@ Przeniesiono przebieg `0x1109a`/`0x1127e` (patrol 0x8000, timer 100),
 oraz podzbiór `0x119e0`/`0x11a51` używany przez jaszczurki
 (pauzy przeszkód 70/10, hamowanie 0x1000, wznowienie patrolu).
 Wszystkie wizualne strumienie pochodzą z checksum-verified DS
-`0xa1fc..0x1405d`; sloty 66/74/75/76 są ładowane z oryginalnej listy.
+`0xa1fc..0x1405d`; sloty 65/74/75/76 są ładowane z oryginalnej listy.
+Śmierć `0x13887` wskazuje deskryptory `0xa3c4..0xa450`, które używają
+`DUST` (65), nie `HYENADIE` (66). Test przeciwników renderuje każdy
+tick śmierci, a `tools/check_scene.c --map-stomp` przechodzi rzeczywiste
+wskoczenie na jaszczurkę, odbicie Simby i dalszą grę aż do Escape.
 
 Kolizje korzystają z `render_objects_hit` i `render_local_rectangle_hit`,
 czyli bieżącej geometrii animacji i mirroringu, nie z przybliżonego promienia.
