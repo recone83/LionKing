@@ -38,14 +38,46 @@ on every lost life, including the last life before GAME OVER.
 With lives left, Simba restarts at
 the saved checkpoint (or the preview spawn), with health restored, empty
 roar charge and 100 ticks of immunity. Enemy instances are reset; their
-diagnostic counters remain cumulative. At zero lives the native scene
-returns cleanly to the launcher. The original game-over/menu artwork,
-additional death screen transitions, non-normal difficulty and special hazard-death
+diagnostic counters remain cumulative. At zero lives a continue screen
+allows a checkpoint restart or a return to the launcher. Additional original
+death screen transitions, non-normal difficulty and special hazard-death
 branches are not migrated by this block.
 The timed fatal support branch `0xc884` is connected separately: its
 original invisible `0x5e35` sequence delays zero health by exactly 100
 ticks before the normal death sequence. It no longer fails as an
 unsupported selector.
+
+Run `LIONKING.EXE --continue-test` to enter LEVEL1 directly in the zero-life
+continue-countdown state. The screen uses the archive's title palette,
+`CONTINUE.MCH`, animated `RAFIKI.MCH`, `NUMBERS.MCH` and `CONTINUE.AMF`.
+The sun selector uses `SUN.MCH` to resemble the reference screenshot; the
+original DOS code instead uses a paw. Left and Right select YES or NO;
+Space or Enter confirms. YES restores three lives at the saved checkpoint
+and resumes level music after Rafiki's acceptance animation. NO, Escape,
+or timeout leaves the screen. Normal difficulty starts with one continue;
+the number displayed at the bottom right is the number available when the
+screen opened. The original code consumes a continue upon entry, so after
+using it, the next zero-life event shows the original GAME OVER artwork
+instead. The counter uses the original number sprite and position, with
+the spiral sun from `CIRCLE.MCH` beside it as in the supplied reference
+image. The YES/NO selector separately uses `SUN.MCH`.
+The spiral uses LEVEL1's palette in reserved palette slots; the rest of the
+screen continues to use the title palette.
+
+The original initializes its loop counter to 720, and the native port runs
+721 logic ticks (about 14.3 seconds). The visual countdown is an addition:
+the recovered DOS code does not establish a countdown digit or wall-clock
+duration. It is placed to the right of Rafiki so no animation frame overlaps
+it. The original loop decrements its counter per rendered iteration, so
+exact DOS timing is not claimed. The shortcut loads the required resources
+without opening the main menu.
+
+The host `check_scene` tests `--continue-timeout`, `--continue-space`,
+`--continue-enter`, `--continue-no`, `--continue-left`, and
+`--continue-escape`, and `--continue-exhausted` exercise the shortcut,
+original-resource pixels, all-frame countdown separation, input, music,
+the second zero-life event, and audio cleanup. `--map-gameover` exercises
+the countdown after three deaths in the normal map path.
 
 `tools/check_pickups.c` uses real map markers and EPF banks to test healing,
 collection persistence, both complete upgrade flights/glows, every

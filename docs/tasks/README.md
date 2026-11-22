@@ -32,3 +32,5 @@ These task notes preserve the previous project README, split by topic and origin
 - [LEVEL1 enemies and real player contacts](28-level1-enemies-and-real-player-contacts.md) (original README lines 1549–1697)
 - [LEVEL1 pickups, checkpoint state and lives](29-level1-pickups-checkpoint-state-and-lives.md) (original README lines 1698–1807)
 - [LEVEL1 completion and next-level notice](30-level-transition.md)
+- [Bonus games: asset compatibility](31-bonus-assets.md)
+- [API 16 heap migration](32-api16-heap.md)

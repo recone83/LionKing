@@ -13,6 +13,10 @@ if ! command -v qemu-system-x86_64 >/dev/null 2>&1; then
     echo "Missing qemu-system-x86_64; install qemu-system-x86." >&2
     exit 1
 fi
+if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+    echo "The current DOS64 image requires accessible KVM; enable KVM and check /dev/kvm permissions." >&2
+    exit 1
+fi
 if [ ! -f "$Firmware" ]; then
     echo "Missing UEFI firmware: $Firmware; install ovmf or set OVMF_PATH." >&2
     exit 1
@@ -23,7 +27,7 @@ if [ ! -f "$Image" ]; then
 fi
 
 exec qemu-system-x86_64 \
-    -m 1G -accel tcg -cpu qemu64 \
+    -m 1G -accel kvm -cpu host -smp 4 \
     -device qemu-xhci -device usb-kbd -device usb-mouse \
     -device usb-storage,drive=u,removable=on \
     -drive "if=none,id=u,file=$Image,format=raw" \

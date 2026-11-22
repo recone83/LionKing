@@ -1,8 +1,8 @@
 #ifndef DOS64_FS_H
 #define DOS64_FS_H
 
-/* stdio-style file access, directory listing and raw disk access for DOS64 programs.
- * Header-only wrappers over DOS64_API.Fs / DOS64_API.Disk. Call fs_init(Api) first.
+/* stdio-style file access and directory listing for DOS64 and Windows programs.
+ * Header-only wrappers over DOS64_API.Fs. Call fs_init(Api) first.
  * Names match the C library, so do not combine with another libc. */
 
 #include "dos64_api.h"
@@ -78,19 +78,5 @@ static inline unsigned int fat_day(unsigned short Date) { return Date & 31u; }
 static inline unsigned int fat_hour(unsigned short Time) { return Time >> 11; }
 static inline unsigned int fat_minute(unsigned short Time) { return (Time >> 5) & 63u; }
 static inline unsigned int fat_second(unsigned short Time) { return (Time & 31u) * 2u; }
-
-/* Raw disk: 0 on success, otherwise an EFI status. */
-static inline int disk_present(void) { return (int)Dos64Fs->Disk.Present; }
-static inline unsigned int disk_sector_size(void) { return Dos64Fs->Disk.SectorSize; }
-static inline unsigned long long disk_sector_count(void) { return Dos64Fs->Disk.SectorCount; }
-static inline unsigned long long disk_read(unsigned long long Lba, unsigned long long Count, void *Buffer)
-{
-    return Dos64Fs->Disk.ReadSectors(Lba, Count, Buffer);
-}
-static inline unsigned long long disk_write(unsigned long long Lba, unsigned long long Count, const void *Buffer)
-{
-    return Dos64Fs->Disk.WriteSectors(Lba, Count, Buffer);
-}
-static inline unsigned long long disk_flush(void) { return Dos64Fs->Disk.Flush(); }
 
 #endif

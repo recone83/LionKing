@@ -100,6 +100,15 @@ int main(void)
     assert(stopped == 1 && !output.opened);
     puts("PASS: partial/zero audio writes preserve every frame, bounded queue and idempotent stop");
 
+    assert(music_effects_initialize(&player) == 0);
+    player.orders[0][0] = 1;
+    player.tracks[1][0].effect = 0x91;
+    player.tracks[1][0].parameter = 254;
+    player.voices[0].volume = 10;
+    assert(music_samples(&player, samples, 1) == 0 && player.voices[0].volume == 8);
+    assert(music_samples(&player, samples, 4410) == 0 && player.voices[0].volume == 8);
+    puts("PASS: fine volume slide applies once per row");
+
     static const unsigned char effect[] = {128, 255, 0, 129};
     assert(music_initialize(&player, data, size) == 0);
     reference = player;
@@ -349,5 +358,19 @@ int main(void)
     assert(samples[0] == 128 && samples[1] == 128 && samples[2] == 0 && samples[3] == 0);
     puts("PASS: title interpolation produces exact fractional PCM across loop/end boundaries; "
         "default gameplay/effect sampling remains unchanged");
+    unsigned int continue_size;
+    assert(resources_load_entry(&api, "data/LIONKING.EPF", "CONTINUE.AMF",
+        packed, sizeof(packed), data, sizeof(data), &dictionary, &continue_size) == 0);
+    assert(music_initialize(&player, data, continue_size) == 0);
+    reference = player;
+    assert(music_samples(&player, samples, MUSIC_RATE) == 0);
+    for (unsigned int pos = 0; pos < MUSIC_RATE; pos += 147)
+        assert(music_samples(&reference, fragmented + pos * 2, 147) == 0);
+    assert(memcmp(samples, fragmented, sizeof(samples)) == 0);
+    unsigned long long continue_energy = 0;
+    for (unsigned int i = 0; i < MUSIC_RATE * 2; ++i)
+        continue_energy += samples[i] < 0 ? (unsigned int)-samples[i] : (unsigned int)samples[i];
+    assert(continue_energy > 1000000);
+    puts("PASS: original CONTINUE.AMF produces non-silent, chunk-invariant PCM");
     return 0;
 }

@@ -3,8 +3,9 @@
 
 /* Passed to a program's entry point in RCX (Microsoft x64 ABI for PE and ELF).
  * The program runs in ring 0 with full access to the machine; the table is only a convenience.
- * Entry point: int __attribute__((ms_abi)) start(const DOS64_API *Api); the return value is
- * the exit code shown by the shell. Fields are only ever appended; check Size before use. */
+ * The loader calls the entry using the Microsoft x64 ABI. SDK startup adapters call the
+ * application's int start(const DOS64_API *Api) using its compiler's native ABI.
+ * The return value is the shell exit code. Fields are appended; check Size before use. */
 /* Colors are straight-alpha 0xAARRGGBB. Alpha is 0 transparent, 255 opaque; blending is source-over.
  * Graphics coordinates are signed pixels (clipped to the selected surface).
  * Drawing goes to a back buffer; call Present() to show it. The text console shares the screen.
@@ -94,20 +95,8 @@ typedef struct DOS64_FS {
     unsigned long long (__attribute__((ms_abi)) *LastError)(void);
 } DOS64_FS;
 
-/* Raw access to the whole USB data disk, below the file system: you may overwrite anything,
- * including the partition table and FAT. Sectors are SectorSize bytes. Present is 0 when no
- * disk is attached. Returns 0 on success, otherwise an EFI status. */
-typedef struct DOS64_DISK {
-    unsigned int Present;
-    unsigned int SectorSize;
-    unsigned long long SectorCount;
-    unsigned long long (__attribute__((ms_abi)) *ReadSectors)(unsigned long long Lba, unsigned long long Count, void *Buffer);
-    unsigned long long (__attribute__((ms_abi)) *WriteSectors)(unsigned long long Lba, unsigned long long Count, const void *Buffer);
-    unsigned long long (__attribute__((ms_abi)) *Flush)(void);
-} DOS64_DISK;
-
 /* Time. Monotonic values come from the calibrated TSC (nanosecond resolution, start near 0 at boot).
- * Now() reads the real-time clock (1 s resolution, UTC as set in firmware). UnixNanoseconds() is the
+ * Now() reads the real-time clock (1 s resolution, RTC assumed UTC). UnixNanoseconds() is the
  * wall clock extended with the TSC, so it is precise to ~ns but only as accurate as the RTC second
  * captured when the program started (up to 1 s off). */
 typedef struct DOS64_DATETIME {
@@ -122,7 +111,7 @@ typedef struct DOS64_TIME {
     unsigned long long (__attribute__((ms_abi)) *Nanoseconds)(void);        /* monotonic */
     void (__attribute__((ms_abi)) *DelayNanoseconds)(unsigned long long Ns);   /* busy-wait, no HLT, no polling */
     int (__attribute__((ms_abi)) *Now)(DOS64_DATETIME *Time);               /* 0 on success */
-    unsigned long long (__attribute__((ms_abi)) *UnixNanoseconds)(void);    /* since 1970-01-01 UTC, 0 if no clock */
+    unsigned long long (__attribute__((ms_abi)) *UnixNanoseconds)(void);    /* 0 if unavailable or outside unsigned ns range */
 } DOS64_TIME;
 
 /* Audio: 16-bit signed interleaved stereo, 48000 or 44100 Hz, non-blocking ring buffer.
@@ -199,6 +188,13 @@ typedef struct DOS64_SYNC {
     int (__attribute__((ms_abi)) *ConditionBroadcast)(DOS64_CONDITION Condition);
 } DOS64_SYNC;
 
+typedef struct DOS64_HEAP {
+    void *(__attribute__((ms_abi)) *Allocate)(unsigned long long Size);
+    void *(__attribute__((ms_abi)) *AllocateZeroed)(unsigned long long Count, unsigned long long Size);
+    void *(__attribute__((ms_abi)) *Reallocate)(void *Pointer, unsigned long long Size);
+    int (__attribute__((ms_abi)) *Free)(void *Pointer);
+} DOS64_HEAP;
+
 typedef struct DOS64_API {
     unsigned long long Size;                       /* sizeof(DOS64_API) of the running kernel */
     unsigned long long Version;
@@ -208,13 +204,13 @@ typedef struct DOS64_API {
     DOS64_GFX Gfx;
     DOS64_INPUT Input;
     DOS64_FS Fs;
-    DOS64_DISK Disk;
+    unsigned long long ReservedDisk[5]; /* ABI reservation; do not use. */
     DOS64_TIME Time;
     DOS64_AUDIO Audio;
     DOS64_SYSTEM System;
     /* Version 10+: returns 0 on success, -1 for an unsupported style. */
     int (__attribute__((ms_abi)) *SetTextStyle)(DOS64_TEXT_STYLE Style);
-    /* Version 11+: cooperative single-CPU thread lifecycle. */
+    /* Version 11+: cooperative threads. */
     DOS64_THREADS Threads;
     /* Version 12+: synchronization; Sleep now blocks only the calling thread. */
     DOS64_SYNC Sync;
@@ -226,8 +222,11 @@ typedef struct DOS64_API {
     void (__attribute__((ms_abi)) *DrawImage)(const DOS64_COLOR *Pixels,
         unsigned int SourceWidth, unsigned int SourceHeight, unsigned int Stride,
         int X, int Y, unsigned int Width, unsigned int Height);
+    unsigned long long ReservedMemory[3]; /* ABI reservation; do not use. */
+    /* Version 16+: program-lifetime heap; main thread only. */
+    DOS64_HEAP Heap;
 } DOS64_API;
 
-#define DOS64_API_VERSION 14
+#define DOS64_API_VERSION 16
 
 #endif

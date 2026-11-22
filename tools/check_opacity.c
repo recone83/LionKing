@@ -112,6 +112,7 @@ int main(void)
     test_api.Fs.Seek = seek_file; test_api.Fs.Tell = tell_file;
     test_api.Fs.Read = read_file; test_api.Fs.Write = write_file;
     assert(lk_platform_init(&test_api) == 0);
+    assert(game_buffers_initialize(&test_api) == 0);
     for (unsigned int i = 0; i < 256; ++i)
         palette[i] = DOS64_COLOR_ARGB(i, i, (i * 73) & 255, 255 - i);
     expected_source = expected_full; expected_below = expected_background;
@@ -131,15 +132,15 @@ int main(void)
 
     unsigned int map_size, loaded;
     assert(resources_load_entry(&test_api, "data/LIONKING.EPF", "LEVEL1.MAP",
-        packed, sizeof(packed), map, sizeof(map), &dictionary, &map_size) == 0);
+        packed, sizeof(game_buffers->packed), map, sizeof(game_buffers->map), &dictionary, &map_size) == 0);
     assert(vga_load_palette(map, map_size, palette) == 0);
     RENDER_SPRITE_BANK banks[95] = {{0}};
     assert(resources_load_entry(&test_api, "data/LIONKING.EPF", "BARS.MCH",
-        packed, sizeof(packed), hud_sprites, sizeof(hud_sprites), &dictionary, &loaded) == 0);
+        packed, sizeof(game_buffers->packed), hud_sprites, sizeof(game_buffers->hud_sprites), &dictionary, &loaded) == 0);
     banks[1] = (RENDER_SPRITE_BANK){hud_sprites, loaded};
     unsigned int slot;
     assert(assets_load_named_bank(&test_api, "data/LIONKING.EPF", assets_young_bank_list,
-        sizeof(assets_young_bank_list), ASSETS_YOUNG_IDLE_INDEX, packed, sizeof(packed),
+        sizeof(assets_young_bank_list), ASSETS_YOUNG_IDLE_INDEX, packed, sizeof(game_buffers->packed),
         player_sprites[ASSETS_YOUNG_IDLE_INDEX], sizeof(player_sprites[0]), &dictionary,
         &slot, &loaded) == 0);
     banks[slot] = (RENDER_SPRITE_BANK){player_sprites[ASSETS_YOUNG_IDLE_INDEX], loaded};
@@ -201,7 +202,7 @@ int main(void)
         actual_background, &dim_phase) == 0 && !dim_phase);
     unsigned int death_slot;
     assert(assets_load_named_bank(&test_api, "data/LIONKING.EPF", assets_young_bank_list,
-        sizeof(assets_young_bank_list), 2, packed, sizeof(packed), player_sprites[2],
+        sizeof(assets_young_bank_list), 2, packed, sizeof(game_buffers->packed), player_sprites[2],
         sizeof(player_sprites[2]), &dictionary, &death_slot, &loaded) == 0 &&
         death_slot == 8);
     banks[death_slot] = (RENDER_SPRITE_BANK){player_sprites[2], loaded};
@@ -255,6 +256,8 @@ int main(void)
     assert(!fade.active && memcmp(fade.current, fade.target, 768) == 0);
     puts("PASS: actual lost-life transition starts the original fade, preserves "
         "eight colors, darkens the rest and deducts exactly one life");
+    assert(memory_free(game_buffers) == 0);
+    game_buffers = 0;
     assert(lk_platform_finish(0) == 0);
     assert(mock_layer_creates == 1 && mock_layer_destroys == 1 && !mock_layer_live);
     assert(presentations == 5 && clears == 5 && compared == 320000);

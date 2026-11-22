@@ -77,6 +77,8 @@ failure. Build it with the native source list from [build.sh](../../build.sh),
 substituting the host compiler and `tools/check_frontend.c` for SDK startup:
 
 ```bash
+mkdir -p build
+perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
 cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -fno-omit-frame-pointer -DLK_DOS64_NATIVE -Iinclude -Isrc \
     tools/check_frontend.c src/dos64/start.c src/dos64/platform.c src/dos64/frontend.c \
@@ -84,7 +86,7 @@ cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
     src/libs/vga.c src/engine/tile_blitters.c src/engine/tiles.c src/engine/timing.c \
     src/engine/objects.c src/engine/input.c src/engine/render.c src/engine/assets.c \
     src/engine/animation.c src/engine/physics.c src/engine/behaviors.c \
-    src/engine/music.c src/engine/enemies.c src/engine/pickups.c \
+    src/engine/music.c src/engine/bonus.c src/engine/enemies.c src/engine/pickups.c \
     src/engine/lifecycle.c src/engine/hud.c build/animation_data.c \
     -o build/check_frontend_san
 build/check_frontend_san

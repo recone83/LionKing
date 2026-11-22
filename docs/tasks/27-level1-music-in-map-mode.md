@@ -31,9 +31,12 @@ Other preview modes remain unchanged and silent.
 Focused validation:
 
 ```
+mkdir -p build
+perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
 cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-  tools/check_music.c src/engine/music.c src/engine/resources.c \
-  src/engine/resource_decoder.c -o build/check_music
+  tools/check_music.c src/engine/music.c src/engine/assets.c src/engine/animation.c \
+  src/engine/resources.c src/engine/resource_decoder.c build/animation_data.c \
+  -o build/check_music
 build/check_music
 ```
 

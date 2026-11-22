@@ -2,6 +2,7 @@
 #define LIONKING_MOCK_LAYERS_H
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 #include "dos64_api.h"
 
@@ -11,6 +12,14 @@ static int mock_layer_live, mock_layer_selected, mock_layer_visible;
 static unsigned int mock_layer_creates, mock_layer_destroys;
 static int mock_layer_failure;
 static void (__attribute__((ms_abi)) *mock_base_clear)(void);
+static void * __attribute__((ms_abi)) mock_heap_alloc(unsigned long long size)
+{ return malloc((size_t)size); }
+static void * __attribute__((ms_abi)) mock_heap_calloc(unsigned long long count, unsigned long long size)
+{ return calloc((size_t)count, (size_t)size); }
+static void * __attribute__((ms_abi)) mock_heap_realloc(void *ptr, unsigned long long size)
+{ return realloc(ptr, (size_t)size); }
+static int __attribute__((ms_abi)) mock_heap_free(void *ptr)
+{ free(ptr); return 0; }
 
 static int __attribute__((ms_abi)) mock_create_layer(unsigned int width, unsigned int height)
 {
@@ -81,6 +90,7 @@ static void __attribute__((ms_abi)) mock_fill_rects(const DOS64_RECT *rects, uns
 static void mock_install_layers(DOS64_API *api)
 {
     assert(!mock_layer_live);
+    api->Heap = (DOS64_HEAP){mock_heap_alloc, mock_heap_calloc, mock_heap_realloc, mock_heap_free};
     mock_base_clear = api->Gfx.Clear;
     api->Gfx.Clear = mock_clear_layer;
     api->Gfx.SelectLayer = mock_select_layer;

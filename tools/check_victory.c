@@ -299,7 +299,9 @@ int main(int argc, char **argv)
     int result;
     if (muted) {
         assert(lk_platform_init(&api) == 0);
-        result = lk_platform_finish(frontend_victory(&api, &api, 0) != 0);
+        result = frontend_victory(&api, &api, 0) != 0;
+        if (frontend_release() != 0) result = 1;
+        result = lk_platform_finish(result);
     } else result = start(&api);
     assert(!log_file && !audio_live && (muted || completions == 1));
     if (missing || audio_failure) {

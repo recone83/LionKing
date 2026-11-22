@@ -16,9 +16,21 @@
 #define DOS64_SERVICE_AUDIO 16ULL
 #define DOS64_SERVICE_FS 32ULL
 #define DOS64_SERVICE_SYSTEM 64ULL
+#define DOS64_SERVICE_HEAP 512ULL
 #define DOS64_REQUIRED_SERVICES (DOS64_SERVICE_TEXT | DOS64_SERVICE_GFX | \
                                  DOS64_SERVICE_INPUT | DOS64_SERVICE_TIME | \
                                  DOS64_SERVICE_FS | DOS64_SERVICE_SYSTEM)
+
+/* Use once at file scope in a PE app linked with dos64_startup.o. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern const volatile unsigned long long dos64_app_required_services;
+#ifdef __cplusplus
+}
+#endif
+#define DOS64_REQUIRE_SERVICES(Services) \
+    const volatile unsigned long long dos64_app_required_services = (Services)
 
 typedef int (__attribute__((ms_abi)) *DOS64_APPLICATION)(const DOS64_API *Api);
 

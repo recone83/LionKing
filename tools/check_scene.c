@@ -3,10 +3,12 @@
 #include <string.h>
 #include "mock_layers.h"
 #include "dos64/platform.h"
+#include "dos64/frontend.h"
 #include "engine/behaviors.h"
 #include "engine/animation_data.h"
 #include "engine/assets.h"
 #include "engine/resources.h"
+#include "engine/sprites.h"
 #include "engine/tiles.h"
 #include "engine/timing.h"
 #include "libs/vga.h"
@@ -50,6 +52,23 @@ static int map_test;
 static int map_animation;
 static int map_lifecycle;
 static int map_gameover;
+static int continue_test;
+static unsigned int continue_started, continue_accepted, continue_frames;
+static unsigned int exhausted_started, exhausted_frames, accept_animation_frames;
+static DOS64_COLOR countdown_first[20 * 8];
+static int countdown_changed;
+static unsigned int selector_left_frames, selector_right_frames;
+static unsigned char continue_reference[64000];
+static unsigned char gameover_reference[64000];
+static DOS64_COLOR continue_palette[256];
+static DOS64_COLOR continue_level_palette[256], gameover_palette[256];
+static unsigned char continue_title[2701], continue_rafiki[50205];
+static unsigned char continue_digits[1826], continue_marker[4096];
+static unsigned char continue_circle[2653];
+static unsigned char continue_gameover[4096];
+static unsigned int continue_title_size, continue_rafiki_size, continue_digits_size, continue_marker_size;
+static unsigned int continue_circle_size;
+static unsigned int continue_gameover_size;
 static unsigned int gameover_iteration;
 static unsigned int restart_iteration;
 static unsigned int map_deaths, map_restarts, map_lives, map_collected;
@@ -59,6 +78,7 @@ static unsigned int rebound_logs;
 static unsigned int stable_background_frames, animation_roar_logs;
 static unsigned int map_spawns, map_jumps;
 static unsigned long long audio_written, audio_energy, audio_queued, audio_time;
+static unsigned long long continue_audio_start, continue_energy_start;
 static unsigned int audio_stops;
 static int audio_opened;
 static DOS64_COLOR previous_map_frame[64000];
@@ -81,7 +101,18 @@ static unsigned char player_collision_flags, flip_sprites[ASSETS_YOUNG_BANK_COUN
 static RENDER_OWNER previous_player_position;
 static void record_log(const char *text)
 {
-    if (strstr(text, "original GAMEOVER presentation.")) gameover_iteration = iteration;
+    if (strstr(text, "continue countdown started")) {
+        ++continue_started;
+        continue_audio_start = audio_written;
+        continue_energy_start = audio_energy;
+    }
+    if (strstr(text, "continue accepted")) ++continue_accepted;
+    if (strstr(text, "continue accepted")) restart_iteration = iteration;
+    if (strstr(text, "no continues remaining; GAME OVER started")) {
+        ++exhausted_started;
+        gameover_iteration = iteration;
+    }
+    if (strstr(text, "continue countdown started")) gameover_iteration = iteration;
     if (strstr(text, "restarted at the saved checkpoint.")) restart_iteration = iteration;
     if (strstr(text, "failed") || strstr(text, "invalid") || strstr(text, "cannot")) {
         fputs(text, stderr);
@@ -210,7 +241,7 @@ static unsigned long long __attribute__((ms_abi)) audio_write(const short *frame
     return count;
 }
 static void __attribute__((ms_abi)) audio_stop(void)
-{ assert(audio_opened); audio_opened = 0; ++audio_stops; }
+{ assert(audio_opened); audio_opened = 0; audio_queued = 0; ++audio_stops; }
 static void __attribute__((ms_abi)) poll(void)
 {
     now += 10000000ULL;
@@ -244,6 +275,24 @@ static void __attribute__((ms_abi)) poll(void)
             memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
             api.Input.KeyDown[0x4f] = !map_gameover || iteration - restart_iteration < 280;
         }
+        if (continue_test) {
+            memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
+            memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
+            if ((continue_test == 4 || continue_test == 5) && iteration == 60)
+                api.Input.KeyPressed[0x4f] = 1;
+            if (continue_test == 5 && iteration == 80)
+                api.Input.KeyPressed[0x50] = 1;
+            if (continue_test == 6 && iteration == 80)
+                api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
+            if (continue_test == 7 && continue_accepted && !exhausted_started)
+                api.Input.KeyDown[0x4f] = iteration - restart_iteration < 280;
+            if (continue_test > 1 && iteration == 101) {
+                unsigned int key = continue_test == 2 ? 0x2c : 0x28;
+                api.Input.KeyDown[key] = api.Input.KeyPressed[key] = 1;
+            }
+            if (continue_test > 1 && continue_test < 6 && continue_test != 4 && iteration == 500)
+                api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
+        }
     }
     if (ground_steering && iteration <= 1400) {
         unsigned int phase = iteration % 400;
@@ -276,7 +325,7 @@ static void __attribute__((ms_abi)) poll(void)
         api.Input.KeyDown[0x4f] = 1;
         api.Input.KeyPressed[0x4f] = iteration == 41;
     }
-    if (iteration == (map_gameover ? 20002U : map_lifecycle ? 6002U : 2002U)) {
+    if (iteration == (map_gameover || continue_test == 7 ? 20002U : map_lifecycle ? 6002U : 2002U)) {
         api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
     }
     if (jump_test && api.Input.KeyPressed[0x2c]) {
@@ -293,7 +342,7 @@ static void __attribute__((ms_abi)) poll(void)
         }
         ground_taps |= taps;
     }
-    assert(iteration <= (map_gameover ? 20002U : map_lifecycle ? 6002U : 2002U));
+    assert(iteration <= (map_gameover || continue_test == 7 ? 20002U : map_lifecycle ? 6002U : 2002U));
 }
 static void update_reference(void *context)
 {
@@ -571,6 +620,49 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
     }
     assert(w == 320 && h == 200 && stride == 320 && x == 0 && y == 40 && dw == 640 && dh == 400);
     if (map_test) {
+        if (exhausted_started) {
+            if (!exhausted_frames)
+                for (unsigned int i = 0; i < 64000; ++i)
+                    assert(image[i] == gameover_palette[gameover_reference[i]]);
+            ++exhausted_frames;
+        }
+        if ((continue_test || (map_gameover && continue_started)) && !continue_accepted &&
+            !exhausted_started) {
+            if (!continue_frames) {
+                for (unsigned int i = 0; i < 64000; ++i)
+                    assert(image[i] == continue_palette[continue_reference[i]]);
+            }
+            if (continue_test == 4 || continue_test == 5) {
+                unsigned int left = 0, right = 0;
+                for (unsigned int row = 44; row < 68; ++row)
+                    for (unsigned int col = 0; col < 26; ++col) {
+                        left += (image[row * 320 + 67 + col] & 0x00ffffffU) != 0;
+                        right += (image[row * 320 + 163 + col] & 0x00ffffffU) != 0;
+                    }
+                if (left) ++selector_left_frames;
+                if (right) ++selector_right_frames;
+            }
+            unsigned int visible = 0;
+            for (unsigned int row = 16; row < 32; ++row)
+                for (unsigned int col = 89; col < 231; ++col)
+                    visible += (image[row * 320 + col] & 0x00ffffffU) != 0;
+            assert(visible > 0);
+            for (unsigned int row = 0; row < 8; ++row)
+                for (unsigned int col = 0; col < 20; ++col) {
+                    DOS64_COLOR pixel = image[(93 + row) * 320 + 203 + col];
+                    unsigned int index = row * 20 + col;
+                    if (!continue_frames) countdown_first[index] = pixel;
+                    else if (countdown_first[index] != pixel) countdown_changed = 1;
+                }
+            ++continue_frames;
+            if (continue_test > 1 && iteration > 101) {
+                unsigned int visible_digit = 0;
+                for (unsigned int row = 93; row < 108; ++row)
+                    for (unsigned int col = 203; col < 218; ++col)
+                        visible_digit += (image[row * 320 + col] & 0x00ffffffU) != 0;
+                if (!visible_digit) ++accept_animation_frames;
+            }
+        }
         if (map_animation && shown) {
             for (unsigned int row = 0; row < 80; ++row)
                 for (unsigned int column = 0; column < 320; ++column) {
@@ -648,12 +740,26 @@ int main(int argc, char **argv)
         strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0 ||
         strcmp(argv[1], "--map") == 0 || strcmp(argv[1], "--map-stomp") == 0 ||
         strcmp(argv[1], "--map-animation") == 0 || strcmp(argv[1], "--map-lifecycle") == 0 ||
-        strcmp(argv[1], "--map-gameover") == 0)));
+        strcmp(argv[1], "--map-gameover") == 0 ||
+        strcmp(argv[1], "--continue-timeout") == 0 ||
+        strcmp(argv[1], "--continue-space") == 0 ||
+        strcmp(argv[1], "--continue-enter") == 0 ||
+        strcmp(argv[1], "--continue-no") == 0 ||
+        strcmp(argv[1], "--continue-left") == 0 ||
+        strcmp(argv[1], "--continue-escape") == 0 ||
+        strcmp(argv[1], "--continue-exhausted") == 0)));
+    if (argc == 2 && strcmp(argv[1], "--continue-timeout") == 0) continue_test = 1;
+    if (argc == 2 && strcmp(argv[1], "--continue-space") == 0) continue_test = 2;
+    if (argc == 2 && strcmp(argv[1], "--continue-enter") == 0) continue_test = 3;
+    if (argc == 2 && strcmp(argv[1], "--continue-no") == 0) continue_test = 4;
+    if (argc == 2 && strcmp(argv[1], "--continue-left") == 0) continue_test = 5;
+    if (argc == 2 && strcmp(argv[1], "--continue-escape") == 0) continue_test = 6;
+    if (argc == 2 && strcmp(argv[1], "--continue-exhausted") == 0) continue_test = 7;
     map_gameover = argc == 2 && strcmp(argv[1], "--map-gameover") == 0;
     map_lifecycle = map_gameover || (argc == 2 && strcmp(argv[1], "--map-lifecycle") == 0);
     map_animation = argc == 2 && strcmp(argv[1], "--map-animation") == 0;
     stomp_jump = argc == 2 && strcmp(argv[1], "--map-stomp") == 0 ? 104 : 0;
-    map_test = map_lifecycle || map_animation || stomp_jump ||
+    map_test = continue_test || map_lifecycle || map_animation || stomp_jump ||
         (argc == 2 && strcmp(argv[1], "--map") == 0);
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
     jump_steering = argc == 2 && strcmp(argv[1], "--jump-steering") == 0;
@@ -664,7 +770,7 @@ int main(int argc, char **argv)
         (argc == 2 && strcmp(argv[1], "--flight") == 0);
     deflection_test = argc == 2 && strcmp(argv[1], "--deflection") == 0;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION;
-    api.Arguments = map_test ? "--map" : ground_test ? "--preview" : jump_test ? "--jump" : flight_test ? "--flight" :
+    api.Arguments = continue_test ? "--continue-test" : map_test ? "--map" : ground_test ? "--preview" : jump_test ? "--jump" : flight_test ? "--flight" :
         deflection_test ? "--deflection" : "--emitters";
     api.Write = log_text; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
@@ -677,7 +783,129 @@ int main(int argc, char **argv)
         api.Audio.Present = 1; api.Audio.Open = audio_open; api.Audio.Write = audio_write;
         api.Audio.FreeFrames = free_frames; api.Audio.QueuedFrames = queued_frames;
         api.Audio.Stop = audio_stop;
+        if (continue_test || map_gameover) {
+            unsigned int size;
+            assert(resources_load_entry(&api, "LIONKING.EPF", "LEVEL1.MAP", packed, sizeof(packed),
+                map, sizeof(map), &dictionary, &size) == 0);
+            assert(vga_load_palette(map, size, continue_level_palette) == 0);
+        }
+        if (continue_test == 1) {
+            assert(frontend_prepare_continue(&api, continue_level_palette) == 0);
+            assert(frontend_start_continue(&api, 0) == 0);
+            assert(frontend_service_continue() == 0 && !audio_opened && !audio_stops);
+            frontend_stop_continue();
+            assert(frontend_release() == 0);
+        }
+        if (continue_test || map_gameover) {
+            unsigned int size;
+            assert(resources_load_entry(&api, "LIONKING.EPF", "TITLES.MAP", packed, sizeof(packed),
+                map, sizeof(map), &dictionary, &size) == 0);
+            assert(vga_load_palette(map, size, continue_palette) == 0);
+            memcpy(gameover_palette, continue_palette, sizeof(gameover_palette));
+            for (unsigned int i = 0; i < 16; ++i)
+                continue_palette[240 + i] = continue_level_palette[128 + i];
+            assert(resources_load_entry(&api, "LIONKING.EPF", "CONTINUE.MCH", packed, sizeof(packed),
+                continue_title, sizeof(continue_title), &dictionary, &continue_title_size) == 0);
+            assert(resources_load_entry(&api, "LIONKING.EPF", "RAFIKI.MCH", packed, sizeof(packed),
+                continue_rafiki, sizeof(continue_rafiki), &dictionary, &continue_rafiki_size) == 0);
+            assert(resources_load_entry(&api, "LIONKING.EPF", "NUMBERS.MCH", packed, sizeof(packed),
+                continue_digits, sizeof(continue_digits), &dictionary, &continue_digits_size) == 0);
+            assert(resources_load_entry(&api, "LIONKING.EPF", "SUN.MCH", packed, sizeof(packed),
+                continue_marker, sizeof(continue_marker), &dictionary, &continue_marker_size) == 0);
+            assert(resources_load_entry(&api, "LIONKING.EPF", "CIRCLE.MCH", packed, sizeof(packed),
+                continue_circle, sizeof(continue_circle), &dictionary, &continue_circle_size) == 0);
+            assert(resources_load_entry(&api, "LIONKING.EPF", "GAMEOVER.MCH", packed, sizeof(packed),
+                continue_gameover, sizeof(continue_gameover), &dictionary, &continue_gameover_size) == 0);
+            const unsigned char *screen_assets[] = {
+                continue_title, continue_rafiki, continue_digits, continue_marker, continue_gameover
+            };
+            const unsigned int screen_sizes[] = {
+                continue_title_size, continue_rafiki_size, continue_digits_size,
+                continue_marker_size, continue_gameover_size
+            };
+            for (unsigned int asset = 0; asset < 5; ++asset) {
+                unsigned int frames = screen_assets[asset][0] | (unsigned int)screen_assets[asset][1] << 8;
+                for (unsigned int frame = 0; frame < frames; ++frame) {
+                    memset(pixels, 0, sizeof(pixels));
+                    assert(render_draw_sprite(screen_assets[asset], screen_sizes[asset],
+                        (unsigned short)frame, 0, 0, pixels) == 0);
+                    for (unsigned int i = 0; i < 64000; ++i) assert(pixels[i] < 240);
+                }
+            }
+            assert(render_draw_sprite(continue_title, continue_title_size, 0, 89, 16, continue_reference) == 0);
+            assert(render_draw_sprite(continue_rafiki, continue_rafiki_size, 0, 96, 70, continue_reference) == 0);
+            assert(render_draw_sprite(continue_digits, continue_digits_size, 9, 150, 38, continue_reference) == 0);
+            assert(render_draw_sprite(continue_marker, continue_marker_size, 0, 67, 44, continue_reference) == 0);
+            memset(background, 0, sizeof(background));
+            assert(render_draw_sprite(continue_circle, continue_circle_size, 0, 242, 161, background) == 0);
+            for (unsigned int i = 0; i < 64000; ++i) {
+                if (!background[i]) continue;
+                assert(background[i] >= 128 && background[i] < 144);
+                continue_reference[i] = (unsigned char)(background[i] + 112);
+            }
+            assert(render_draw_sprite(continue_digits, continue_digits_size, 1, 218, 118, continue_reference) == 0);
+            assert(render_draw_sprite(continue_rafiki, continue_rafiki_size, 0, 96, 70, gameover_reference) == 0);
+            assert(render_draw_sprite(continue_gameover, continue_gameover_size, 0, 95, 32, gameover_reference) == 0);
+            for (unsigned int frame = 0; frame < 20; ++frame) {
+                memset(pixels, 0, sizeof(pixels));
+                assert(render_draw_sprite(continue_rafiki, continue_rafiki_size,
+                    (unsigned short)frame, 96, 70, pixels) == 0);
+                for (unsigned int digit = 0; digit < 10; ++digit) {
+                    memset(background, 0, sizeof(background));
+                    assert(render_draw_sprite(continue_digits, continue_digits_size,
+                        (unsigned short)digit, 150, 38, background) == 0);
+                    for (unsigned int i = 0; i < 64000; ++i)
+                        assert(!pixels[i] || !background[i]);
+                }
+            }
+            if (continue_test == 1) {
+                assert(frontend_prepare_continue(&api, continue_level_palette) == 0);
+                for (unsigned int frame = 0; frame < 4; ++frame) {
+                    memset(pixels, 0, sizeof(pixels));
+                    memset(background, 0, sizeof(background));
+                    assert(frontend_continue(pixels, palette, FRONTEND_CONTINUE_TICKS - frame * 8,
+                        0, 1, 0, 0) == 0);
+                    assert(render_draw_sprite(continue_circle, continue_circle_size,
+                        (unsigned short)frame, 242, 161, background) == 0);
+                    for (unsigned int i = 0; i < 64000; ++i) {
+                        if (!background[i]) continue;
+                        assert(background[i] >= 128 && background[i] < 144);
+                        background[i] = (unsigned char)(background[i] + 112);
+                    }
+                    assert(render_draw_sprite(continue_digits, continue_digits_size,
+                        1, 218, 118, background) == 0);
+                    for (unsigned int row = 160; row < 195; ++row)
+                        for (unsigned int col = 240; col < 290; ++col)
+                            assert(pixels[row * 320 + col] == background[row * 320 + col]);
+                    for (unsigned int i = 0; i < 16; ++i)
+                        assert(palette[240 + i] == continue_level_palette[128 + i]);
+                }
+                assert(frontend_release() == 0);
+            }
+        }
         assert(start(&api) == 0);
+        if (continue_test) {
+            assert(continue_started == 1 && continue_frames > 50);
+            assert(audio_written > continue_audio_start && audio_energy > continue_energy_start);
+            if (continue_test == 1) {
+                assert(!continue_accepted && countdown_changed && iteration >= 1420 && iteration <= 1450);
+                assert(map_lives == 0 && audio_stops == 2);
+            } else if (continue_test == 4 || continue_test == 6) {
+                assert(!continue_accepted && map_lives == 0 && audio_stops == 2);
+                if (continue_test == 4) assert(selector_left_frames && selector_right_frames);
+            } else if (continue_test == 7) {
+                assert(continue_accepted == 1 && exhausted_started == 1 && exhausted_frames > 390);
+                assert(map_lives == 0 && map_deaths == 3 && audio_stops == 4);
+            } else {
+                assert(continue_accepted == 1 && map_lives == 3 && iteration == 500);
+                assert(audio_stops == 3);
+                assert(accept_animation_frames > 200);
+                if (continue_test == 5) assert(selector_left_frames && selector_right_frames);
+            }
+            assert(!audio_opened && !log_file);
+            puts("PASS: direct continue countdown, visible text, input and audio cleanup");
+            return 0;
+        }
         printf("Map measurements: %u spawns/%u contacts/%u stuns/%u defeats, %u damage logs/"
             "%u landings, %u changed frames, %llu audio frames\n", map_spawns, map_contacts,
             map_stuns, map_defeats, enemy_damage_logs, map_jumps, changed, audio_written);
@@ -688,11 +916,13 @@ int main(int argc, char **argv)
             assert(map_deaths > 0 && map_restarts > 0 && map_lives == 3 - map_deaths);
             if (map_gameover) {
                 assert(map_deaths == 3 && map_restarts == 2 && map_lives == 0);
-                assert(gameover_iteration && iteration - gameover_iteration >= 395 &&
-                    iteration < 20002);
+                assert(gameover_iteration && iteration - gameover_iteration >= 1420 &&
+                    iteration - gameover_iteration <= 1450 && countdown_changed &&
+                    continue_frames > 1400 && iteration < 20002);
             } else assert(shown > 2001 && iteration <= 6002);
         } else assert(iteration == 2002 && shown == 2001 && !map_deaths);
-        assert(audio_written > 800000 && audio_energy > 0 && audio_stops == 1 && !log_file);
+        assert(audio_written > 800000 && audio_energy > 0 &&
+            audio_stops == (map_gameover ? 2U : 1U) && !log_file);
         if (map_lifecycle) {
             puts("PASS: actual native adapter fatal enemy damage, death animation and restored gameplay without fixture hits");
         } else if (map_animation) {

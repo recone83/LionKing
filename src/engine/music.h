@@ -20,6 +20,7 @@ typedef struct {
 typedef struct {
     unsigned int instrument, volume, period, phase, step;
     unsigned int vibrato_speed, vibrato_depth, vibrato_phase;
+    unsigned int delayed_note, delayed_instrument, delayed_volume, delay_tick;
     int volume_slide;
     int volume_slide_memory;
     int vibrato;

@@ -1,9 +1,10 @@
 #include "platform.h"
+#include "dos64_memory.h"
 
 static const DOS64_API *runtime;
 static void *log_file;
 static int log_failed;
-static DOS64_COLOR frame[LK_WIDTH * LK_HEIGHT];
+static DOS64_COLOR *frame;
 static const DOS64_COLOR matte = 0xff000000U;
 static unsigned long long fps_begin;
 static unsigned int fps_frames;
@@ -221,6 +222,13 @@ int lk_platform_init(const DOS64_API *api)
         api->Write("Lion King: cannot create LIONKING.LOG.\n");
         return -1;
     }
+    frame = 0;
+    if (memory_init(api) != 0 ||
+        !(frame = memory_alloc(LK_WIDTH * LK_HEIGHT * sizeof(*frame)))) {
+        lk_platform_log("Lion King: cannot allocate platform framebuffer.\n");
+        lk_platform_finish(1);
+        return -1;
+    }
     return 0;
 }
 
@@ -233,6 +241,13 @@ int lk_platform_finish(int result)
     }
     if (graphics_failed) result = 1;
     profile_report();
+    if (frame) {
+        if (memory_free(frame) != 0) {
+            lk_platform_log("Lion King: cannot release platform framebuffer.\n");
+            result = 1;
+        }
+        frame = 0;
+    }
     if (runtime->Fs.Close(log_file) != 0) {
         log_failed = 1;
     }

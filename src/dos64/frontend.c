@@ -8,16 +8,34 @@
 #include "engine/render.h"
 #include "engine/music.h"
 #include "libs/vga.h"
+#include "dos64_memory.h"
 
-static unsigned char title_map[131072], source[85438], view[64000];
-static unsigned char title_music[88301];
+typedef struct {
+    unsigned char title_map[131072], source[85438], view[64000];
+    unsigned char title_music[88301], title_logo[16384];
+    unsigned char credits_map[65536], font[8192], sun[4096];
+    unsigned char intro_art[16384], level_titles[32768];
+    unsigned char pregame_art[65536], pregame_speech[14826];
+    unsigned char reward_art[65536], reward_speech[65536];
+    unsigned char continue_art[2701], continue_rafiki[50205], continue_numbers[1826];
+    unsigned char continue_sun[4096], continue_circle[2653];
+    unsigned char continue_gameover[4096], continue_music[29879];
+} FRONTEND_BUFFERS;
+
+static FRONTEND_BUFFERS *buffers;
+static unsigned char *title_map, *source, *view, *title_music, *title_logo;
+static unsigned char *credits_map, *font, *sun, *intro_art, *level_titles;
+static unsigned char *pregame_art, *pregame_speech, *reward_art, *reward_speech;
 static MUSIC_PLAYER title_player;
 static MUSIC_OUTPUT title_output;
-static unsigned char title_logo[16384];
-static unsigned char credits_map[65536], font[8192], sun[4096];
-static unsigned char intro_art[16384], level_titles[32768];
-static unsigned char pregame_art[65536], pregame_speech[14826];
-static unsigned char reward_art[65536], reward_speech[65536];
+static MUSIC_PLAYER continue_player;
+static MUSIC_OUTPUT continue_output;
+static DOS64_COLOR continue_colors[256];
+static DOS64_COLOR continue_circle_colors[16];
+static unsigned char continue_circle_remap[256];
+static unsigned int continue_art_size, continue_rafiki_size, continue_numbers_size;
+static unsigned int continue_sun_size, continue_circle_size, continue_gameover_size, continue_music_size;
+static int continue_ready;
 static RESOURCE_DICTIONARY dictionary;
 static unsigned int title_size;
 static unsigned int logo_size, logo_width;
@@ -27,6 +45,41 @@ static unsigned int pregame_size, speech_size;
 static DOS64_COLOR loading_colors[256];
 static DOS64_COLOR colors[256];
 static int ready;
+
+static int frontend_prepare(const DOS64_API *api)
+{
+    if (buffers) return 0;
+    if (memory_init(api) != 0) {
+        lk_platform_log("Lion King: frontend heap service unavailable.\n");
+        return -1;
+    }
+    buffers = memory_calloc(1, sizeof(*buffers));
+    if (!buffers) {
+        lk_platform_log("Lion King: cannot allocate frontend buffers.\n");
+        return -1;
+    }
+    title_map = buffers->title_map; source = buffers->source; view = buffers->view;
+    title_music = buffers->title_music; title_logo = buffers->title_logo;
+    credits_map = buffers->credits_map; font = buffers->font; sun = buffers->sun;
+    intro_art = buffers->intro_art; level_titles = buffers->level_titles;
+    pregame_art = buffers->pregame_art; pregame_speech = buffers->pregame_speech;
+    reward_art = buffers->reward_art; reward_speech = buffers->reward_speech;
+    return 0;
+}
+
+int frontend_release(void)
+{
+    frontend_stop_audio();
+    frontend_stop_continue();
+    ready = 0;
+    continue_ready = 0;
+    font_size = 0;
+    if (!buffers) return 0;
+    int result = memory_free(buffers);
+    buffers = 0;
+    if (result != 0) lk_platform_log("Lion King: cannot release frontend buffers.\n");
+    return result;
+}
 
 void frontend_stop_audio(void)
 {
@@ -40,7 +93,7 @@ static int title_sound(const DOS64_API *api, int enabled)
         return 0;
     }
     if (!title_output.opened) {
-        if (music_initialize(&title_player, title_music, sizeof(title_music)) != 0 ||
+        if (music_initialize(&title_player, title_music, sizeof(buffers->title_music)) != 0 ||
             music_output_open(&title_output, &title_player, api) != 0) {
             lk_platform_log("Lion King: original TITLE.AMF requires usable DOS64 audio output.\n");
             return -1;
@@ -83,7 +136,7 @@ static int text(unsigned int x, unsigned int y, const char *label)
 
 static int title_background(void)
 {
-    for (unsigned int i = 0; i < sizeof(view); ++i) view[i] = 0;
+    for (unsigned int i = 0; i < sizeof(buffers->view); ++i) view[i] = 0;
     if (render_map_tile_pass(title_map, title_size, 1, 0, 0, 0, view) != 0 ||
         render_map_tile_pass(title_map, title_size, 1, 0, 0, 1, view) != 0 ||
         render_map_tile_pass(title_map, title_size, 0, 0, 0, 0, view) != 0 ||
@@ -96,7 +149,7 @@ static int title_background(void)
 
 static int background(void)
 {
-    for (unsigned int i = 0; i < sizeof(view); ++i) view[i] = 0;
+    for (unsigned int i = 0; i < sizeof(buffers->view); ++i) view[i] = 0;
     if (ready && (title_background() != 0 ||
         render_draw_sprite(title_logo, logo_size, 0,
             (short)((LK_WIDTH - logo_width) / 2), 17, view) != 0)) {
@@ -108,19 +161,20 @@ static int background(void)
 
 int frontend_initialize(const DOS64_API *resources)
 {
+    if (frontend_prepare(resources) != 0) return -1;
     ready = 0;
     font_size = 0;
     for (unsigned int i = 0; i < 256; ++i) colors[i] = 0;
     if (background() != 0) return -1;
     if (frontend_loading(0, 1) != 0) return -1;
     if (resources_load_entry(resources, "LIONKING.EPF", "TITLES.MAP",
-        source, sizeof(source), title_map, sizeof(title_map), &dictionary, &title_size) != 0 ||
+        source, sizeof(buffers->source), title_map, sizeof(buffers->title_map), &dictionary, &title_size) != 0 ||
         vga_load_palette(title_map, title_size, colors) != 0) {
         lk_platform_log("Lion King: cannot load original title artwork/palette.\n");
         return -1;
     }
     if (resources_load_entry(resources, "LIONKING.EPF", "TITLE_S.MCH",
-        source, sizeof(source), title_logo, sizeof(title_logo), &dictionary, &logo_size) != 0 ||
+        source, sizeof(buffers->source), title_logo, sizeof(buffers->title_logo), &dictionary, &logo_size) != 0 ||
         logo_size < 10) {
         lk_platform_log("Lion King: cannot load original title logo.\n");
         return -1;
@@ -131,22 +185,22 @@ int frontend_initialize(const DOS64_API *resources)
         return -1;
     }
     if (resources_load_entry(resources, "LIONKING.EPF", "F8X8_S.MCH",
-        source, sizeof(source), font, sizeof(font), &dictionary, &font_size) != 0 ||
+        source, sizeof(buffers->source), font, sizeof(buffers->font), &dictionary, &font_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "SUN.MCH",
-        source, sizeof(source), sun, sizeof(sun), &dictionary, &sun_size) != 0 ||
+        source, sizeof(buffers->source), sun, sizeof(buffers->sun), &dictionary, &sun_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "CREDITS.MAP",
-        source, sizeof(source), credits_map, sizeof(credits_map), &dictionary, &credits_size) != 0) {
+        source, sizeof(buffers->source), credits_map, sizeof(buffers->credits_map), &dictionary, &credits_size) != 0) {
         lk_platform_log("Lion King: cannot load original menu font/selector/publisher screens.\n");
         return -1;
     }
     if (resources_load_entry(resources, "LIONKING.EPF", "INTRO.MCH",
-        source, sizeof(source), intro_art, sizeof(intro_art), &dictionary, &intro_size) != 0 ||
+        source, sizeof(buffers->source), intro_art, sizeof(buffers->intro_art), &dictionary, &intro_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "LEVELS.MCH",
-        source, sizeof(source), level_titles, sizeof(level_titles), &dictionary, &level_titles_size) != 0 ||
+        source, sizeof(buffers->source), level_titles, sizeof(buffers->level_titles), &dictionary, &level_titles_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "1TIMONS.MCH",
-        source, sizeof(source), pregame_art, sizeof(pregame_art), &dictionary, &pregame_size) != 0 ||
+        source, sizeof(buffers->source), pregame_art, sizeof(buffers->pregame_art), &dictionary, &pregame_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "SPEECH5",
-        source, sizeof(source), pregame_speech, sizeof(pregame_speech), &dictionary, &speech_size) != 0) {
+        source, sizeof(buffers->source), pregame_speech, sizeof(buffers->pregame_speech), &dictionary, &speech_size) != 0) {
         lk_platform_log("Lion King: cannot load original intro/level-title artwork.\n");
         return -1;
     }
@@ -158,8 +212,8 @@ int frontend_initialize(const DOS64_API *resources)
     }
     unsigned int music_size;
     if (resources_load_entry(resources, "LIONKING.EPF", "TITLE.AMF",
-        source, sizeof(source), title_music, sizeof(title_music), &dictionary, &music_size) != 0 ||
-        music_size != sizeof(title_music) ||
+        source, sizeof(buffers->source), title_music, sizeof(buffers->title_music), &dictionary, &music_size) != 0 ||
+        music_size != sizeof(buffers->title_music) ||
         music_initialize(&title_player, title_music, music_size) != 0) {
         lk_platform_log("Lion King: invalid original TITLE.AMF soundtrack.\n");
         return -1;
@@ -181,7 +235,7 @@ int frontend_splash(const DOS64_API *api)
         return -1;
     }
     for (unsigned int layer = 0; layer <= 2; layer += 2) {
-        for (unsigned int i = 0; i < sizeof(view); ++i) view[i] = 0;
+        for (unsigned int i = 0; i < sizeof(buffers->view); ++i) view[i] = 0;
         if (render_map_tile_pass(credits_map, credits_size, layer, 0, 0, 0, view) != 0 ||
             render_map_tile_pass(credits_map, credits_size, layer, 0, 0, 1, view) != 0) {
             lk_platform_log("Lion King: invalid publisher-screen map.\n");
@@ -334,7 +388,7 @@ int frontend_pregame(const DOS64_API *api, int sound_enabled)
                 goto finished;
             }
         }
-        for (unsigned int i = 0; i < sizeof(view); ++i) view[i] = 0;
+        for (unsigned int i = 0; i < sizeof(buffers->view); ++i) view[i] = 0;
         if (render_object_pass(&pool, 0, 0, 0, banks, 240, view) != 0) {
             lk_platform_log("Lion King: cannot render original Timon pre-game intro.\n");
             goto finished;
@@ -362,14 +416,15 @@ int frontend_victory(const DOS64_API *api, const DOS64_API *resources, int sound
     RENDER_OWNER owners[2] = {{142,163}, {142,162}};
     RENDER_NODE *nodes[2];
     unsigned int art_size, speech_size;
+    if (frontend_prepare(resources) != 0) return -1;
     frontend_stop_audio();
     if (resources_load_entry(resources, "LIONKING.EPF", "TITLES.MAP",
-        source, sizeof(source), title_map, sizeof(title_map), &dictionary, &title_size) != 0 ||
+        source, sizeof(buffers->source), title_map, sizeof(buffers->title_map), &dictionary, &title_size) != 0 ||
         vga_load_palette(title_map, title_size, colors) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "RWDLVL1.MCH",
-        source, sizeof(source), reward_art, sizeof(reward_art), &dictionary, &art_size) != 0 ||
+        source, sizeof(buffers->source), reward_art, sizeof(buffers->reward_art), &dictionary, &art_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "SPEECH1",
-        source, sizeof(source), reward_speech, sizeof(reward_speech), &dictionary, &speech_size) != 0) {
+        source, sizeof(buffers->source), reward_speech, sizeof(buffers->reward_speech), &dictionary, &speech_size) != 0) {
         lk_platform_log("Lion King: cannot load original LEVEL1 Rafiki reward scene.\n");
         return -1;
     }
@@ -445,8 +500,9 @@ finished_reward:
 int frontend_next_level_unavailable(const DOS64_API *api, const DOS64_API *resources)
 {
     unsigned int loaded;
+    if (frontend_prepare(resources) != 0) return -1;
     if (resources_load_entry(resources, "LIONKING.EPF", "F8X8_S.MCH",
-        source, sizeof(source), font, sizeof(font), &dictionary, &loaded) != 0) {
+        source, sizeof(buffers->source), font, sizeof(buffers->font), &dictionary, &loaded) != 0) {
         lk_platform_log("Lion King: cannot load next-level notice font.\n");
         return -1;
     }
@@ -485,11 +541,132 @@ int frontend_loading(unsigned int completed, unsigned int total)
         lk_platform_log("Lion King: invalid level loading state.\n");
         return -1;
     }
-    for (unsigned int i = 0; i < sizeof(view); ++i) view[i] = 0;
+    for (unsigned int i = 0; i < sizeof(buffers->view); ++i) view[i] = 0;
     if (ready && frontend_level_title(view) != 0) return -1;
     lk_platform_present(view, ready ? loading_colors : colors);
     if (ready && completed == total) {
         lk_platform_log("Loading: LEVEL1 assets ready; title overlays the first 100 gameplay ticks.\n");
+    }
+    return 0;
+}
+
+
+int frontend_prepare_continue(const DOS64_API *resources, const DOS64_COLOR *level_palette)
+{
+    if (!level_palette) {
+        lk_platform_log("Lion King: cannot prepare continue screen without level palette.\n");
+        return -1;
+    }
+    if (frontend_prepare(resources) != 0) return -1;
+    for (unsigned int i = 0; i < 16; ++i) continue_circle_colors[i] = level_palette[128 + i];
+    if (continue_ready) return 0;
+    for (unsigned int i = 0; i < 256; ++i)
+        continue_circle_remap[i] = (unsigned char)(i >= 128 && i < 144 ? i + 112 : i);
+    unsigned int map_size;
+    if (resources_load_entry(resources, "LIONKING.EPF", "TITLES.MAP",
+            source, sizeof(buffers->source), title_map, sizeof(buffers->title_map),
+            &dictionary, &map_size) != 0 ||
+        vga_load_palette(title_map, map_size, continue_colors) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "CONTINUE.MCH",
+            source, sizeof(buffers->source), buffers->continue_art, sizeof(buffers->continue_art),
+            &dictionary, &continue_art_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "RAFIKI.MCH",
+            source, sizeof(buffers->source), buffers->continue_rafiki, sizeof(buffers->continue_rafiki),
+            &dictionary, &continue_rafiki_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "NUMBERS.MCH",
+            source, sizeof(buffers->source), buffers->continue_numbers, sizeof(buffers->continue_numbers),
+            &dictionary, &continue_numbers_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "SUN.MCH",
+            source, sizeof(buffers->source), buffers->continue_sun, sizeof(buffers->continue_sun),
+            &dictionary, &continue_sun_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "CIRCLE.MCH",
+            source, sizeof(buffers->source), buffers->continue_circle, sizeof(buffers->continue_circle),
+            &dictionary, &continue_circle_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "GAMEOVER.MCH",
+            source, sizeof(buffers->source), buffers->continue_gameover, sizeof(buffers->continue_gameover),
+            &dictionary, &continue_gameover_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "CONTINUE.AMF",
+            source, sizeof(buffers->source), buffers->continue_music, sizeof(buffers->continue_music),
+            &dictionary, &continue_music_size) != 0) {
+        lk_platform_log("Lion King: cannot load continue screen resources.\n");
+        return -1;
+    }
+    continue_ready = 1;
+    return 0;
+}
+
+int frontend_start_continue(const DOS64_API *api, int sound_enabled)
+{
+    if (!continue_ready) return -1;
+    if (sound_enabled &&
+        (music_initialize(&continue_player, buffers->continue_music, continue_music_size) != 0 ||
+         music_output_open(&continue_output, &continue_player, api) != 0)) {
+        lk_platform_log("Lion King: cannot play continue music.\n");
+        return -1;
+    }
+    return 0;
+}
+
+int frontend_service_continue(void)
+{
+    if (continue_output.opened && music_output_service(&continue_output) != 0) {
+        lk_platform_log("Lion King: continue music streaming failed.\n");
+        return -1;
+    }
+    return 0;
+}
+
+void frontend_stop_continue(void)
+{
+    music_output_stop(&continue_output);
+}
+
+int frontend_continue(unsigned char *pixels, DOS64_COLOR *palette,
+    unsigned int ticks, int no_selected, unsigned int continues,
+    unsigned int accept_ticks, int exhausted)
+{
+    static const unsigned char durations[] = {7, 7, 9, 9, 7, 9, 9, 11, 15, 27, 7, 7, 9};
+    static const unsigned char loop_frames[] = {13, 14, 15, 15, 15, 14};
+    static const unsigned char loop_durations[] = {43, 5, 63, 63, 63, 5};
+    if (!continue_ready || !pixels || !palette ||
+        ticks > (exhausted ? FRONTEND_GAME_OVER_TICKS : FRONTEND_CONTINUE_TICKS) ||
+        accept_ticks > FRONTEND_CONTINUE_ACCEPT_TICKS || continues > 9 ||
+        (no_selected != 0 && no_selected != 1) || (exhausted != 0 && exhausted != 1))
+        return -1;
+    unsigned int elapsed = (exhausted ? FRONTEND_GAME_OVER_TICKS : FRONTEND_CONTINUE_TICKS) - ticks;
+    unsigned int frame = 0, phase = elapsed;
+    while (frame < sizeof(durations) && phase >= durations[frame])
+        phase -= durations[frame++];
+    if (frame == sizeof(durations)) {
+        unsigned int cycle = 0, index = 0;
+        for (unsigned int i = 0; i < sizeof(loop_durations); ++i) cycle += loop_durations[i];
+        phase %= cycle;
+        while (phase >= loop_durations[index]) phase -= loop_durations[index++];
+        frame = loop_frames[index];
+    }
+    if (accept_ticks) {
+        unsigned int accepted = FRONTEND_CONTINUE_ACCEPT_TICKS - accept_ticks;
+        frame = accepted < 3 ? 16 : accepted < 6 ? 17 : accepted < 11 ? 18 : 19;
+    }
+    for (unsigned int i = 0; i < 256; ++i) palette[i] = continue_colors[i];
+    if (!exhausted)
+        for (unsigned int i = 0; i < 16; ++i) palette[240 + i] = continue_circle_colors[i];
+    if (render_draw_sprite(buffers->continue_rafiki, continue_rafiki_size,
+            (unsigned short)frame, 96, 70, pixels) != 0 ||
+        (exhausted ?
+            render_draw_sprite(buffers->continue_gameover, continue_gameover_size, 0, 95, 32, pixels) != 0 :
+            (render_draw_sprite(buffers->continue_art, continue_art_size, 0, 89, 16, pixels) != 0 ||
+             (!accept_ticks && render_draw_sprite(buffers->continue_numbers, continue_numbers_size,
+                 (unsigned short)(ticks ? (ticks - 1) * 10 / FRONTEND_CONTINUE_TICKS : 0),
+                 150, 38, pixels) != 0) ||
+             render_draw_sprite(buffers->continue_sun, continue_sun_size,
+                 (unsigned short)((elapsed / 8) % 4), no_selected ? 163 : 67, 44, pixels) != 0 ||
+             render_draw_sprite_remapped(buffers->continue_circle, continue_circle_size,
+                 (unsigned short)((elapsed / 8) % 4), 242, 161, pixels, continue_circle_remap) != 0 ||
+             render_draw_sprite(buffers->continue_numbers, continue_numbers_size,
+                 (unsigned short)continues, 218, 118, pixels) != 0))) {
+        lk_platform_log("Lion King: cannot render continue screen artwork.\n");
+        return -1;
     }
     return 0;
 }

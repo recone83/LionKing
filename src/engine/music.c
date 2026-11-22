@@ -114,8 +114,8 @@ int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned i
                 if (value > 64) return -1;
                 event->volume = (unsigned char)(value + 1);
             } else {
-                if (type != 0x82 && type != 0x89 && type != 0x8b &&
-                    type != 0x8c && type != 0x95) return -1;
+                if (type != 0x82 && type != 0x89 && type != 0x8b && type != 0x91 &&
+                    type != 0x8c && type != 0x93 && type != 0x95) return -1;
                 if (event->effect) return -1;
                 if ((type == 0x8c && value >= 64) || (type == 0x95 && value < 33)) return -1;
                 event->effect = (unsigned char)type; event->parameter = (unsigned char)value;
@@ -145,6 +145,23 @@ static const unsigned char vibrato_sine[32] = {
     255,253,250,244,235,224,212,197,180,161,141,120,97,74,49,24
 };
 
+static void music_trigger(MUSIC_PLAYER *player, MUSIC_VOICE *voice,
+    unsigned int note, unsigned int instrument, unsigned int volume)
+{
+    if (instrument) {
+        voice->instrument = instrument;
+        voice->volume = player->samples[instrument - 1].volume;
+    }
+    if (note) {
+        unsigned int octave = note / 12;
+        voice->period = octave < 15 ? note_periods[note % 12] >> octave : 1;
+        if (!voice->period) voice->period = 1;
+        voice->phase = 0;
+        voice->vibrato_phase = 0;
+    }
+    if (volume) voice->volume = volume - 1;
+}
+
 static void music_tick(MUSIC_PLAYER *player)
 {
     if (!player->tick) {
@@ -153,20 +170,23 @@ static void music_tick(MUSIC_PLAYER *player)
             const MUSIC_EVENT *event = &player->tracks[player->orders[player->order][ch]][player->row];
             MUSIC_VOICE *voice = &player->voices[ch];
             voice->volume_slide = 0; voice->vibrato = 0;
-            if (event->instrument) {
-                voice->instrument = event->instrument;
-                voice->volume = player->samples[voice->instrument - 1].volume;
+            voice->delay_tick = event->effect == 0x93 ? event->parameter & 15 : 0;
+            if (voice->delay_tick) {
+                voice->delayed_note = event->note;
+                voice->delayed_instrument = event->instrument;
+                voice->delayed_volume = event->volume;
+            } else {
+                music_trigger(player, voice, event->note, event->instrument, event->volume);
             }
-            if (event->note) {
-                unsigned int octave = event->note / 12;
-                voice->period = octave < 15 ? note_periods[event->note % 12] >> octave : 1;
-                if (!voice->period) voice->period = 1;
-                voice->phase = 0; voice->vibrato_phase = 0;
-            }
-            if (event->volume) voice->volume = event->volume - 1;
             if (event->effect == 0x82 || event->effect == 0x8b) {
                 if (event->parameter) voice->volume_slide_memory = signed_byte(event->parameter);
                 voice->volume_slide = voice->volume_slide_memory;
+            }
+            if (event->effect == 0x91) {
+                int slide = signed_byte(event->parameter);
+                slide = slide < 0 ? -((-slide) & 15) : slide & 15;
+                int volume = (int)voice->volume + slide;
+                voice->volume = volume < 0 ? 0 : volume > 64 ? 64 : (unsigned int)volume;
             }
             if (event->effect == 0x89) {
                 if (event->parameter >> 4) voice->vibrato_speed = event->parameter >> 4;
@@ -181,6 +201,9 @@ static void music_tick(MUSIC_PLAYER *player)
     }
     for (unsigned int ch = 0; ch < 4; ++ch) {
         MUSIC_VOICE *voice = &player->voices[ch];
+        if (player->tick && player->tick == voice->delay_tick)
+            music_trigger(player, voice, voice->delayed_note,
+                voice->delayed_instrument, voice->delayed_volume);
         if (player->tick) {
             int volume = (int)voice->volume + voice->volume_slide;
             voice->volume = volume < 0 ? 0 : volume > 64 ? 64 : (unsigned int)volume;

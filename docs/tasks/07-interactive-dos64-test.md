@@ -178,7 +178,7 @@ cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \
     src/engine/input.c src/engine/render.c src/engine/assets.c \
     src/engine/animation.c src/engine/objects.c src/engine/physics.c \
-    src/engine/behaviors.c src/engine/music.c src/engine/enemies.c \
+    src/engine/behaviors.c src/engine/music.c src/engine/bonus.c src/engine/enemies.c \
     src/engine/pickups.c src/engine/lifecycle.c src/engine/hud.c src/libs/vga.c \
     -o build/check_viewer
 build/check_viewer
