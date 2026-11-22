@@ -420,6 +420,21 @@ static void check_beetles(void)
 
 static void check_hyena(void)
 {
+    for (int difficulty = ENGINE_DIFFICULTY_EASY; difficulty <= ENGINE_DIFFICULTY_HARD; ++difficulty) {
+        setup();
+        enemies.difficulty = (ENGINE_DIFFICULTY)difficulty;
+        ENGINE_LIZARD *target = 0;
+        for (unsigned int i = 0; i < enemies.count; ++i)
+            if (enemies.lizards[i].marker_type == 43) target = &enemies.lizards[i];
+        assert(target);
+        RENDER_OWNER view = {1360, 180};
+        player.player.body.owner = (RENDER_OWNER){1400, 360};
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(target->object && target->health == difficulty + 1);
+        assert(engine_enemies_restart(&enemies) == 0);
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        assert(target->object && target->health == difficulty + 1);
+    }
     setup();
     ENGINE_LIZARD *hyena = 0;
     for (unsigned int i = 0; i < enemies.count; ++i)

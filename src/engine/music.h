@@ -5,7 +5,7 @@
 
 #define MUSIC_RATE 44100U
 #define MUSIC_TRACKS 60U
-#define MUSIC_ORDERS 15U
+#define MUSIC_ORDERS 32U
 #define MUSIC_INSTRUMENTS 31U
 
 typedef struct {
@@ -21,9 +21,12 @@ typedef struct {
     unsigned int instrument, volume, period, phase, step;
     unsigned int vibrato_speed, vibrato_depth, vibrato_phase;
     unsigned int delayed_note, delayed_instrument, delayed_volume, delay_tick;
+    unsigned int target_period, portamento_speed;
+    int period_slide;
     int volume_slide;
     int volume_slide_memory;
     int vibrato;
+    int tone_portamento;
 } MUSIC_VOICE;
 
 typedef struct {

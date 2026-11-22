@@ -20,6 +20,7 @@ typedef struct {
     unsigned char continue_art[2701], continue_rafiki[50205], continue_numbers[1826];
     unsigned char continue_sun[4096], continue_circle[2653];
     unsigned char continue_gameover[4096], continue_music[29879];
+    unsigned char continue_speech[29426];
 } FRONTEND_BUFFERS;
 
 static FRONTEND_BUFFERS *buffers;
@@ -35,6 +36,7 @@ static DOS64_COLOR continue_circle_colors[16];
 static unsigned char continue_circle_remap[256];
 static unsigned int continue_art_size, continue_rafiki_size, continue_numbers_size;
 static unsigned int continue_sun_size, continue_circle_size, continue_gameover_size, continue_music_size;
+static unsigned int continue_speech_size;
 static int continue_ready;
 static RESOURCE_DICTIONARY dictionary;
 static unsigned int title_size;
@@ -132,6 +134,79 @@ static int text(unsigned int x, unsigned int y, const char *label)
         }
     }
     return 0;
+}
+
+static void binding_name(unsigned char key, char name[5])
+{
+    static const char hex[] = "0123456789ABCDEF";
+    name[0] = ' ';
+    name[1] = ' ';
+    name[2] = ' ';
+    name[3] = ' ';
+    name[4] = 0;
+    if (key >= 4 && key <= 29) name[2] = (char)('A' + key - 4);
+    else if (key >= 30 && key <= 38) name[2] = (char)('1' + key - 30);
+    else if (key == 39) name[2] = '0';
+    else if (key >= 0x3a && key <= 0x45) {
+        unsigned int number = key - 0x3a + 1;
+        name[1] = 'F';
+        name[2] = number >= 10 ? '1' : (char)('0' + number);
+        if (number >= 10) name[3] = (char)('0' + number % 10);
+    } else {
+        const char *label = 0;
+        switch (key) {
+        case 0x2b: label = " TAB"; break;
+        case 0x2c: label = " SPC"; break;
+        case 0x2d: label = "  - "; break;
+        case 0x2e: label = "  = "; break;
+        case 0x2f: label = "  ( "; break;
+        case 0x30: label = "  ) "; break;
+        case 0x32: label = "HASH"; break;
+        case 0x33: label = "  ; "; break;
+        case 0x36: label = "  , "; break;
+        case 0x37: label = "  . "; break;
+        case 0x38: label = "  / "; break;
+        case 0x39: label = "CAPS"; break;
+        case 0x4f: label = "RGHT"; break;
+        case 0x50: label = "LEFT"; break;
+        case 0x51: label = "DOWN"; break;
+        case 0x52: label = " UP "; break;
+        case 0xe0: label = "CTRL"; break;
+        case 0xe4: label = "RCTL"; break;
+        case 0xe1: label = " LSH"; break;
+        case 0xe5: label = " RSH"; break;
+        case 0xe2: label = " ALT"; break;
+        case 0xe6: label = "RALT"; break;
+        default: break;
+        }
+        if (label) {
+            for (unsigned int i = 0; i < 4; ++i) name[i] = label[i];
+        } else {
+            name[0] = 'H';
+            name[1] = 'I';
+            name[2] = hex[key >> 4];
+            name[3] = hex[key & 15];
+        }
+    }
+}
+
+static int binding_screen(const ENGINE_CONTROLS *controls, unsigned int binding,
+    int duplicate_key)
+{
+    static const char *labels[CONTROL_COUNT] = {
+        "   UP KEY", "   DOWN KEY", "   LEFT KEY", "   RIGHT KEY",
+        "   JUMP", "   SLASH (ADULT)", "   ROAR", "   MAUL (ADULT)"
+    };
+    if (binding >= CONTROL_COUNT || text(80, 72, "DEFINE KEYBOARD CONTROLS") != 0)
+        return -1;
+    for (unsigned int i = 0; i <= binding; ++i) {
+        char name[5];
+        binding_name(controls->keys[i], name);
+        if (text(80, 88 + i * 8, labels[i]) != 0 ||
+            text(216, 88 + i * 8, name) != 0) return -1;
+    }
+    if (duplicate_key && text(64, 168, "KEY ALREADY USED") != 0) return -1;
+    return text(64, 176, "ESC TO CANCEL");
 }
 
 static int title_background(void)
@@ -497,9 +572,14 @@ finished_reward:
     return result;
 }
 
-int frontend_next_level_unavailable(const DOS64_API *api, const DOS64_API *resources)
+int frontend_next_level_unavailable(const DOS64_API *api, const DOS64_API *resources,
+    int bonus_selected)
 {
     unsigned int loaded;
+    if (bonus_selected != 0 && bonus_selected != 1) {
+        lk_platform_log("Lion King: invalid next-level selection.\n");
+        return -1;
+    }
     if (frontend_prepare(resources) != 0) return -1;
     if (resources_load_entry(resources, "LIONKING.EPF", "F8X8_S.MCH",
         source, sizeof(buffers->source), font, sizeof(buffers->font), &dictionary, &loaded) != 0) {
@@ -508,12 +588,15 @@ int frontend_next_level_unavailable(const DOS64_API *api, const DOS64_API *resou
     }
     font_size = loaded;
     if (title_background() != 0 ||
-        text(76, 90, "LEVEL 2 NOT AVAILABLE") != 0 ||
+        text(bonus_selected ? 68 : 76, 90,
+            bonus_selected ? "BUG TOSS NOT AVAILABLE" : "LEVEL 2 NOT AVAILABLE") != 0 ||
         text(88, 110, "ENTER SPACE OR ESC") != 0) {
         lk_platform_log("Lion King: cannot draw next-level notice.\n");
         return -1;
     }
-    lk_platform_log("Transition: LEVEL2 is not available; awaiting confirmation.\n");
+    lk_platform_log(bonus_selected ?
+        "Transition: BUG TOSS is not available; awaiting confirmation.\n" :
+        "Transition: LEVEL2 is not available; awaiting confirmation.\n");
     lk_platform_present(view, colors);
     int released = 0;
     for (;;) {
@@ -525,7 +608,9 @@ int frontend_next_level_unavailable(const DOS64_API *api, const DOS64_API *resou
             break;
         if (!held) released = 1;
     }
-    lk_platform_log("Transition: returning without starting LEVEL2.\n");
+    lk_platform_log(bonus_selected ?
+        "Transition: returning without starting BUG TOSS.\n" :
+        "Transition: returning without starting LEVEL2.\n");
     return 0;
 }
 
@@ -537,12 +622,18 @@ int frontend_level_palette(const DOS64_COLOR *palette)
 
 int frontend_loading(unsigned int completed, unsigned int total)
 {
+    return frontend_loading_for_level(completed, total, 1);
+}
+
+int frontend_loading_for_level(unsigned int completed, unsigned int total,
+    unsigned int level)
+{
     if (!total || completed > total) {
         lk_platform_log("Lion King: invalid level loading state.\n");
         return -1;
     }
     for (unsigned int i = 0; i < sizeof(buffers->view); ++i) view[i] = 0;
-    if (ready && frontend_level_title(view) != 0) return -1;
+    if (ready && frontend_level_title_for_level(level, view) != 0) return -1;
     lk_platform_present(view, ready ? loading_colors : colors);
     if (ready && completed == total) {
         lk_platform_log("Loading: LEVEL1 assets ready; title overlays the first 100 gameplay ticks.\n");
@@ -587,11 +678,37 @@ int frontend_prepare_continue(const DOS64_API *resources, const DOS64_COLOR *lev
             &dictionary, &continue_gameover_size) != 0 ||
         resources_load_entry(resources, "LIONKING.EPF", "CONTINUE.AMF",
             source, sizeof(buffers->source), buffers->continue_music, sizeof(buffers->continue_music),
-            &dictionary, &continue_music_size) != 0) {
+            &dictionary, &continue_music_size) != 0 ||
+        resources_load_entry(resources, "LIONKING.EPF", "SPEECH2",
+            source, sizeof(buffers->source), buffers->continue_speech, sizeof(buffers->continue_speech),
+            &dictionary, &continue_speech_size) != 0) {
         lk_platform_log("Lion King: cannot load continue screen resources.\n");
         return -1;
     }
     continue_ready = 1;
+    return 0;
+}
+
+int frontend_accept_continue(const DOS64_API *api, int sound_enabled)
+{
+    frontend_stop_continue();
+    if (sound_enabled && (music_effects_initialize(&continue_player) != 0 ||
+        music_output_open(&continue_output, &continue_player, api) != 0)) {
+        lk_platform_log("Lion King: cannot open continue acceptance audio.\n");
+        return -1;
+    }
+    return 0;
+}
+
+int frontend_continue_speech(int sound_enabled)
+{
+    if (sound_enabled &&
+        (music_effect_play(&continue_player, 0, buffers->continue_speech, continue_speech_size) != 0 ||
+         music_effect_play(&continue_player, 1, buffers->continue_speech, continue_speech_size) != 0)) {
+        lk_platform_log("Lion King: cannot play continue SPEECH2.\n");
+        return -1;
+    }
+    if (sound_enabled) lk_platform_log("Continue: SPEECH2 on both original channels.\n");
     return 0;
 }
 
@@ -625,9 +742,9 @@ int frontend_continue(unsigned char *pixels, DOS64_COLOR *palette,
     unsigned int ticks, int no_selected, unsigned int continues,
     unsigned int accept_ticks, int exhausted)
 {
-    static const unsigned char durations[] = {7, 7, 9, 9, 7, 9, 9, 11, 15, 27, 7, 7, 9};
+    static const unsigned char durations[] = {8, 8, 10, 10, 8, 10, 10, 12, 16, 28, 8, 8, 10};
     static const unsigned char loop_frames[] = {13, 14, 15, 15, 15, 14};
-    static const unsigned char loop_durations[] = {43, 5, 63, 63, 63, 5};
+    static const unsigned char loop_durations[] = {44, 6, 64, 64, 64, 6};
     if (!continue_ready || !pixels || !palette ||
         ticks > (exhausted ? FRONTEND_GAME_OVER_TICKS : FRONTEND_CONTINUE_TICKS) ||
         accept_ticks > FRONTEND_CONTINUE_ACCEPT_TICKS || continues > 9 ||
@@ -646,7 +763,7 @@ int frontend_continue(unsigned char *pixels, DOS64_COLOR *palette,
     }
     if (accept_ticks) {
         unsigned int accepted = FRONTEND_CONTINUE_ACCEPT_TICKS - accept_ticks;
-        frame = accepted < 3 ? 16 : accepted < 6 ? 17 : accepted < 11 ? 18 : 19;
+        frame = accepted < 4 ? 16 : accepted < 8 ? 17 : accepted < 14 ? 18 : 19;
     }
     for (unsigned int i = 0; i < 256; ++i) palette[i] = continue_colors[i];
     if (!exhausted)
@@ -659,8 +776,8 @@ int frontend_continue(unsigned char *pixels, DOS64_COLOR *palette,
              (!accept_ticks && render_draw_sprite(buffers->continue_numbers, continue_numbers_size,
                  (unsigned short)(ticks ? (ticks - 1) * 10 / FRONTEND_CONTINUE_TICKS : 0),
                  150, 38, pixels) != 0) ||
-             render_draw_sprite(buffers->continue_sun, continue_sun_size,
-                 (unsigned short)((elapsed / 8) % 4), no_selected ? 163 : 67, 44, pixels) != 0 ||
+             (!accept_ticks && render_draw_sprite(buffers->continue_sun, continue_sun_size,
+                 (unsigned short)((elapsed / 8) % 4), no_selected ? 163 : 67, 44, pixels) != 0) ||
              render_draw_sprite_remapped(buffers->continue_circle, continue_circle_size,
                  (unsigned short)((elapsed / 8) % 4), 242, 161, pixels, continue_circle_remap) != 0 ||
              render_draw_sprite(buffers->continue_numbers, continue_numbers_size,
@@ -673,18 +790,34 @@ int frontend_continue(unsigned char *pixels, DOS64_COLOR *palette,
 
 int frontend_level_title(unsigned char *pixels)
 {
-    if (!ready || !pixels || render_draw_sprite(level_titles, level_titles_size, 0,
+    return frontend_level_title_for_level(1, pixels);
+}
+
+int frontend_level_title_for_level(unsigned int level, unsigned char *pixels)
+{
+    unsigned int frame = level ? level - 1 : 0;
+    if (!ready || !pixels || !level || level > 10 ||
+        render_draw_sprite(level_titles, level_titles_size, (unsigned short)frame,
         (LK_WIDTH - (level_titles[2] | (unsigned int)level_titles[3] << 8)) / 2,
         (LK_HEIGHT - (level_titles[4] | (unsigned int)level_titles[5] << 8)) / 2, pixels) != 0) {
-        lk_platform_log("Lion King: cannot draw original LEVEL1 title.\n");
+        lk_platform_log("Lion King: cannot draw original level title.\n");
         return -1;
     }
     return 0;
 }
-int frontend_menu(const DOS64_API *api, int *sound_enabled)
+int frontend_menu(const DOS64_API *api, int *music_enabled, int *sound_enabled,
+    ENGINE_DIFFICULTY *difficulty, ENGINE_CONTROLS *controls)
 {
-    unsigned int selected = 0;
-    if (title_sound(api, *sound_enabled) != 0) return -1;
+    if (!api || !music_enabled || !sound_enabled || !difficulty || !controls ||
+        *difficulty < ENGINE_DIFFICULTY_EASY || *difficulty > ENGINE_DIFFICULTY_HARD) {
+        lk_platform_log("Lion King: invalid menu settings.\n");
+        return -1;
+    }
+    unsigned int selected = 0, options = 0;
+    unsigned int binding = 0;
+    int duplicate_key = 0;
+    ENGINE_CONTROLS pending = *controls;
+    if (title_sound(api, *music_enabled) != 0) return -1;
     /* A held Enter/Escape from the previous scene must not activate the next screen. */
     do {
         lk_platform_poll();
@@ -693,24 +826,89 @@ int frontend_menu(const DOS64_API *api, int *sound_enabled)
         api->Input.KeyDown[0x2c]);
     ENGINE_CLOCK clock;
     engine_clock_reset(&clock, lk_platform_time_ns());
-    int selector_x = 82, selector_remaining = 10, selector_right = 0;
+    int selector_x = 115, selector_remaining = 10, selector_right = 0;
     lk_platform_log("Main menu: ready.\n");
     for (;;) {
         lk_platform_poll();
         if (title_service() != 0) return -1;
+        if (options == 2 && api->Input.KeyPressed[0x29]) {
+            options = 1;
+            lk_platform_log("Options: key changes cancelled.\n");
+            do {
+                lk_platform_poll();
+                if (title_service() != 0) return -1;
+            } while (api->Input.KeyDown[0x29]);
+            continue;
+        }
+        if (options == 1 && api->Input.KeyPressed[0x29]) {
+            options = selected = 0;
+            lk_platform_log("Options: returned to main menu.\n");
+            do {
+                lk_platform_poll();
+                if (title_service() != 0) return -1;
+            } while (api->Input.KeyDown[0x29]);
+            continue;
+        }
         if (lk_platform_exit_requested()) return 0;
-        if (api->Input.KeyPressed[0x52]) selected = (selected + 2) % 3;
-        if (api->Input.KeyPressed[0x51]) selected = (selected + 1) % 3;
-        if (api->Input.KeyPressed[0x28] || api->Input.KeyPressed[0x2c]) {
-            if (selected == 0) {
-                frontend_stop_audio();
-                lk_platform_log("Main menu: start LEVEL1.\n");
-                return 1;
+        unsigned int count = options ? 5 : 2;
+        if (options == 2) {
+            for (unsigned int key = 4; key < sizeof(api->Input.KeyPressed); ++key) {
+                if (!api->Input.KeyPressed[key] || key == 0x28 || key == 0x29) continue;
+                unsigned int previous = 0;
+                while (previous < binding && pending.keys[previous] != key) ++previous;
+                if (previous != binding) {
+                    lk_platform_log("Options: key already assigned; choose another.\n");
+                    duplicate_key = 1;
+                    break;
+                }
+                duplicate_key = 0;
+                pending.keys[binding++] = (unsigned char)key;
+                lk_platform_log("Options: key recorded.\n");
+                if (binding == CONTROL_COUNT) {
+                    *controls = pending;
+                    options = 1;
+                    lk_platform_log("Options: key changes saved.\n");
+                }
+                break;
             }
-            if (selected == 2) return 0;
-            *sound_enabled = !*sound_enabled;
-            if (title_sound(api, *sound_enabled) != 0) return -1;
-            lk_platform_log(*sound_enabled ? "Main menu: sound on.\n" : "Main menu: sound off.\n");
+        } else {
+            if (api->Input.KeyPressed[0x52]) selected = (selected + count - 1) % count;
+            if (api->Input.KeyPressed[0x51]) selected = (selected + 1) % count;
+            if (api->Input.KeyPressed[0x28] || api->Input.KeyPressed[0x2c] ||
+                (options && (api->Input.KeyPressed[0x50] || api->Input.KeyPressed[0x4f]))) {
+                if (!options && selected == 0) {
+                    frontend_stop_audio();
+                    lk_platform_log("Main menu: start LEVEL1.\n");
+                    return 1;
+                }
+                if (!options) {
+                    options = 1;
+                    selected = 0;
+                    lk_platform_log("Options: opened.\n");
+                } else if (selected == 4) {
+                    options = selected = 0;
+                    lk_platform_log("Options: returned to main menu.\n");
+                } else if (selected == 0) {
+                    *difficulty = (ENGINE_DIFFICULTY)((*difficulty +
+                        (api->Input.KeyPressed[0x50] ? 2 : 1)) % 3);
+                    lk_platform_log(*difficulty == ENGINE_DIFFICULTY_EASY ? "Main menu: difficulty easy.\n" :
+                        *difficulty == ENGINE_DIFFICULTY_NORMAL ? "Main menu: difficulty normal.\n" :
+                        "Main menu: difficulty hard.\n");
+                } else if (selected == 1) {
+                    *music_enabled = !*music_enabled;
+                    if (title_sound(api, *music_enabled) != 0) return -1;
+                    lk_platform_log(*music_enabled ? "Options: music on.\n" : "Options: music off.\n");
+                } else if (selected == 2) {
+                    *sound_enabled = !*sound_enabled;
+                    lk_platform_log(*sound_enabled ? "Main menu: sound on.\n" : "Main menu: sound off.\n");
+                } else {
+                    pending = *controls;
+                    binding = 0;
+                    duplicate_key = 0;
+                    options = 2;
+                    lk_platform_log("Options: redefining keys.\n");
+                }
+            }
         }
         unsigned long long ticks;
         if (logic_ticks(&clock, &ticks) != 0) {
@@ -724,10 +922,25 @@ int frontend_menu(const DOS64_API *api, int *sound_enabled)
             } else selector_x += selector_right ? 1 : -1;
         }
         if (background() != 0) return -1;
-        if (text(116, 123, "START GAME") != 0 ||
-            text(116, 141, *sound_enabled ? "SOUND ON" : "SOUND OFF") != 0 ||
-            text(116, 159, "EXIT") != 0 ||
-            render_draw_sprite(sun, sun_size, 0, selector_x, 115 + (int)selected * 18, view) != 0) {
+        if ((!options &&
+                (text(144, 120, "START") != 0 || text(144, 136, "OPTIONS") != 0 ||
+                 text(32, 168, "    @ 1994 Virgin Interactive") != 0 ||
+                 text(32, 176, "   Entertainment (Europe) Ltd.") != 0 ||
+                 text(32, 184, " @ 1994 The Walt Disney Company") != 0 ||
+                 text(32, 192, "PC version - East Point Software") != 0)) ||
+            (options == 1 &&
+                (text(80, 80, "DIFFICULTY") != 0 ||
+                 text(192, 80, *difficulty == ENGINE_DIFFICULTY_EASY ? "EASY" :
+                    *difficulty == ENGINE_DIFFICULTY_NORMAL ? "NORMAL" : "DIFFICULT") != 0 ||
+                 text(80, 96, "MUSIC") != 0 ||
+                 text(192, 96, *music_enabled ? "YES" : "NO") != 0 ||
+                 text(80, 112, "SOUND EFFECTS") != 0 ||
+                 text(192, 112, *sound_enabled ? "YES" : "NO") != 0 ||
+                 text(80, 128, "REDEFINE KEYS") != 0 ||
+                 text(80, 144, "EXIT") != 0)) ||
+            (options == 2 && binding_screen(&pending, binding, duplicate_key) != 0) ||
+            (options != 2 && render_draw_sprite(sun, sun_size, 0, selector_x - (options ? 64 : 0),
+                (options ? 72 : 112) + (int)selected * 16, view) != 0)) {
             lk_platform_log("Lion King: cannot draw original menu selection.\n");
             return -1;
         }

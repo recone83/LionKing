@@ -10,15 +10,18 @@ channels use ten nonempty unsigned 8-bit PCM samples. No HEXEN
 instrument bank or OPL synthesis is involved; the unused OPL import
 has been removed.
 
-The native player in `src/engine/music.c` handles the verified LEVEL1
-module shape (31 instrument slots, 15 orders, 60 tracks, 64 rows) and
-all effects present in it: instrument/note/volume events, volume slides,
-vibrato with parameter memory, combined vibrato/volume slides, pattern
-breaks and tempo changes. The opening row changes tempo from 125 to 165.
+The native player in `src/engine/music.c` handles both LION1 and LION2
+(31 instrument slots, up to 32 orders, 60 tracks, 64 rows). It supports
+instrument/note/volume events, volume slides, vibrato with parameter
+memory, combined vibrato/volume slides, pattern breaks, tempo changes,
+and the Level 2 portamento effects. The opening
+LION1 row changes tempo from 125 to 165. Level 2 music is validated for
+eight seconds of non-silent output; its portamento timing is a native
+approximation, not a bit-exact recreation.
 Playback uses fixed-point sample positions, original sample loops and
-AMF stereo panning, and loops the song. This is a focused LEVEL1/title player,
-not a general AMF implementation or a bit-exact recreation of the old
-sound-card mixer.
+AMF stereo panning, and loops the song. This is a focused player for the
+migrated levels and title, not a general AMF implementation or a bit-exact
+recreation of the old sound-card mixer.
 
 Output is signed 16-bit stereo at 44100 Hz through `DOS64_API.Audio`.
 About 100 ms is queued cooperatively; partial/zero writes retain pending

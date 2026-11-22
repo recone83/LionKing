@@ -35,7 +35,7 @@ int music_effects_initialize(MUSIC_PLAYER *player)
 
 int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned int size)
 {
-    /* Verified four-channel DSMI 1.4 modules, bounded by the LION1 capacities. */
+    /* Verified four-channel DSMI 1.4 modules used by the migrated levels. */
     if (!player || !data || size < 75 || data[0] != 'A' || data[1] != 'M' ||
         data[2] != 'F' || data[3] != 14 || data[36] != MUSIC_INSTRUMENTS ||
         !data[37] || data[37] > MUSIC_ORDERS || !read16(data + 38) ||
@@ -114,8 +114,10 @@ int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned i
                 if (value > 64) return -1;
                 event->volume = (unsigned char)(value + 1);
             } else {
-                if (type != 0x82 && type != 0x89 && type != 0x8b && type != 0x91 &&
-                    type != 0x8c && type != 0x93 && type != 0x95) return -1;
+                if (type != 0x82 && type != 0x84 && type != 0x86 &&
+                    type != 0x89 && type != 0x8b && type != 0x91 &&
+                    type != 0x8c && type != 0x92 && type != 0x93 &&
+                    type != 0x95) return -1;
                 if (event->effect) return -1;
                 if ((type == 0x8c && value >= 64) || (type == 0x95 && value < 33)) return -1;
                 event->effect = (unsigned char)type; event->parameter = (unsigned char)value;
@@ -145,6 +147,13 @@ static const unsigned char vibrato_sine[32] = {
     255,253,250,244,235,224,212,197,180,161,141,120,97,74,49,24
 };
 
+static unsigned int music_note_period(unsigned int note)
+{
+    unsigned int octave = note / 12;
+    unsigned int period = octave < 15 ? note_periods[note % 12] >> octave : 1;
+    return period ? period : 1;
+}
+
 static void music_trigger(MUSIC_PLAYER *player, MUSIC_VOICE *voice,
     unsigned int note, unsigned int instrument, unsigned int volume)
 {
@@ -153,9 +162,9 @@ static void music_trigger(MUSIC_PLAYER *player, MUSIC_VOICE *voice,
         voice->volume = player->samples[instrument - 1].volume;
     }
     if (note) {
-        unsigned int octave = note / 12;
-        voice->period = octave < 15 ? note_periods[note % 12] >> octave : 1;
-        if (!voice->period) voice->period = 1;
+        voice->period = music_note_period(note);
+        voice->target_period = 0;
+        voice->tone_portamento = 0;
         voice->phase = 0;
         voice->vibrato_phase = 0;
     }
@@ -169,14 +178,39 @@ static void music_tick(MUSIC_PLAYER *player)
         for (unsigned int ch = 0; ch < 4; ++ch) {
             const MUSIC_EVENT *event = &player->tracks[player->orders[player->order][ch]][player->row];
             MUSIC_VOICE *voice = &player->voices[ch];
-            voice->volume_slide = 0; voice->vibrato = 0;
+            voice->volume_slide = 0;
+            voice->period_slide = 0;
+            voice->tone_portamento = 0;
+            voice->vibrato = 0;
             voice->delay_tick = event->effect == 0x93 ? event->parameter & 15 : 0;
             if (voice->delay_tick) {
                 voice->delayed_note = event->note;
                 voice->delayed_instrument = event->instrument;
                 voice->delayed_volume = event->volume;
+            } else if (event->effect == 0x86 && event->note) {
+                music_trigger(player, voice, 0, event->instrument, event->volume);
+                voice->target_period = music_note_period(event->note);
+                if (!voice->period) {
+                    voice->period = voice->target_period;
+                    voice->target_period = 0;
+                    voice->phase = 0;
+                }
             } else {
                 music_trigger(player, voice, event->note, event->instrument, event->volume);
+            }
+            if (event->effect == 0x84) {
+                unsigned int amount = event->parameter & 0x7f;
+                voice->period_slide = event->parameter & 0x80 ?
+                    -(int)amount : (int)amount;
+            } else if (event->effect == 0x92) {
+                unsigned int amount = event->parameter & 0x7f;
+                int slide = event->parameter & 0x80 ? -(int)amount : (int)amount;
+                int period = (int)voice->period + slide;
+                voice->period = (unsigned int)(period < 1 ? 1 : period);
+            } else if (event->effect == 0x86 && voice->target_period) {
+                if (event->parameter) voice->portamento_speed = event->parameter;
+                if (!voice->portamento_speed) voice->portamento_speed = 1;
+                voice->tone_portamento = 1;
             }
             if (event->effect == 0x82 || event->effect == 0x8b) {
                 if (event->parameter) voice->volume_slide_memory = signed_byte(event->parameter);
@@ -204,6 +238,21 @@ static void music_tick(MUSIC_PLAYER *player)
         if (player->tick && player->tick == voice->delay_tick)
             music_trigger(player, voice, voice->delayed_note,
                 voice->delayed_instrument, voice->delayed_volume);
+        if (player->tick && voice->period_slide) {
+            int period = (int)voice->period + voice->period_slide;
+            voice->period = (unsigned int)(period < 1 ? 1 : period);
+        }
+        if (player->tick && voice->tone_portamento && voice->target_period) {
+            if (voice->period < voice->target_period) {
+                unsigned int next = voice->period + voice->portamento_speed;
+                voice->period = next > voice->target_period ? voice->target_period : next;
+            } else if (voice->period > voice->target_period) {
+                voice->period = voice->period - voice->target_period >
+                    voice->portamento_speed ? voice->period - voice->portamento_speed :
+                    voice->target_period;
+            }
+            if (voice->period == voice->target_period) voice->tone_portamento = 0;
+        }
         if (player->tick) {
             int volume = (int)voice->volume + voice->volume_slide;
             voice->volume = volume < 0 ? 0 : volume > 64 ? 64 : (unsigned int)volume;

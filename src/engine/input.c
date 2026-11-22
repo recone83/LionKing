@@ -4,22 +4,22 @@
 void input_initialize(ENGINE_INPUT *input)
 {
     /* DS:0x2b0a: Up, Down, Left, Right, Space, Alt, Ctrl, Shift. */
-    const unsigned char hid[8] = {0x52, 0x51, 0x50, 0x4f, 0x2c, 0xe2, 0xe0, 0xe1};
+    const ENGINE_CONTROLS defaults = ENGINE_CONTROLS_DEFAULT;
     *input = (ENGINE_INPUT){0};
     input->repeat_mask = 0xffff;
-    for (unsigned int i = 0; i < 8; ++i) {
-        input->bindings[i] = hid[i];
+    for (unsigned int i = 0; i < CONTROL_COUNT; ++i) {
+        input->bindings[i] = defaults.keys[i];
     }
 }
 
 int input_poll_controls(ENGINE_INPUT *input, const DOS64_INPUT *keys)
 {
-    static const unsigned short masks[8] = {1, 2, 4, 8, 0x20, 0x10, 0x40, 0x100};
+    static const unsigned short masks[CONTROL_COUNT] = {1, 2, 4, 8, 0x20, 0x10, 0x40, 0x100};
     if (!input || !keys) {
         return -1;
     }
     unsigned short held = 0, taps = 0;
-    for (unsigned int i = 0; i < 8; ++i) {
+    for (unsigned int i = 0; i < CONTROL_COUNT; ++i) {
         unsigned int key = input->bindings[i];
         if (keys->KeyDown[key]) {
             held |= masks[i];

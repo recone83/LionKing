@@ -13,11 +13,27 @@ font and `SUN.MCH` selection marker. No replacement logo or font is drawn.
 The SUN selector now follows the original horizontal oscillation from
 `0x2730`: ten one-pixel steps, a direction-change tick, then ten steps back.
 It follows the currently selected row and uses the original logic clock.
-The available options remain a subset, not a recreation of all original
-menu animations or settings.
+The main menu uses the original two entries and the four-line footer from
+the original data, positioned at X32/Y168 with the original 8-pixel font.
+The options screen contains the original five setting categories.
 
-- Up/Down selects **START GAME**, **SOUND ON/OFF**, or **EXIT**, wrapping
-  at either end. Enter or Space activates the selection.
+- Up/Down selects **START** or **OPTIONS**, wrapping at either end.
+  Enter or Space activates the selection. OPTIONS contains difficulty,
+  independent MUSIC and SOUND EFFECTS switches, REDEFINE KEYS and EXIT.
+  Escape returns from OPTIONS; Escape on the main menu returns to the launcher.
+  REDEFINE KEYS prompts for up, down, left, right, jump, adult slash, roar
+  and adult maul in the original order. Their default bindings correspond to
+  the original DOS key table at DS `0x2b0a`.
+  Duplicate bindings are rejected, Escape cancels the entire change, and
+  Enter is reserved for menu confirmation. Rebinding affects LEVEL1 controls;
+  the two adult attack bindings are recorded but cannot yet be used because
+  adult Simba gameplay is not ported. Menu and continue-screen navigation
+  retain their fixed keys.
+  The key screen follows the original DS `0x2b36` layout: a header at
+  X80/Y72 and progressively displayed rows with their current assignments.
+  For keys without a recovered four-character label, `HI` and the two
+  hexadecimal HID digits are displayed. Escape cancellation and the
+  duplicate-key warning are native usability additions.
 - The startup Rafiki/baby-Simba animation plays after the logos, before
   the menu. The original manual-word/password screen is deliberately omitted.
 - Start plays the separate original Timon intro before loading LEVEL1 at
@@ -46,9 +62,11 @@ menu animations or settings.
   octave-too-high/double-speed playback. The 31492-byte sample now remains
   active past two seconds instead of ending prematurely. LEVEL1 keeps its
   previous calibration so this title fix does not alter gameplay audio.
-- Sound selection controls title music immediately and both AMF music and PCM effects for the next
-  session. Muted gameplay does not require an audio device. The setting
-  survives returns to the menu, but is not saved to disk.
+- Music selection controls title music immediately and AMF music in gameplay
+  and continue screens. Sound effects separately control gameplay effects and
+  character speech. With music disabled but effects enabled, gameplay uses the
+  effects-only mixer. With both disabled, gameplay does not require an audio
+  device. Settings survive returns to the menu but are not saved to disk.
 - Escape during gameplay returns to the menu. GAME OVER, or defeating the
   final hyena, also returns after the scene finishes. Audio is stopped
   before returning, and a new game initializes fresh level state.
@@ -59,7 +77,7 @@ menu animations or settings.
   `SPEECH1` starts on both PCM channels at logic tick 19; the script finishes
   at tick 475. Escape skips it, and menu mute also mutes its speech.
   The gameplay audio stream closes before reward speech opens.
-- Escape in the menu, or EXIT, returns to the launcher.
+- Escape in the main menu returns to the launcher.
 
 `--map` still enters LEVEL1 directly; `--preview` preserves the previous
 automatic locomotion demonstration. Other diagnostic arguments retain
@@ -68,7 +86,8 @@ explicitly rather than falling back to a fake successful loading screen.
 
 The actual-entry sanitizer test
 [check_frontend.c](../../tools/check_frontend.c) exercises original title assets,
-menu wrapping, mute/unmute, 142 original level-title presentations across two starts,
+menu wrapping, independent music/effects mute, key remapping and cancellation,
+142 original level-title presentations across two starts,
 startup-intro-before-menu ordering, distinct Timon intro on both starts,
 the 100-tick level-name overlay during moving gameplay,
 Escape return, three real-contact deaths/two
@@ -81,20 +100,26 @@ mkdir -p build
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
 cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -fno-omit-frame-pointer -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_frontend.c src/dos64/start.c src/dos64/platform.c src/dos64/frontend.c \
+    -Itools tools/check_frontend.c src/dos64/start.c src/dos64/preview_idle.c \
+    src/dos64/preview_player.c src/dos64/preview_background.c src/dos64/preview_bonus.c \
+    src/dos64/preview_emitter.c src/dos64/platform.c src/dos64/frontend.c \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
     src/libs/vga.c src/engine/tile_blitters.c src/engine/tiles.c src/engine/timing.c \
     src/engine/objects.c src/engine/input.c src/engine/render.c src/engine/assets.c \
     src/engine/animation.c src/engine/physics.c src/engine/behaviors.c \
-    src/engine/music.c src/engine/bonus.c src/engine/enemies.c src/engine/pickups.c \
+    src/engine/music.c src/engine/bonus.c src/engine/bonus_toss.c \
+    src/engine/bonus_toss_item.c src/engine/bonus_toss_stage.c \
+    src/engine/enemies.c src/engine/pickups.c \
     src/engine/lifecycle.c src/engine/hud.c build/animation_data.c \
     -o build/check_frontend_san
 build/check_frontend_san
 build/check_frontend_san --skip-splash
+build/check_frontend_san --rebind
+build/check_frontend_san --rebind-alias
 ```
 
 Both publisher screens are compared against every original indexed pixel;
-the menu's sky/rock/logo composition, intro frames and original level-title
+the complete menu and footer, options, sky/rock/logo composition, intro frames and original level-title
 artwork are also checked pixel-for-pixel. The intro uses original DS table
 `0x30a0` and parts `0xbd60` onwards: 120 ticks of the original changing
 poses followed by a 240-tick hold, skippable during the hold. Its graphics
@@ -102,11 +127,16 @@ and timing are restored. Tests compare every submitted title-music sample,
 including playback on the first splash and through the intro/menu, exercise
 mute/reopening and ensure streams never overlap. The original selector
 motion is also compared pixel-for-pixel across its full oscillation.
+The rebinding tests cover all eight prompts, duplicate rejection and
+cancellation, remapped movement and roar, and prevent right Control from
+also roaring when assigned to another action.
 
 [check_victory.c](../../tools/check_victory.c) tests the actual adapter's victory
 transition separately. Build with the same host source list above, replacing
 `tools/check_frontend.c` with `tools/check_victory.c`, adding
-`-Wl,--wrap=engine_enemies_tick`, and choosing `build/check_victory_san` as output.
+`-Wl,--wrap=engine_enemies_tick -Wl,--wrap=engine_pickups_tick
+-Wl,--wrap=run_bonus_toss_game -Wl,--wrap=start_level_two`, and choosing
+`build/check_victory_san` as output.
 The wrapper runs the real enemy update but injects a nonzero boss-death counter
 at tick 60; this tests controller wiring, not a keyboard-driven boss victory.
 The real two-hit fight and death-animation completion are covered by the
@@ -119,6 +149,8 @@ build/check_victory_san --skip
 build/check_victory_san --muted
 build/check_victory_san --missing
 build/check_victory_san --audio-failure
+build/check_victory_san --bonus
+build/check_victory_san --bonus-escape
 ```
 
 The reward fixture compares every rendered pixel against an independent
@@ -126,6 +158,10 @@ frame-duration table and original assets, all 22 reward frames, tick-19
 speech, tick-475 completion and exact two-channel speech PCM. It verifies
 direct-map and menu-start victory paths, return to menu, skip/mute, explicit
 resource/audio failure, closed logs and nonoverlapping audio ownership.
+The bonus tests place Simba on the real type-41 marker using the pickup wrapper,
+then verify the bonus-round entry runs after the real victory transition, and
+that Escape from BUG TOSS returns to the menu without starting Level 2.
+Restart persistence is tested separately by `check_pickups`.
 The pre-game intro follows code `0x4711`/`0x47b2`, with
 `1TIMONS.MCH` at owner X160/Y160 and the original script at DS `0x5435`.
 It lasts 130 logic ticks: the first 30 retain the initial pose, then the

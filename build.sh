@@ -4,10 +4,13 @@ ScriptDir=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 cd -- "$ScriptDir"
 
 BuildOnly=0
+LaunchArgument=
 if [ "$#" -eq 1 ] && [ "$1" = "--build-only" ]; then
     BuildOnly=1
+elif [ "$#" -eq 1 ] && [ "$1" = "--bug-toss" ]; then
+    LaunchArgument=--bug-toss
 elif [ "$#" -ne 0 ]; then
-    echo "Usage: bash build.sh [--build-only]" >&2
+    echo "Usage: bash build.sh [--build-only|--bug-toss]" >&2
     exit 2
 fi
 
@@ -56,7 +59,8 @@ perl tools/extract_animation.pl bin/obj2_data.bin > "$Temporary/animation_data.c
     src/engine/animation.c \
     src/engine/physics.c \
     src/engine/behaviors.c \
-    src/engine/music.c src/engine/bonus.c \
+    src/engine/music.c src/engine/bonus.c src/engine/bonus_toss.c \
+    src/engine/bonus_toss_item.c src/engine/bonus_toss_stage.c \
     src/engine/enemies.c \
     src/engine/pickups.c \
     src/engine/lifecycle.c \
@@ -71,6 +75,6 @@ fi
 echo "Built build/lionking.exe. Windows additionally requires bmetal.dll beside it."
 
 if [ "$BuildOnly" -eq 0 ]; then
-    bash image/build-image.sh "$Temporary/dos64.img"
+    bash image/build-image.sh "$Temporary/dos64.img" "$LaunchArgument"
     bash image/run.sh "$Temporary/dos64.img"
 fi

@@ -10,8 +10,10 @@
 #include "engine/animation_data.h"
 #include "engine/timing.h"
 #include "engine/music.h"
+#include "engine/controls.h"
 
 int __attribute__((ms_abi)) start(const DOS64_API *api);
+extern ENGINE_CONTROLS game_controls;
 static DOS64_API api;
 static unsigned int polls, menu_visits, menu_step, scene_polls, restart_poll;
 static unsigned int draws, loading_frames, clears, audio_opens, audio_stops;
@@ -52,6 +54,37 @@ static unsigned long long title_audio_frames, disney_audio_frames;
 static ENGINE_CLOCK selector_clock;
 static int selector_x, selector_remaining, selector_right;
 static unsigned int selector_selected, selector_wait, selector_positions;
+static int options_open;
+static int selected_sound = 1;
+static int selected_music = 1;
+static unsigned int selected_difficulty = 1;
+static unsigned char menu_font[8192];
+static unsigned int menu_font_size;
+static unsigned int options_visits, options_returns, main_frames, options_frames;
+static int options_case, rebinding;
+static unsigned int binding_index, duplicate_keys, cancelled_keys, saved_keys;
+static int duplicate_visible;
+static ENGINE_CONTROLS expected_bindings;
+static ENGINE_CONTROLS bindings_before_edit;
+static unsigned int binding_rows_seen;
+static unsigned int binding_duplicate_frames, binding_unknown_frames;
+static unsigned int active_effects;
+static unsigned int roar_requests;
+static unsigned int unexpected_alt_roars;
+static unsigned long long gameplay_audio_energy;
+static unsigned int difficulty_changes;
+static int difficulty_case;
+static unsigned int initial_lives_seen, initial_continues_seen;
+
+static void expected_text(unsigned int x, unsigned int y, const char *label)
+{
+    for (; *label; ++label, x += 8) {
+        unsigned char c = (unsigned char)*label;
+        if (c > 'Z') c -= 32;
+        assert(render_draw_sprite(menu_font, menu_font_size, (unsigned short)(c - 32),
+            (int)x, (int)y, intro_pixels) == 0);
+    }
+}
 
 static void record(const char *text)
 {
@@ -108,7 +141,7 @@ static void record(const char *text)
         menu_step = 0;
         selector_wait = 0;
         selector_selected = 0;
-        selector_x = 82;
+        selector_x = 115;
         selector_remaining = 10;
         selector_right = 0;
         engine_clock_reset(&selector_clock, now);
@@ -116,6 +149,40 @@ static void record(const char *text)
         intro_phase = 0;
         assert(finished_intros == 1 && finished_pregames == menu_visits - 1);
     }
+    if (strstr(text, "Options: opened.")) {
+        options_open = 1;
+        selector_selected = 0;
+        ++options_visits;
+    }
+    if (strstr(text, "Options: redefining keys.")) {
+        rebinding = 1; binding_index = 0; duplicate_visible = 0;
+        expected_bindings = bindings_before_edit = game_controls;
+    }
+    if (strstr(text, "Options: key recorded.")) {
+        unsigned int key = 4;
+        while (key < 256 && !api.Input.KeyPressed[key]) ++key;
+        assert(key < 256 && binding_index < CONTROL_COUNT);
+        expected_bindings.keys[binding_index++] = (unsigned char)key;
+        duplicate_visible = 0;
+    }
+    if (strstr(text, "Options: key already assigned")) { ++duplicate_keys; duplicate_visible = 1; }
+    if (strstr(text, "Options: key changes cancelled.")) {
+        assert(!memcmp(&game_controls, &bindings_before_edit, sizeof(game_controls)));
+        rebinding = 0; ++cancelled_keys;
+    }
+    if (strstr(text, "Options: key changes saved.")) { rebinding = 0; ++saved_keys; }
+    if (strstr(text, "Options: returned to main menu.")) {
+        options_open = 0;
+        selector_selected = 0;
+        ++options_returns;
+    }
+    if (strstr(text, "Main menu: sound on.")) selected_sound = 1;
+    if (strstr(text, "Main menu: sound off.")) selected_sound = 0;
+    if (strstr(text, "Options: music on.")) selected_music = 1;
+    if (strstr(text, "Options: music off.")) selected_music = 0;
+    if (strstr(text, "Main menu: difficulty easy.")) selected_difficulty = 0;
+    if (strstr(text, "Main menu: difficulty normal.")) selected_difficulty = 1;
+    if (strstr(text, "Main menu: difficulty hard.")) selected_difficulty = 2;
     if (strstr(text, "Main menu: start LEVEL1.")) {
         assert(!audio_live);
         in_menu = 0;
@@ -141,6 +208,14 @@ static void record(const char *text)
         in_scene = 0;
     }
     if (strstr(text, "sound muted.")) ++muted_requests;
+    if (strstr(text, "PCM output active.")) ++active_effects;
+    if (strstr(text, "Original roar sample requested")) {
+        ++roar_requests;
+        if (options_case == 4 && scene_polls < 340) ++unexpected_alt_roars;
+    }
+    if (strstr(text, "Main menu: difficulty ")) ++difficulty_changes;
+    if (strstr(text, "LEVEL1 starting lives: ")) initial_lives_seen = 1;
+    if (strstr(text, "LEVEL1 starting continues: ")) initial_continues_seen = 1;
     if (strstr(text, "restarted at the saved checkpoint.")) {
         ++restarts;
         restart_poll = polls;
@@ -170,6 +245,21 @@ static int __attribute__((ms_abi)) close_file(void *file)
         size_t count = fread(contents, 1, sizeof(contents) - 1, file);
         assert(count < sizeof(contents) - 1);
         contents[count] = 0;
+        if (options_case == 1) {
+            unsigned int x;
+            const char *line = strstr(contents, "Player world X: ");
+            assert(line && sscanf(line, "Player world X: %u", &x) == 1 && x > 200 && x < 2000);
+        }
+        if (difficulty_case) {
+            unsigned int initial_lives, initial_continues;
+            const char *life_line = strstr(contents, "LEVEL1 starting lives: ");
+            const char *continue_line = strstr(contents, "LEVEL1 starting continues: ");
+            assert(life_line && continue_line);
+            assert(sscanf(life_line, "LEVEL1 starting lives: %u", &initial_lives) == 1);
+            assert(sscanf(continue_line, "LEVEL1 starting continues: %u", &initial_continues) == 1);
+            assert(initial_lives == (difficulty_case == 1 ? 9U : 1U));
+            assert(initial_continues == (difficulty_case == 1 ? 3U : 0U));
+        }
         const char *cursor = contents;
         while ((cursor = strstr(cursor, "Player deaths: "))) {
             unsigned int value;
@@ -226,19 +316,73 @@ static void __attribute__((ms_abi)) poll(void)
     } else if (in_menu) {
         if (menu_visits < 3 && ++selector_wait < 70) return;
         unsigned int key;
-        if (menu_visits == 3) key = menu_step++ == 0 ? 0x52 : 0x28;
+        if ((difficulty_case || options_case) && menu_visits == 2) key = 0x29;
+        else if (options_case) {
+            static const unsigned int keys[] = {
+                0x51,0x28,0x51,0x51,0x51,0x28,
+                0x1a,0x1a,0x29,0,
+                0x28,0x46,0x16,0x04,0x07,0x2c,0x3a,0x14,0x09,
+                0x51,0x28,0x28
+            };
+            static const unsigned int alias_keys[] = {
+                0x51,0x28,0x51,0x51,0x51,0x28,
+                0x1a,0x1a,0x29,0,
+                0x28,0x1a,0x16,0x04,0x07,0x2c,0x08,0xe0,0xe4,
+                0x51,0x28,0x28
+            };
+            static const unsigned int music_off[] = {0x51,0x28,0x51,0x28,0x51,0x51,0x51,0x28,0x28};
+            static const unsigned int effects_off[] = {0x51,0x28,0x51,0x51,0x28,0x51,0x51,0x28,0x28};
+            const unsigned int *list = options_case == 1 ? keys : options_case == 4 ?
+                alias_keys : options_case == 2 ? music_off : effects_off;
+            unsigned int count = options_case == 1 ? sizeof(keys) / sizeof(keys[0]) :
+                options_case == 4 ? sizeof(alias_keys) / sizeof(alias_keys[0]) :
+                options_case == 2 ? sizeof(music_off) / sizeof(music_off[0]) :
+                sizeof(effects_off) / sizeof(effects_off[0]);
+            assert(menu_step < count);
+            key = list[menu_step++];
+        }
+        else if (difficulty_case) {
+            static const unsigned int hard_keys[] = {0x51,0x28,0x28,0x29,0,0x28};
+            static const unsigned int easy_keys[] = {0x51,0x28,0x28,0x28,0x51,0x51,0x51,0x51,0x28,0x28};
+            const unsigned int *keys = difficulty_case == 1 ? easy_keys : hard_keys;
+            unsigned int count = difficulty_case == 1 ?
+                sizeof(easy_keys) / sizeof(easy_keys[0]) : sizeof(hard_keys) / sizeof(hard_keys[0]);
+            assert(menu_step < count);
+            key = keys[menu_step++];
+        }
+        else if (menu_visits == 3) key = 0x29;
         else {
-            static const unsigned int keys[] = {0x52,0x51,0x51,0x28,0x52,0x28};
+            static const unsigned int keys[] = {
+                0x51,0x28,0x28,0x28,0x28,0x51,0x28,0x51,0x28,0x51,0x51,0x28,0x28
+            };
             assert(menu_step < sizeof(keys) / sizeof(keys[0]));
             key = keys[menu_step++];
         }
-        api.Input.KeyPressed[key] = api.Input.KeyDown[key] = 1;
-        if (key == 0x52) selector_selected = (selector_selected + 2) % 3;
-        if (key == 0x51) selector_selected = (selector_selected + 1) % 3;
+        if (key) api.Input.KeyPressed[key] = api.Input.KeyDown[key] = 1;
+        unsigned int count = options_open ? 5 : 2;
+        if (!rebinding && key == 0x52) selector_selected = (selector_selected + count - 1) % count;
+        if (!rebinding && key == 0x51) selector_selected = (selector_selected + 1) % count;
     } else if (in_scene) {
         ++scene_polls;
-        api.Input.KeyDown[0x4f] = polls - restart_poll < 280;
-        if (menu_visits == 1 && scene_polls == 2002)
+        api.Input.KeyDown[options_case == 1 || options_case == 4 ? 0x07 : 0x4f] =
+            polls - restart_poll < 280;
+        if (options_case == 1 && scene_polls >= 300 && scene_polls < 360)
+            api.Input.KeyDown[0x14] = 1;
+        if (options_case == 1 && scene_polls == 300)
+            api.Input.KeyPressed[0x14] = 1;
+        if (options_case == 4 && scene_polls >= 300 && scene_polls < 340)
+            api.Input.KeyDown[0xe4] = 1;
+        if (options_case == 4 && scene_polls == 300)
+            api.Input.KeyPressed[0xe4] = 1;
+        if (options_case == 4 && scene_polls >= 340 && scene_polls < 380)
+            api.Input.KeyDown[0xe0] = 1;
+        if (options_case == 4 && scene_polls == 340)
+            api.Input.KeyPressed[0xe0] = 1;
+        if ((options_case == 2 || options_case == 3) && scene_polls >= 30 && scene_polls < 90)
+            api.Input.KeyDown[0xe0] = 1;
+        if ((options_case == 2 || options_case == 3) && scene_polls == 30)
+            api.Input.KeyPressed[0xe0] = 1;
+        if (menu_visits == 1 && scene_polls == ((difficulty_case || options_case) ? 400U : 2002U))
             api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
     }
 }
@@ -315,8 +459,6 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
         ++splash_frames;
     }
     if (in_menu && !missing_title) {
-        for (unsigned int i = 0; i < 320 * 110; ++i)
-            assert(image[i] == (title_colors[expected_title[i]] | 0xff000000U));
         unsigned long long ticks;
         assert(engine_clock_elapsed_ticks(&selector_clock, now, &ticks) == 0);
         unsigned long long phase = ticks * 5 + selector_clock.logic_remainder;
@@ -328,16 +470,64 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
                 selector_right = !selector_right;
             } else selector_x += selector_right ? 1 : -1;
         }
-        assert(selector_x >= 72 && selector_x <= 82);
-        selector_positions |= 1U << (selector_x - 72);
+        assert(selector_x >= 105 && selector_x <= 115);
+        selector_positions |= 1U << (selector_x - 105);
         memcpy(intro_pixels, expected_title, sizeof(intro_pixels));
-        assert(render_draw_sprite(selector_art, selector_size, 0, selector_x,
-            115 + (int)selector_selected * 18, intro_pixels) == 0);
-        for (unsigned int y = 115; y < 183; ++y)
-            for (unsigned int x = 65; x < 111; ++x) {
-                unsigned int i = y * 320 + x;
-                assert(image[i] == (title_colors[intro_pixels[i]] | 0xff000000U));
+        if (rebinding) {
+            static const char *names[] = {"   UP KEY", "   DOWN KEY", "   LEFT KEY",
+                "   RIGHT KEY", "   JUMP", "   SLASH (ADULT)", "   ROAR", "   MAUL (ADULT)"};
+            assert(binding_index < CONTROL_COUNT);
+            binding_rows_seen |= 1U << binding_index;
+            expected_text(80, 72, "DEFINE KEYBOARD CONTROLS");
+            for (unsigned int i = 0; i <= binding_index; ++i) {
+                unsigned char key = expected_bindings.keys[i];
+                char label[] = "    ";
+                if (key >= 4 && key <= 29) label[2] = (char)('A' + key - 4);
+                else {
+                    const char *name = key == 0x52 ? " UP " : key == 0x51 ? "DOWN" :
+                        key == 0x50 ? "LEFT" : key == 0x4f ? "RGHT" :
+                        key == 0x2c ? " SPC" : key == 0xe2 ? " ALT" :
+                        key == 0xe0 ? "CTRL" : key == 0xe4 ? "RCTL" :
+                        key == 0xe1 ? " LSH" : key == 0x3a ? " F1 " :
+                        key == 0x46 ? "HI46" : 0;
+                    assert(name);
+                    memcpy(label, name, 4);
+                }
+                expected_text(80, 88 + i * 8, names[i]);
+                expected_text(216, 88 + i * 8, label);
             }
+            if (duplicate_visible) {
+                expected_text(64, 168, "KEY ALREADY USED");
+                ++binding_duplicate_frames;
+            }
+            if (expected_bindings.keys[0] == 0x46) ++binding_unknown_frames;
+            expected_text(64, 176, "ESC TO CANCEL");
+            ++options_frames;
+        } else if (options_open) {
+            expected_text(80, 80, "DIFFICULTY");
+            expected_text(192, 80, selected_difficulty == 0 ? "EASY" :
+                selected_difficulty == 1 ? "NORMAL" : "DIFFICULT");
+            expected_text(80, 96, "MUSIC");
+            expected_text(192, 96, selected_music ? "YES" : "NO");
+            expected_text(80, 112, "SOUND EFFECTS");
+            expected_text(192, 112, selected_sound ? "YES" : "NO");
+            expected_text(80, 128, "REDEFINE KEYS");
+            expected_text(80, 144, "EXIT");
+            ++options_frames;
+        } else {
+            expected_text(144, 120, "START");
+            expected_text(144, 136, "OPTIONS");
+            static const char *footer[] = {"    @ 1994 Virgin Interactive",
+                "   Entertainment (Europe) Ltd.", " @ 1994 The Walt Disney Company",
+                "PC version - East Point Software"};
+            for (unsigned int row = 0; row < 4; ++row)
+                expected_text(32, 168 + row * 8, footer[row]);
+            ++main_frames;
+        }
+        if (!rebinding) assert(render_draw_sprite(selector_art, selector_size, 0, selector_x - (options_open ? 64 : 0),
+            (options_open ? 72 : 112) + (int)selector_selected * 16, intro_pixels) == 0);
+        for (unsigned int i = 0; i < 64000; ++i)
+            assert(image[i] == (title_colors[intro_pixels[i]] | 0xff000000U));
     }
     if (in_scene && !pregame_phase && !scene_polls) {
         ++loading_frames;
@@ -365,7 +555,7 @@ static int __attribute__((ms_abi)) audio_open(unsigned int rate)
         title_reference.interpolate_samples = 1;
         title_reference.sample_reference_period = 856;
     }
-    else assert(menu_visits == 2);
+    else assert(difficulty_case || options_case || menu_visits == 2);
     ++audio_opens;
     return 0;
 }
@@ -381,6 +571,10 @@ static unsigned long long __attribute__((ms_abi)) audio_write(const short *sampl
         title_audio_frames += count;
         if (splash_phase == 1) disney_audio_frames += count;
     }
+    if (audio_kind == 3) {
+        for (unsigned int i = 0; i < count * 2; ++i)
+            gameplay_audio_energy += (unsigned int)(samples[i] < 0 ? -samples[i] : samples[i]);
+    }
     audio_frames += count;
     return count;
 }
@@ -389,7 +583,17 @@ static void __attribute__((ms_abi)) audio_stop(void)
 
 int main(int argc, char **argv)
 {
-    assert(argc == 1 || (argc == 2 && !strcmp(argv[1], "--skip-splash")));
+    assert(argc == 1 || (argc == 2 && (!strcmp(argv[1], "--skip-splash") ||
+        !strcmp(argv[1], "--difficulty-easy") || !strcmp(argv[1], "--difficulty-hard") ||
+        !strcmp(argv[1], "--rebind") || !strcmp(argv[1], "--rebind-alias") ||
+        !strcmp(argv[1], "--music-off") ||
+        !strcmp(argv[1], "--effects-off"))));
+    difficulty_case = argc == 2 && !strcmp(argv[1], "--difficulty-easy") ? 1 :
+        argc == 2 && !strcmp(argv[1], "--difficulty-hard") ? 2 : 0;
+    options_case = argc == 2 && !strcmp(argv[1], "--rebind") ? 1 :
+        argc == 2 && !strcmp(argv[1], "--music-off") ? 2 :
+        argc == 2 && !strcmp(argv[1], "--effects-off") ? 3 :
+        argc == 2 && !strcmp(argv[1], "--rebind-alias") ? 4 : 0;
     skip_splash = argc == 2;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION; api.Arguments = "";
     api.Write = console; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
@@ -434,8 +638,42 @@ int main(int argc, char **argv)
         sizeof(title_source), title_module, sizeof(title_module), &dictionary, &size) == 0);
     assert(resources_load_entry(&api, "LIONKING.EPF", "SUN.MCH", source,
         sizeof(source), selector_art, sizeof(selector_art), &dictionary, &selector_size) == 0);
+    assert(resources_load_entry(&api, "LIONKING.EPF", "F8X8_S.MCH", source,
+        sizeof(source), menu_font, sizeof(menu_font), &dictionary, &menu_font_size) == 0);
     assert(render_draw_sprite(logo, logo_size, 0, 58, 77, expected_loading) == 0);
     assert(start(&api) == 0);
+    if (options_case) {
+        assert(menu_visits == 2 && returns == 1 && pregame_runs == 1 &&
+            options_visits == 1 && options_returns == 1 && main_frames && options_frames &&
+            !log_file && !audio_live);
+        if (options_case == 1 || options_case == 4) {
+            static const unsigned char expected[] = {0x46,0x16,0x04,0x07,0x2c,0x3a,0x14,0x09};
+            static const unsigned char alias_expected[] = {0x1a,0x16,0x04,0x07,0x2c,0x08,0xe0,0xe4};
+            assert(saved_keys == 1 && cancelled_keys == 1 && duplicate_keys == 1);
+            assert(binding_rows_seen == 0xff);
+            assert(binding_duplicate_frames);
+            if (options_case == 1) assert(binding_unknown_frames);
+            assert(!memcmp(game_controls.keys, options_case == 1 ? expected : alias_expected,
+                sizeof(expected)));
+            assert(roar_requests);
+            if (options_case == 4) assert(!unexpected_alt_roars);
+        } else if (options_case == 2) {
+            assert(!selected_music && selected_sound && active_effects && gameplay_audio_energy);
+        } else {
+            assert(selected_music && !selected_sound && !active_effects &&
+                muted_requests && gameplay_audio_energy);
+        }
+        puts("PASS: options settings persist into gameplay and back to the menu");
+        return 0;
+    }
+    if (difficulty_case) {
+        assert(menu_visits == 2 && returns == 1 && pregame_runs == 1 &&
+            difficulty_changes == (unsigned int)(difficulty_case == 1 ? 2 : 1) &&
+            initial_lives_seen && initial_continues_seen && options_visits == 1 &&
+            options_returns == 1 && main_frames && options_frames && !log_file && !audio_live);
+        puts("PASS: difficulty selected through menu and LEVEL1 starts and exits");
+        return 0;
+    }
     assert(splash_frames == 2);
     assert(menu_visits == 3 && returns == 2 && intro_runs == 1 &&
         finished_intros == 1 && pregame_runs == 2 && finished_pregames == 2 &&
@@ -443,9 +681,11 @@ int main(int argc, char **argv)
         moving_title_frames > 100 && seen_pregame_frames == 0x3fffff &&
         loading_frames == 142 &&
         intro_frames > 100 && clears == draws && (seen_intro_frames & 0xff) == 0xff);
-    assert(audio_opens == 5 && audio_stops == 5 && !audio_live &&
+    assert(audio_opens == 6 && audio_stops == 6 && !audio_live &&
         audio_frames > 800000 && title_audio_frames > 800000 && disney_audio_frames > 0 &&
         selector_positions == 0x7ff);
+    assert(difficulty_changes == 6);
+    assert(options_visits == 2 && options_returns == 2 && main_frames && options_frames);
     assert(muted_requests && deaths == 3 && death_scenes == 3 &&
         restarts == 2 && !log_file);
     printf("PASS: original title map, menu wrap/toggle/start/exit, %u loading frames, "
@@ -456,9 +696,9 @@ int main(int argc, char **argv)
     puts(skip_splash ? "PASS: both original publisher screens match every pixel and are skippable" :
         "PASS: both original publisher screens match every pixel; original sky/rock/title menu composition");
     puts("PASS: exact TITLE.AMF PCM starts on Disney splash, continues through intro/menu; "
-        "full original selector oscillation matches pixels; five audio streams open/close without overlap");
+        "full original selector oscillation matches pixels; six audio streams open/close without overlap");
     missing_title = 1;
-    assert(start(&api) == 1 && error_logged && !log_file && audio_opens == 5);
+    assert(start(&api) == 1 && error_logged && !log_file && audio_opens == 6);
     puts("PASS: missing title resources fail explicitly without entering gameplay");
     return 0;
 }

@@ -111,8 +111,10 @@ int main(void)
 
     assert(bonus_assets_load(&assets, &api, "data/LIONKING.EPF", packed,
         sizeof(packed), &dictionary) == 0);
-    assert(assets.loaded && assets.map_size && assets.timon_size &&
-        assets.pumbaa_size && assets.bugs_size && assets.hunt_music_size &&
+    assert(assets.loaded && assets.map_size && assets.timon_size && assets.timon_walk_size &&
+        assets.pumbaa_size && assets.pumbaa_burp_size && assets.bugs_size &&
+        assets.destiny_size && assets.circle_size && assets.meat_size &&
+        assets.burp_sound_size && assets.collect_sound_size && assets.hunt_music_size &&
         assets.toss_music_size);
     assert(bonus_assets_load(&assets, &api, "data/LIONKING.EPF", packed, 1,
         &dictionary) == -1 && !assets.loaded && diagnostics > 0);
@@ -138,17 +140,26 @@ int main(void)
     assert(length == assets.map_size && memcmp(decoded, assets.map, length) == 0);
     DOS64_COLOR colors[256];
     assert(vga_load_palette(decoded, length, colors) == 0);
-    assert(render_map_tile_pass(decoded, length, 0, 0, 0, 0, pixels) == 0);
-    assert(render_map_tile_pass(decoded, length, 0, 0, 0, 1, pixels) == 0);
-    printf("PASS: BONUS.MAP decoded (%u bytes), palette and layer 0 rendered\n", length);
+    for (unsigned int layer = 0; layer < 6; ++layer) {
+        assert(render_map_tile_pass(decoded, length, layer, 0, layer >= 4 ? 8 : 0,
+            0, pixels) == 0);
+        assert(render_map_tile_pass(decoded, length, layer, 0, layer >= 4 ? 8 : 0,
+            1, pixels) == 0);
+    }
+    printf("PASS: BONUS.MAP decoded (%u bytes), palette and stage layers rendered\n", length);
 
-    const char *const sprites[] = {"TMBUGTOS.MCH", "PUMBAA.MCH", "BUGS.MCH"};
+    const char *const sprites[] = {"TMBUGTOS.MCH", "PUMBAA.MCH", "BUGS.MCH",
+        "PUMBBURP.MCH", "DESTINY.MCH", "CIRCLE.MCH", "PMEAT.MCH"};
     for (unsigned int i = 0; i < sizeof(sprites) / sizeof(*sprites); ++i) {
         length = load(&api, sprites[i]);
         const unsigned char *expected = i == 0 ? assets.timon :
-            i == 1 ? assets.pumbaa : assets.bugs;
+            i == 1 ? assets.pumbaa : i == 2 ? assets.bugs :
+            i == 3 ? assets.pumbaa_burp : i == 4 ? assets.destiny :
+            i == 5 ? assets.circle : assets.meat;
         unsigned int expected_size = i == 0 ? assets.timon_size :
-            i == 1 ? assets.pumbaa_size : assets.bugs_size;
+            i == 1 ? assets.pumbaa_size : i == 2 ? assets.bugs_size :
+            i == 3 ? assets.pumbaa_burp_size : i == 4 ? assets.destiny_size :
+            i == 5 ? assets.circle_size : assets.meat_size;
         assert(length == expected_size && memcmp(decoded, expected, length) == 0);
         assert(length >= 2);
         unsigned int frames = (unsigned int)decoded[0] | (unsigned int)decoded[1] << 8;
@@ -159,6 +170,35 @@ int main(void)
         }
         printf("PASS: %s decoded (%u bytes), %u frames rendered\n", sprites[i], length, frames);
     }
+    length = load(&api, "TMWKWAIT.MCH");
+    assert(length == assets.timon_walk_size && memcmp(decoded, assets.timon_walk, length) == 0);
+    assert((decoded[0] | (unsigned int)decoded[1] << 8) == 16);
+    for (unsigned int frame = 0; frame < 16; ++frame)
+        assert(render_draw_sprite(decoded, length, (unsigned short)frame, 0, 0, pixels) == 0);
+    puts("PASS: TMWKWAIT.MCH decoded and all 16 frames rendered");
+    length = load(&api, "BURP");
+    assert(length == assets.burp_sound_size && memcmp(decoded, assets.burp_sound, length) == 0);
+    assert(music_effects_initialize(&music) == 0);
+    assert(music_effect_play(&music, 0, assets.burp_sound, assets.burp_sound_size) == 0);
+    assert(music_samples(&music, samples, MUSIC_RATE / 10) == 0);
+    unsigned long long effect_energy = 0;
+    for (unsigned int i = 0; i < MUSIC_RATE / 5; ++i)
+        effect_energy += samples[i] < 0 ? (unsigned int)-(int)samples[i] : (unsigned int)samples[i];
+    assert(effect_energy > 0);
+    puts("PASS: original BURP sample produces PCM");
+
+    length = load(&api, "COLLECT1");
+    assert(length == assets.collect_sound_size &&
+        memcmp(decoded, assets.collect_sound, length) == 0);
+    assert(music_effects_initialize(&music) == 0);
+    assert(music_effect_play(&music, 0, assets.collect_sound,
+        assets.collect_sound_size) == 0);
+    assert(music_samples(&music, samples, MUSIC_RATE / 10) == 0);
+    effect_energy = 0;
+    for (unsigned int i = 0; i < MUSIC_RATE / 5; ++i)
+        effect_energy += samples[i] < 0 ? (unsigned int)-(int)samples[i] : (unsigned int)samples[i];
+    assert(effect_energy > 0);
+    puts("PASS: original COLLECT1 sample produces PCM");
 
     const char *const tracks[] = {"BUGHUNT.AMF", "BUGTOSS.AMF"};
     for (unsigned int i = 0; i < sizeof(tracks) / sizeof(*tracks); ++i) {

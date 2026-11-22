@@ -55,6 +55,7 @@ static int map_gameover;
 static int continue_test;
 static unsigned int continue_started, continue_accepted, continue_frames;
 static unsigned int exhausted_started, exhausted_frames, accept_animation_frames;
+static unsigned int continue_speech_iteration;
 static DOS64_COLOR countdown_first[20 * 8];
 static int countdown_changed;
 static unsigned int selector_left_frames, selector_right_frames;
@@ -107,6 +108,8 @@ static void record_log(const char *text)
         continue_energy_start = audio_energy;
     }
     if (strstr(text, "continue accepted")) ++continue_accepted;
+    if (strstr(text, "Continue: SPEECH2 on both original channels"))
+        continue_speech_iteration = iteration;
     if (strstr(text, "continue accepted")) restart_iteration = iteration;
     if (strstr(text, "no continues remaining; GAME OVER started")) {
         ++exhausted_started;
@@ -661,6 +664,11 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
                     for (unsigned int col = 203; col < 218; ++col)
                         visible_digit += (image[row * 320 + col] & 0x00ffffffU) != 0;
                 if (!visible_digit) ++accept_animation_frames;
+                if (!visible_digit && (continue_test == 2 || continue_test == 3 || continue_test == 5 || continue_test == 7)) {
+                    for (unsigned int row = 44; row < 68; ++row)
+                        for (unsigned int col = 67; col < 93; ++col)
+                            assert((image[row * 320 + col] & 0x00ffffffU) == 0);
+                }
             }
         }
         if (map_animation && shown) {
@@ -793,6 +801,9 @@ int main(int argc, char **argv)
             assert(frontend_prepare_continue(&api, continue_level_palette) == 0);
             assert(frontend_start_continue(&api, 0) == 0);
             assert(frontend_service_continue() == 0 && !audio_opened && !audio_stops);
+            assert(frontend_accept_continue(&api, 0) == 0);
+            assert(frontend_continue_speech(0) == 0);
+            assert(frontend_service_continue() == 0 && !audio_opened && !audio_stops);
             frontend_stop_continue();
             assert(frontend_release() == 0);
         }
@@ -860,6 +871,25 @@ int main(int argc, char **argv)
             }
             if (continue_test == 1) {
                 assert(frontend_prepare_continue(&api, continue_level_palette) == 0);
+                static const unsigned int elapsed[] = {0, 3, 4, 7, 8, 13, 14, 40, 100, 150};
+                static const unsigned short rafiki_frames[] = {16, 16, 17, 17, 18, 18, 19, 19, 19, 19};
+                for (unsigned int sample = 0; sample < sizeof(elapsed) / sizeof(elapsed[0]); ++sample) {
+                    memset(pixels, 0, sizeof(pixels));
+                    memset(background, 0, sizeof(background));
+                    assert(frontend_continue(pixels, palette, 700, 0, 2,
+                        FRONTEND_CONTINUE_ACCEPT_TICKS - elapsed[sample], 0) == 0);
+                    assert(render_draw_sprite(continue_rafiki, continue_rafiki_size,
+                        rafiki_frames[sample], 96, 70, background) == 0);
+                    assert(render_draw_sprite(continue_title, continue_title_size, 0, 89, 16, background) == 0);
+                    unsigned char icon[64000] = {0};
+                    assert(render_draw_sprite(continue_circle, continue_circle_size,
+                        (unsigned short)((FRONTEND_CONTINUE_TICKS - 700) / 8 % 4),
+                        242, 161, icon) == 0);
+                    for (unsigned int i = 0; i < 64000; ++i)
+                        if (icon[i]) background[i] = (unsigned char)(icon[i] + 112);
+                    assert(render_draw_sprite(continue_digits, continue_digits_size, 2, 218, 118, background) == 0);
+                    assert(memcmp(pixels, background, sizeof(pixels)) == 0);
+                }
                 for (unsigned int frame = 0; frame < 4; ++frame) {
                     memset(pixels, 0, sizeof(pixels));
                     memset(background, 0, sizeof(background));
@@ -895,10 +925,12 @@ int main(int argc, char **argv)
                 if (continue_test == 4) assert(selector_left_frames && selector_right_frames);
             } else if (continue_test == 7) {
                 assert(continue_accepted == 1 && exhausted_started == 1 && exhausted_frames > 390);
-                assert(map_lives == 0 && map_deaths == 3 && audio_stops == 4);
+                assert(map_lives == 0 && map_deaths == 3 && audio_stops == 5);
+                assert(continue_speech_iteration >= 180 && continue_speech_iteration <= 185);
             } else {
                 assert(continue_accepted == 1 && map_lives == 3 && iteration == 500);
-                assert(audio_stops == 3);
+                assert(audio_stops == 4);
+                assert(continue_speech_iteration >= 180 && continue_speech_iteration <= 185);
                 assert(accept_animation_frames > 200);
                 if (continue_test == 5) assert(selector_left_frames && selector_right_frames);
             }

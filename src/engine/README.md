@@ -809,7 +809,7 @@ opuszczeniu prostokąta; restart zwalnia wszystkie liście i stan wejścia.
 `check_enemies` renderuje cały przebieg i sprawdza granice prostokąta.
 
 Typy 1/40/41 domykają znaczniki przedmiotów: `0x14942` zwiększa życie
-do limitu 9, `0x14bc6` zwiększa licznik bonusowy jak `0x6b5d`,
+do limitu 9, `0x14bc6` zwiększa liczbę kontynuacji przez `0x6b5d`,
 `0x14d4f` ustawia wybór bonusu jak DS `0x19369=0xffff`.
 DS `0x4ac2`/`0x4b53` są w zakresie movement; wymagają wspólnych banków
 89 `UP1` i 83 `CIRCLE`. Limit dziewięciu żyć usuwa UP1 bez nagrody.

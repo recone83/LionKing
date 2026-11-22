@@ -32,6 +32,13 @@ while (@level1_banks) {
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";
+print "const unsigned char animation_level2_bank_list[172] = {\n";
+my @level2_banks = unpack 'C*', substr($data, 0xc12c, 172);
+while (@level2_banks) {
+    my @row = splice @level2_banks, 0, 16;
+    print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+}
+print "};\n";
 for my $list (['common_sound', 0x12f30, 92], ['level1_sound', 0x12f8c, 36]) {
     my ($name, $offset, $size) = @$list;
     print "const unsigned char animation_${name}_list[$size] = {\n";

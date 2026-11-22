@@ -7,6 +7,7 @@
 #include "engine/animation_data.h"
 #include "engine/lifecycle.h"
 #include "engine/hud.h"
+#include "engine/difficulty.h"
 #include "engine/sprites.h"
 
 static unsigned char packed[79311], map[580488], original_map[580488], contours[4096];
@@ -21,6 +22,7 @@ static ENGINE_PICKUPS pickups;
 static RENDER_SPRITE_BANK banks[95];
 static unsigned int requests[11], map_size;
 static unsigned char lives;
+static unsigned int continues;
 static unsigned char bars[32768], full_hud[64000], empty_hud[64000];
 static unsigned int bars_size;
 
@@ -64,8 +66,9 @@ static void setup(void)
     player.health = 8;
     player.roar_charge = 16;
     lives = 3;
+    continues = 1;
     assert(engine_pickups_initialize(&pickups, &objects, &renders, &collision,
-        &player, 8, 16, &lives) == 0);
+        &player, 8, 16, &lives, &continues) == 0);
     assert(pickups.count == 14 && pickups.max_health == 8 && pickups.max_roar == 16);
 }
 
@@ -312,7 +315,9 @@ static void check_restart_and_errors(void)
     ENGINE_MAP_COLLISION invalid = collision;
     invalid.size = collision.table;
     assert(engine_pickups_initialize(&pickups, &objects, &renders, &invalid,
-        &player, 8, 16, &lives) == -1);
+        &player, 8, 16, &lives, &continues) == -1);
+    assert(engine_pickups_initialize(&pickups, &objects, &renders, &collision,
+        &player, 8, 16, &lives, 0) == -1);
     unsigned int type;
     RENDER_OWNER position;
     assert(engine_map_marker(&collision, collision.width / 2, 0, &type, &position) == -1);
@@ -337,10 +342,11 @@ static void check_specials(void)
         assert(engine_pickups_tick(&pickups, camera) == 0);
         assert(item->collected && !item->object && requests[1] == 1);
         assert(lives == (i == 0 ? 4 : 3));
-        assert(pickups.bonus_count == (i == 1 ? 1 : 0));
+        assert(!pickups.bonus_count && continues == (i == 1 ? 2 : 1));
         assert(pickups.bonus_selected == (i == 2 ? 65535 : 0));
         assert(engine_pickups_restart(&pickups) == 0);
-        assert(engine_pickups_tick(&pickups, camera) == 0 && !item->object);
+        assert(engine_pickups_tick(&pickups, camera) == 0 && !item->object &&
+            continues == (i == 1 ? 2 : 1));
     }
     setup();
     lives = 9;
@@ -348,7 +354,22 @@ static void check_specials(void)
     RENDER_OWNER camera = activate(item);
     assert(engine_pickups_tick(&pickups, camera) == 0);
     assert(item->collected && !item->object && lives == 9 && !requests[1]);
-    puts("PASS: original UP1/CIRCLE animations, extra-life limit nine, bonus counters/selection and single collection across restart");
+    setup();
+    item = find_item(40);
+    camera = activate(item);
+    overlap(item);
+    continues = 0;
+    assert(engine_pickups_tick(&pickups, camera) == 0);
+    assert(item->collected && continues == 1 && requests[1] == 1);
+    assert(engine_pickups_restart(&pickups) == 0 && continues == 1);
+    setup();
+    item = find_item(40);
+    camera = activate(item);
+    overlap(item);
+    continues = ~0U;
+    assert(engine_pickups_tick(&pickups, camera) == -1);
+    assert(!item->collected && item->object && continues == ~0U && !requests[1]);
+    puts("PASS: original UP1/CIRCLE animations, extra life and continue, bonus selection and persistence across restart");
 }
 
 static void check_hud(void)
@@ -403,6 +424,15 @@ static void check_completion(void)
 
 int main(void)
 {
+    unsigned char difficulty_lives;
+    unsigned int difficulty_continues;
+    assert(engine_difficulty_counts(ENGINE_DIFFICULTY_EASY, &difficulty_lives, &difficulty_continues) == 0 &&
+        difficulty_lives == 9 && difficulty_continues == 3);
+    assert(engine_difficulty_counts(ENGINE_DIFFICULTY_NORMAL, &difficulty_lives, &difficulty_continues) == 0 &&
+        difficulty_lives == 3 && difficulty_continues == 1);
+    assert(engine_difficulty_counts(ENGINE_DIFFICULTY_HARD, &difficulty_lives, &difficulty_continues) == 0 &&
+        difficulty_lives == 1 && difficulty_continues == 0);
+    assert(engine_difficulty_counts((ENGINE_DIFFICULTY)3, &difficulty_lives, &difficulty_continues) == -1);
     DOS64_API api = {0};
     api.Write = log_message;
     api.Fs.Open = open_file;

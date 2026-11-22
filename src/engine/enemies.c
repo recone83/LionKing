@@ -1,4 +1,5 @@
 #ifdef LK_DOS64_NATIVE
+#include "random.h"
 #include "enemies.h"
 #include "animation_data.h"
 
@@ -357,15 +358,7 @@ static int obstacle_level(unsigned char kind, unsigned int side)
 
 static unsigned int random_byte(ENGINE_ENEMIES *enemies)
 {
-    unsigned int low = enemies->random & 255;
-    unsigned int middle = (enemies->random >> 8) & 255;
-    unsigned int high = (enemies->random >> 16) & 255;
-    unsigned int next_low = ((low << 1) | ((high >> 1) & 1)) & 255;
-    unsigned int next_middle = ((middle << 1) | (low >> 7)) & 255;
-    unsigned int difference = ((high >> 2) - high - (middle >> 7)) & 255;
-    unsigned int next_high = (high >> 1) | ((difference & 1) << 7);
-    enemies->random = next_low | (next_middle << 8) | (next_high << 16);
-    return next_high ^ next_middle;
+    return engine_random_byte(&enemies->random);
 }
 
 static int jump_obstacle(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
@@ -779,6 +772,7 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
     for (unsigned int i = 0; i < sizeof(*enemies); ++i) bytes[i] = 0;
     enemies->objects = objects; enemies->renders = renders;
     enemies->map = map; enemies->player = player;
+    enemies->difficulty = ENGINE_DIFFICULTY_NORMAL;
     enemies->random = 0x010101;
     for (unsigned int row = 0; row < map->height / 2; ++row) {
         for (unsigned int col = 0; col < map->width / 2; ++col) {
@@ -838,7 +832,8 @@ int engine_enemies_restart(ENGINE_ENEMIES *enemies)
 int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
 {
     if (!enemies || !enemies->objects || !enemies->renders || !enemies->map ||
-        !enemies->player) return -1;
+        !enemies->player || enemies->difficulty < ENGINE_DIFFICULTY_EASY ||
+        enemies->difficulty > ENGINE_DIFFICULTY_HARD) return -1;
     enemies->player->player.flags_high &= 0xdb;
     if (leaves_tick(enemies) != 0) return -1;
     for (unsigned int i = 0; i < enemies->count; ++i) {
@@ -881,7 +876,7 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
                 return -1;
             }
             if (lizard->marker_type == 43) {
-                lizard->health = 2;
+                lizard->health = (short)(enemies->difficulty + 1);
                 lizard->attacks_left = 2;
                 lizard->facing = 1;
                 lizard->body.motion.velocity_x = 0;

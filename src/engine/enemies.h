@@ -3,6 +3,7 @@
 
 #include "behaviors.h"
 #include "tiles.h"
+#include "difficulty.h"
 
 #define ENGINE_LIZARD_CAPACITY 33U
 
@@ -53,6 +54,7 @@ typedef struct {
     unsigned int contacts;
     unsigned int jumps;
     unsigned int turns;
+    ENGINE_DIFFICULTY difficulty;
     uint32_t random;
     ENGINE_OBJECT_POOL *objects;
     RENDER_POOL *renders;

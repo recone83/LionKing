@@ -6,6 +6,7 @@
 #include "dos64/frontend.h"
 #include "engine/enemies.h"
 #include "engine/music.h"
+#include "engine/pickups.h"
 #include "engine/resources.h"
 #include "engine/sprites.h"
 #include "engine/tiles.h"
@@ -13,6 +14,11 @@
 
 int __attribute__((ms_abi)) start(const DOS64_API *api);
 int __real_engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera);
+int __real_engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera);
+int run_bonus_toss_game(const DOS64_API *api, unsigned char *lives,
+    unsigned int *continues, unsigned short *max_roar);
+int start_level_two(const DOS64_API *api, unsigned char *lives, unsigned int *continues,
+    unsigned short *max_roar);
 
 static DOS64_API api;
 static FILE *log_file;
@@ -22,8 +28,11 @@ static unsigned int reward_frames, seen_frames, audio_opens, audio_stops;
 static int reward_phase, audio_live, reward_audio, skip, muted, missing, audio_failure;
 static int missing_notice, notice_phase;
 static int notice_escape, notice_space;
+static int bonus_selected;
 static unsigned int notice_frames, notice_polls, notices, notice_returns;
-static int error_logged, skipped, terminal;
+static unsigned int bonus_starts;
+static unsigned int bonus_starts, level2_starts;
+static int bonus_escape, error_logged, skipped, terminal;
 static int menu_mode, in_menu;
 static unsigned int menu_visits, menu_returns;
 static unsigned char packed[85438], map[131072], art[65536], speech[65536], notice_font[8192];
@@ -41,6 +50,60 @@ int __wrap_engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
     int result = __real_engine_enemies_tick(enemies, camera);
     if (!result && ++game_ticks == 60) enemies->hyenas_defeated = 1;
     return result;
+}
+
+int __wrap_engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
+{
+    if (bonus_selected && !pickups->bonus_selected) {
+        ENGINE_PICKUP *item = 0;
+        for (unsigned int i = 0; i < pickups->count; ++i)
+            if (pickups->items[i].type == 41) item = &pickups->items[i];
+        assert(item);
+        RENDER_OWNER saved = pickups->player->player.body.owner;
+        RENDER_OWNER item_camera = {(short)(item->marker.x - 160),
+            (short)(item->marker.y - 120)};
+        assert(__real_engine_pickups_tick(pickups, item_camera) == 0 && item->object);
+        pickups->player->player.body.owner = item->body.owner;
+        RENDER_BOUNDS a, b;
+        assert(render_object_bounds(item->body.node, &a) == 0);
+        assert(render_object_bounds(pickups->player->player.body.node, &b) == 0);
+        pickups->player->player.body.owner.x +=
+            (short)((a.left + a.right - b.left - b.right) / 2);
+        pickups->player->player.body.owner.y +=
+            (short)((a.top + a.bottom - b.top - b.bottom) / 2);
+        short hit;
+        assert(render_objects_hit(item->body.node,
+            pickups->player->player.body.node, &hit) == 0 && hit);
+        assert(__real_engine_pickups_tick(pickups, item_camera) == 0);
+        assert(item->collected && pickups->bonus_selected == 65535);
+        pickups->player->player.body.owner = saved;
+    }
+    int result = __real_engine_pickups_tick(pickups, camera);
+    return result;
+}
+
+int __wrap_run_bonus_toss_game(const DOS64_API *game_api, unsigned char *lives,
+    unsigned int *continues, unsigned short *max_roar)
+{
+    assert(bonus_selected && game_api == &api && lives && continues && max_roar);
+    assert(finished == 1 && !audio_live && !notice_phase);
+    assert(*lives == 3 && *continues == 1);
+    assert(*max_roar == 16);
+    *max_roar += 8;
+    ++bonus_starts;
+    return bonus_escape ? 2 : 0;
+}
+
+int __wrap_start_level_two(const DOS64_API *game_api, unsigned char *lives,
+    unsigned int *continues, unsigned short *max_roar)
+{
+    assert(game_api == &api && lives && continues && max_roar);
+    assert(finished == 1 && !audio_live && !notice_phase);
+    assert(bonus_starts == (bonus_selected ? 1U : 0U));
+    assert(*lives == 3 && *continues == 1);
+    assert(*max_roar == (bonus_selected ? 24 : 16));
+    ++level2_starts;
+    return 0;
 }
 
 static unsigned int reward_ticks(void)
@@ -88,12 +151,13 @@ static void record(const char *text)
         ++finished;
         reward_phase = 0;
     }
-    if (strstr(text, "Transition: LEVEL2 is not available")) {
+    if (!bonus_selected && strstr(text, "Transition: LEVEL2 is not available")) {
         assert(finished == 1 && !audio_live && !notice_phase);
         notice_phase = 1;
         ++notices;
     }
-    if (strstr(text, "Transition: returning without starting LEVEL2")) {
+    if (!bonus_selected &&
+        strstr(text, "Transition: returning without starting LEVEL2")) {
         assert(notice_phase && notice_frames == 1 && notice_polls >= 2);
         notice_phase = 0;
         ++notice_returns;
@@ -259,8 +323,10 @@ int main(int argc, char **argv)
         notice_escape = !strcmp(argv[1], "--notice-escape");
         notice_space = !strcmp(argv[1], "--notice-space");
         menu_mode = !strcmp(argv[1], "--menu");
+        bonus_escape = !strcmp(argv[1], "--bonus-escape");
+        bonus_selected = !strcmp(argv[1], "--bonus") || bonus_escape;
         assert(skip || muted || missing || audio_failure || missing_notice ||
-            notice_escape || notice_space || menu_mode);
+            notice_escape || notice_space || menu_mode || bonus_selected);
     }
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION; api.Arguments = "--map";
     if (menu_mode) api.Arguments = "";
@@ -324,8 +390,17 @@ int main(int argc, char **argv)
         if (skip) puts("PASS: Escape skips reward and closes its audio stream");
         if (muted) puts("PASS: muted reward preserves animation timing without opening audio");
         if (!muted) {
-            assert(notices == 1 && notice_returns == 1 && notice_frames == 1);
-            puts("PASS: LEVEL2 unavailable notice waits for a new key and does not start LEVEL2");
+            assert(!notices && !notice_returns && !notice_frames);
+            if (bonus_escape) {
+                assert(bonus_starts == 1 && !level2_starts);
+                puts("PASS: Escape in BUG TOSS returns to the menu instead of entering LEVEL2");
+            } else {
+                assert(level2_starts == 1);
+            }
+            if (bonus_selected && !bonus_escape)
+                puts("PASS: collected BUG TOSS marker starts the bonus before LEVEL2");
+            else if (!bonus_escape)
+                puts("PASS: LEVEL1 completion starts LEVEL2 with lives and continues preserved");
         }
         if (menu_mode) {
             assert(menu_visits == 2 && menu_returns == 1);

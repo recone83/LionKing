@@ -2,11 +2,12 @@
 set -euo pipefail
 cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 
-if [ "$#" -gt 1 ]; then
-    echo "Usage: bash build-image.sh [new-image.img]" >&2
+if [ "$#" -gt 2 ] || { [ "$#" -eq 2 ] && [ -n "$2" ] && [ "$2" != "--bug-toss" ]; }; then
+    echo "Usage: bash build-image.sh [new-image.img [--bug-toss]]" >&2
     exit 2
 fi
 Image=${1:-dos64.img}
+LaunchArgument=${2:-}
 if [ -e "$Image" ] || [ -L "$Image" ]; then
     echo "Refusing to overwrite $Image; choose a new image filename." >&2
     exit 1
@@ -57,7 +58,11 @@ mcopy -i "$Data" ../data/LIONKING.EPF ::/GAMES/LIONKING/LIONKING.EPF
 if [ -f ../data/LIONKING.CFG ]; then
     mcopy -i "$Data" ../data/LIONKING.CFG ::/GAMES/LIONKING/LIONKING.CFG
 fi
-printf '@ECHO OFF\r\nCD C:\\GAMES\\LIONKING\r\nLIONKING.EXE\r\n' > "$Temporary/autoexec.txt"
+if [ -n "$LaunchArgument" ]; then
+    printf '@ECHO OFF\r\nCD C:\\GAMES\\LIONKING\r\nLIONKING.EXE %s\r\n' "$LaunchArgument" > "$Temporary/autoexec.txt"
+else
+    printf '@ECHO OFF\r\nCD C:\\GAMES\\LIONKING\r\nLIONKING.EXE\r\n' > "$Temporary/autoexec.txt"
+fi
 mcopy -i "$Data" "$Temporary/autoexec.txt" ::/AUTOEXEC.BAT
 
 # A hard link publishes the completed image without replacing an existing path.

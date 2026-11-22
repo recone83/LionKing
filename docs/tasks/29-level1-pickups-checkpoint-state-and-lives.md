@@ -40,7 +40,7 @@ the saved checkpoint (or the preview spawn), with health restored, empty
 roar charge and 100 ticks of immunity. Enemy instances are reset; their
 diagnostic counters remain cumulative. At zero lives a continue screen
 allows a checkpoint restart or a return to the launcher. Additional original
-death screen transitions, non-normal difficulty and special hazard-death
+death screen transitions and special hazard-death
 branches are not migrated by this block.
 The timed fatal support branch `0xc884` is connected separately: its
 original invisible `0x5e35` sequence delays zero health by exactly 100
@@ -52,8 +52,12 @@ continue-countdown state. The screen uses the archive's title palette,
 `CONTINUE.MCH`, animated `RAFIKI.MCH`, `NUMBERS.MCH` and `CONTINUE.AMF`.
 The sun selector uses `SUN.MCH` to resemble the reference screenshot; the
 original DOS code instead uses a paw. Left and Right select YES or NO;
-Space or Enter confirms. YES restores three lives at the saved checkpoint
-and resumes level music after Rafiki's acceptance animation. NO, Escape,
+Space or Enter confirms. On normal difficulty, YES restores three lives at the saved checkpoint
+and resumes level music after Rafiki's acceptance animation. On acceptance,
+the selector disappears and the continue music stops; the original `SPEECH2`
+sample plays on both effect channels after 40 acceptance logic ticks. Rafiki's
+acceptance frames use the durations encoded in the original animation stream.
+The sample is omitted when sound is disabled. NO, Escape,
 or timeout leaves the screen. Normal difficulty starts with one continue;
 the number displayed at the bottom right is the number available when the
 screen opened. The original code consumes a continue upon entry, so after
@@ -72,11 +76,23 @@ it. The original loop decrements its counter per rendered iteration, so
 exact DOS timing is not claimed. The shortcut loads the required resources
 without opening the main menu.
 
+The OPTIONS screen offers EASY, NORMAL and HARD. Their initial lives/continues are
+9/3, 3/1 and 1/0 respectively; accepting a continue restores 9, 3 or 1
+lives. The LEVEL1 hyena also starts with 1, 2 or 3 health respectively.
+This covers the recovered difficulty behavior in the implemented continue
+flow and hyena, not all difficulty-dependent behavior from the original game.
+Extra continues awarded through original bonus-game logic are likewise not
+implemented because the bonus game itself has not been migrated.
+
+The host `check_frontend --difficulty-easy` and `--difficulty-hard` exercise
+selection through the actual menu and verify the resulting LEVEL1 starting
+counts. `check_enemies` checks hyena health at each difficulty and after restart.
 The host `check_scene` tests `--continue-timeout`, `--continue-space`,
 `--continue-enter`, `--continue-no`, `--continue-left`, and
 `--continue-escape`, and `--continue-exhausted` exercise the shortcut,
 original-resource pixels, all-frame countdown separation, input, music,
-the second zero-life event, and audio cleanup. `--map-gameover` exercises
+acceptance frame boundaries, speech timing, muted audio, the second zero-life
+event, and audio cleanup. `--map-gameover` exercises
 the countdown after three deaths in the normal map path.
 
 `tools/check_pickups.c` uses real map markers and EPF banks to test healing,
@@ -114,9 +130,10 @@ These effects do not damage Simba or alter map data.
 The remaining collectible markers (1, 40, 41) use original `UP1`, `CIRCLE`
 and `BUGS` art. Type 1 grants a life, capped at nine; at nine it disappears
 without awarding another life or playing the collection sound. Type 40
-increments the original bonus collectible counter, and type 41 selects
+increments the available-continues counter, and type 41 selects
 the original bonus flag. The bonus-game transition itself is not yet
-migrated. Collected states and bonus counters survive native life restarts.
+migrated. Collected states, available continues and bonus selection survive
+native life restarts.
 
 Map mode now draws the original `BARS.MCH` health, roar, Simba portrait and
 life digit artwork at the original LEVEL1 screen positions. Meter fills

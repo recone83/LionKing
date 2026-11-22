@@ -18,7 +18,11 @@ MUSIC_PLAYER music_player;
 MUSIC_OUTPUT music_output;
 BONUS_ASSETS *bonus_assets;
 int menu_active;
+unsigned int loading_level = 1;
 int sound_enabled = 1;
+int music_enabled = 1;
+ENGINE_CONTROLS game_controls = ENGINE_CONTROLS_DEFAULT;
+ENGINE_DIFFICULTY game_difficulty = ENGINE_DIFFICULTY_NORMAL;
 
 ENGINE_ENEMIES map_enemies;
 ENGINE_PICKUPS map_pickups;
@@ -36,7 +40,14 @@ DOS64_API resource_api;
 
 int loading_progress(unsigned int completed)
 {
-    return menu_active ? frontend_loading(completed, 43 + ASSETS_YOUNG_BANK_COUNT) : 0;
+    return menu_active ? frontend_loading_for_level(completed,
+        43 + ASSETS_YOUNG_BANK_COUNT, loading_level) : 0;
+}
+
+int start_level_two(const DOS64_API *api, unsigned char *lives,
+    unsigned int *continues, unsigned short *max_roar)
+{
+    return run_level_two(api, lives, continues, max_roar);
 }
 
 static int game_buffers_initialize(const DOS64_API *api)
@@ -132,9 +143,11 @@ static int run_preview(const DOS64_API *api)
             render_map_tile_pass(bonus_assets->map, bonus_assets->map_size, 0, 0, 0, 0, pixels) != 0 ||
             render_draw_sprite(bonus_assets->timon, bonus_assets->timon_size, 0, 0, 0, pixels) != 0 ||
             render_draw_sprite(bonus_assets->pumbaa, bonus_assets->pumbaa_size, 0, 0, 0, pixels) != 0 ||
+            render_draw_sprite(bonus_assets->pumbaa_burp, bonus_assets->pumbaa_burp_size, 0, 0, 0, pixels) != 0 ||
             render_draw_sprite(bonus_assets->bugs, bonus_assets->bugs_size, 0, 0, 0, pixels) != 0 ||
             music_initialize(&music_player, bonus_assets->hunt_music, bonus_assets->hunt_music_size) != 0 ||
-            music_initialize(&music_player, bonus_assets->toss_music, bonus_assets->toss_music_size) != 0) {
+            music_initialize(&music_player, bonus_assets->toss_music, bonus_assets->toss_music_size) != 0 ||
+            music_effect_play(&music_player, 0, bonus_assets->burp_sound, bonus_assets->burp_sound_size) != 0) {
             lk_platform_log("Lion King: invalid bonus game graphics or music.\n");
             return 1;
         }
@@ -142,6 +155,16 @@ static int run_preview(const DOS64_API *api)
         return 0;
     }
     if (argument_requested(api->Arguments, "--bonus-view")) return run_bonus_view(api);
+    if (argument_requested(api->Arguments, "--bug-toss")) {
+        unsigned char lives;
+        unsigned int continues;
+        unsigned short max_roar = 16;
+        if (engine_difficulty_counts(game_difficulty, &lives, &continues) != 0) {
+            lk_platform_log("Lion King: invalid difficulty for BUG TOSS.\n");
+            return 1;
+        }
+        return run_bonus_toss_game(api, &lives, &continues, &max_roar) == 1 ? 1 : 0;
+    }
     if (argument_requested(api->Arguments, "--background6")) return run_background_preview(api, 6);
     if (argument_requested(api->Arguments, "--background10")) return run_background_preview(api, 10);
     if (argument_requested(api->Arguments, "--background")) return run_background_preview(api, 1);
@@ -166,6 +189,9 @@ static int run_preview(const DOS64_API *api)
     if (argument_requested(api->Arguments, "--walls")) {
         return run_deflection_preview(api, 6);
     }
+    if (argument_requested(api->Arguments, "--level2")) {
+        return run_deflection_preview(api, 9);
+    }
     if (argument_requested(api->Arguments, "--map") ||
         argument_requested(api->Arguments, "--continue-test")) {
         return run_deflection_preview(api,
@@ -181,7 +207,8 @@ static int run_preview(const DOS64_API *api)
             return 1;
         menu_active = 1;
         for (;;) {
-            int selection = frontend_menu(api, &sound_enabled);
+            int selection = frontend_menu(api, &music_enabled, &sound_enabled,
+                &game_difficulty, &game_controls);
             if (selection <= 0) return selection < 0 ? 1 : 0;
             if (frontend_pregame(api, sound_enabled) != 0) return 1;
             int result = run_deflection_preview(api, 7);
@@ -377,6 +404,9 @@ int __attribute__((ms_abi)) start(const DOS64_API *api)
     game_buffers = 0;
     menu_active = 0;
     sound_enabled = 1;
+    music_enabled = 1;
+    game_controls = (ENGINE_CONTROLS)ENGINE_CONTROLS_DEFAULT;
+    game_difficulty = ENGINE_DIFFICULTY_NORMAL;
     int result = game_buffers_initialize(api) == 0 ? run_preview(api) : 1;
     frontend_stop_audio();
     music_output_stop(&music_output);

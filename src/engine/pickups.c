@@ -128,11 +128,13 @@ static int pickup_update_flight(ENGINE_PICKUPS *pickups, ENGINE_PICKUP *item)
 
 int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objects,
     RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player,
-    short max_health, unsigned short max_roar, unsigned char *lives)
+    short max_health, unsigned short max_roar, unsigned char *lives,
+    unsigned int *continues)
 {
     if (!pickups || !objects || !renders || !map || !player ||
         !player->player.body.node || !player->player.body.node->active ||
-        !player->sound || max_health <= 0 || !max_roar || !lives || *lives > 9) return -1;
+        !player->sound || max_health <= 0 || !max_roar || !lives || *lives > 9 ||
+        !continues) return -1;
     *pickups = (ENGINE_PICKUPS){0};
     pickups->objects = objects;
     pickups->renders = renders;
@@ -141,6 +143,7 @@ int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objec
     pickups->max_health = max_health;
     pickups->max_roar = max_roar;
     pickups->lives = lives;
+    pickups->continues = continues;
     pickups->checkpoint = player->player.body.owner;
     for (unsigned int row = 0; row < map->height / 2; ++row) {
         for (unsigned int column = 0; column < map->width / 2; ++column) {
@@ -160,7 +163,8 @@ int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objec
 int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
 {
     if (!pickups || !pickups->objects || !pickups->renders || !pickups->map ||
-        !pickups->player || !pickups->player->sound || !pickups->lives) return -1;
+        !pickups->player || !pickups->player->sound || !pickups->lives ||
+        !pickups->continues) return -1;
     for (unsigned int i = 0; i < pickups->count; ++i) {
         ENGINE_PICKUP *item = &pickups->items[i];
         if (!item->object) {
@@ -206,6 +210,7 @@ int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
         if (render_objects_hit(item->body.node, pickups->player->player.body.node, &hit) != 0)
             return -1;
         if (!hit) continue;
+        if (item->type == 40 && *pickups->continues == ~0U) return -1;
         unsigned short sample = item->type == 17 || item->type == 18 ? 10 : 1;
         if (pickups->player->sound(pickups->player->player.context, sample) != 0) return -1;
         if (item->type == 3) {
@@ -219,7 +224,7 @@ int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera)
         ++pickups->collected;
         if (item->type == 1 || item->type == 40 || item->type == 41) {
             if (item->type == 1) ++*pickups->lives;
-            else if (item->type == 40) ++pickups->bonus_count;
+            else if (item->type == 40) ++*pickups->continues;
             else pickups->bonus_selected = 65535;
             if (pickup_release(pickups, item) != 0) return -1;
         } else if (item->type == 16 || item->type == 49) {

@@ -2,12 +2,13 @@
 #define LIONKING_INPUT_H
 
 #include "dos64_api.h"
+#include "controls.h"
 
 typedef struct {
     unsigned short held;
     unsigned short pressed;
     unsigned short repeat_mask;
-    unsigned char bindings[8];
+    unsigned char bindings[CONTROL_COUNT];
     const unsigned char *replay;
     unsigned int replay_size;
     unsigned int replay_position;
