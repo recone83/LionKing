@@ -31,3 +31,4 @@ These task notes preserve the previous project README, split by topic and origin
 - [LEVEL1 music in map mode](27-level1-music-in-map-mode.md) (original README lines 1504–1548)
 - [LEVEL1 enemies and real player contacts](28-level1-enemies-and-real-player-contacts.md) (original README lines 1549–1697)
 - [LEVEL1 pickups, checkpoint state and lives](29-level1-pickups-checkpoint-state-and-lives.md) (original README lines 1698–1807)
+- [LEVEL1 completion and next-level notice](30-level-transition.md)

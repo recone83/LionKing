@@ -4,6 +4,8 @@ A port of the DOS game *The Lion King* for [DOS64 / BMetal](https://bmetal.recon
 and Windows. The project includes a native engine, graphics, keyboard input,
 music and sound, using the original game data. LEVEL1 is playable; the project
 does not yet claim full game compatibility.
+After LEVEL1, the game displays a notice that LEVEL2 is not yet available
+and returns to the menu after confirmation.
 
 ## Requirements
 

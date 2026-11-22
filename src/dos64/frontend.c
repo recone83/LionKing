@@ -442,6 +442,37 @@ finished_reward:
     return result;
 }
 
+int frontend_next_level_unavailable(const DOS64_API *api, const DOS64_API *resources)
+{
+    unsigned int loaded;
+    if (resources_load_entry(resources, "LIONKING.EPF", "F8X8_S.MCH",
+        source, sizeof(source), font, sizeof(font), &dictionary, &loaded) != 0) {
+        lk_platform_log("Lion King: cannot load next-level notice font.\n");
+        return -1;
+    }
+    font_size = loaded;
+    if (title_background() != 0 ||
+        text(76, 90, "LEVEL 2 NOT AVAILABLE") != 0 ||
+        text(88, 110, "ENTER SPACE OR ESC") != 0) {
+        lk_platform_log("Lion King: cannot draw next-level notice.\n");
+        return -1;
+    }
+    lk_platform_log("Transition: LEVEL2 is not available; awaiting confirmation.\n");
+    lk_platform_present(view, colors);
+    int released = 0;
+    for (;;) {
+        lk_platform_poll();
+        int held = api->Input.KeyDown[0x28] || api->Input.KeyDown[0x29] ||
+            api->Input.KeyDown[0x2c];
+        if (released && (lk_platform_exit_requested() ||
+            api->Input.KeyPressed[0x28] || api->Input.KeyPressed[0x2c]))
+            break;
+        if (!held) released = 1;
+    }
+    lk_platform_log("Transition: returning without starting LEVEL2.\n");
+    return 0;
+}
+
 int frontend_level_palette(const DOS64_COLOR *palette)
 {
     for (unsigned int i = 0; i < 256; ++i) loading_colors[i] = palette[i];

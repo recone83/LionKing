@@ -20,11 +20,15 @@ static unsigned long long now, reward_begin;
 static unsigned int polls, game_ticks, completions, scenes, speech_events, finished;
 static unsigned int reward_frames, seen_frames, audio_opens, audio_stops;
 static int reward_phase, audio_live, reward_audio, skip, muted, missing, audio_failure;
+static int missing_notice, notice_phase;
+static int notice_escape, notice_space;
+static unsigned int notice_frames, notice_polls, notices, notice_returns;
 static int error_logged, skipped, terminal;
 static int menu_mode, in_menu;
 static unsigned int menu_visits, menu_returns;
-static unsigned char packed[85438], map[131072], art[65536], speech[65536];
+static unsigned char packed[85438], map[131072], art[65536], speech[65536], notice_font[8192];
 static unsigned char expected_background[64000], expected_pixels[64000];
+static unsigned char expected_notice[64000];
 static DOS64_COLOR palette[256];
 static RESOURCE_DICTIONARY dictionary;
 static unsigned int art_size, speech_size;
@@ -84,8 +88,19 @@ static void record(const char *text)
         ++finished;
         reward_phase = 0;
     }
+    if (strstr(text, "Transition: LEVEL2 is not available")) {
+        assert(finished == 1 && !audio_live && !notice_phase);
+        notice_phase = 1;
+        ++notices;
+    }
+    if (strstr(text, "Transition: returning without starting LEVEL2")) {
+        assert(notice_phase && notice_frames == 1 && notice_polls >= 2);
+        notice_phase = 0;
+        ++notice_returns;
+    }
     if (strstr(text, "cannot load original LEVEL1 Rafiki") ||
-        strstr(text, "reward speech requires usable")) error_logged = 1;
+        strstr(text, "reward speech requires usable") ||
+        strstr(text, "cannot load next-level notice font")) error_logged = 1;
 }
 
 static void __attribute__((ms_abi)) console(const char *text)
@@ -100,7 +115,7 @@ static void * __attribute__((ms_abi)) open_file(const char *path, const char *mo
         return log_file = tmpfile();
     }
     assert(!strcmp(path, "LIONKING.EPF"));
-    if (terminal && missing) return 0;
+    if ((terminal && missing) || (finished && missing_notice)) return 0;
     return fopen("data/LIONKING.EPF", mode);
 }
 static int __attribute__((ms_abi)) close_file(void *file)
@@ -135,6 +150,15 @@ static void __attribute__((ms_abi)) poll(void)
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     if (reward_phase && skip && reward_ticks() >= 30)
         api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
+    if (notice_phase) {
+        ++notice_polls;
+        if (skip && notice_polls == 1)
+            api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
+        if (notice_polls == (skip ? 3U : 2U)) {
+            unsigned int key = notice_escape ? 0x29 : notice_space ? 0x2c : 0x28;
+            api.Input.KeyDown[key] = api.Input.KeyPressed[key] = 1;
+        }
+    }
     if (menu_mode && in_menu) {
         unsigned int key = menu_visits == 1 ? 0x28 : 0x29;
         api.Input.KeyDown[key] = api.Input.KeyPressed[key] = 1;
@@ -173,6 +197,12 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
     }
     assert(width == 320 && height == 200 && stride == 320 &&
         x == 0 && y == 40 && dw == 640 && dh == 400);
+    if (notice_phase) {
+        for (unsigned int i = 0; i < 64000; ++i)
+            assert(image[i] == (palette[expected_notice[i]] | 0xff000000U));
+        ++notice_frames;
+        return;
+    }
     if (!reward_phase) return;
     unsigned int ticks = reward_ticks(), frame = frame_at(ticks);
     unsigned int backdrop = ticks ? 17 + ((ticks - 1) / 8) % 5 : 17;
@@ -225,8 +255,12 @@ int main(int argc, char **argv)
         muted = !strcmp(argv[1], "--muted");
         missing = !strcmp(argv[1], "--missing");
         audio_failure = !strcmp(argv[1], "--audio-failure");
+        missing_notice = !strcmp(argv[1], "--missing-notice");
+        notice_escape = !strcmp(argv[1], "--notice-escape");
+        notice_space = !strcmp(argv[1], "--notice-space");
         menu_mode = !strcmp(argv[1], "--menu");
-        assert(skip || muted || missing || audio_failure || menu_mode);
+        assert(skip || muted || missing || audio_failure || missing_notice ||
+            notice_escape || notice_space || menu_mode);
     }
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION; api.Arguments = "--map";
     if (menu_mode) api.Arguments = "";
@@ -247,6 +281,17 @@ int main(int argc, char **argv)
         assert(render_map_tile_pass(map, size, (unsigned int)layer, 0, 0, 0, expected_background) == 0);
         assert(render_map_tile_pass(map, size, (unsigned int)layer, 0, 0, 1, expected_background) == 0);
     }
+    unsigned int font_size;
+    assert(resources_load_entry(&api, "LIONKING.EPF", "F8X8_S.MCH", packed,
+        sizeof(packed), notice_font, sizeof(notice_font), &dictionary, &font_size) == 0);
+    memcpy(expected_notice, expected_background, sizeof(expected_notice));
+    const char *lines[] = {"LEVEL 2 NOT AVAILABLE", "ENTER SPACE OR ESC"};
+    for (unsigned int row = 0; row < 2; ++row)
+        for (unsigned int column = 0; lines[row][column]; ++column)
+            assert(render_draw_sprite(notice_font, font_size,
+                (unsigned short)(lines[row][column] - 32),
+                (int)((row ? 88U : 76U) + column * 8U),
+                (int)(row ? 110 : 90), expected_notice) == 0);
     assert(resources_load_entry(&api, "LIONKING.EPF", "RWDLVL1.MCH", packed,
         sizeof(packed), art, sizeof(art), &dictionary, &art_size) == 0);
     assert(resources_load_entry(&api, "LIONKING.EPF", "SPEECH1", packed,
@@ -261,6 +306,10 @@ int main(int argc, char **argv)
         assert(result == 1 && error_logged && !scenes && !finished &&
             audio_opens == 1 && audio_stops == 1);
         puts("PASS: reward resource/audio failure is explicit; gameplay audio and log close cleanly");
+    } else if (missing_notice) {
+        assert(result == 1 && error_logged && scenes == 1 && finished == 1 &&
+            !notices && !notice_returns && audio_opens == 2 && audio_stops == 2);
+        puts("PASS: missing next-level notice font reports failure after closing reward audio");
     } else {
         assert(result == 0 && scenes == 1 && finished == 1 && speech_events == 1);
         assert(audio_opens == (muted ? 0U : menu_mode ? 5U : 2U) && audio_stops == audio_opens);
@@ -272,6 +321,10 @@ int main(int argc, char **argv)
         if (!muted) puts("PASS: original LEVEL1 controller enters reward exactly once; exact two-channel SPEECH1 PCM");
         if (skip) puts("PASS: Escape skips reward and closes its audio stream");
         if (muted) puts("PASS: muted reward preserves animation timing without opening audio");
+        if (!muted) {
+            assert(notices == 1 && notice_returns == 1 && notice_frames == 1);
+            puts("PASS: LEVEL2 unavailable notice waits for a new key and does not start LEVEL2");
+        }
         if (menu_mode) {
             assert(menu_visits == 2 && menu_returns == 1);
             puts("PASS: menu Start -> Timon -> LEVEL1 completion -> Rafiki -> menu -> exit; five nonoverlapping audio streams");

@@ -1443,7 +1443,9 @@ static int run_deflection_preview(const DOS64_API *api, int mode)
     }
     if (preview.map_mode && preview.life.complete) {
         music_output_stop(&music_output);
-        return frontend_victory(api, &resource_api, sound_enabled) != 0;
+        if (frontend_victory(api, &resource_api, sound_enabled) != 0)
+            return 1;
+        return frontend_next_level_unavailable(api, &resource_api) != 0;
     }
     return 0;
 }
