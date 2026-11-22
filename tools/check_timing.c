@@ -15,6 +15,20 @@ int main(void)
     unsigned long long ticks = 10000000000ULL * 1193182ULL / (11830ULL * 1000000000ULL);
     assert(count == ticks / 2 && count == 504);
     assert(clock.logic_remainder == (ticks * 5) % 10);
+    const unsigned int frame_steps[] = {100000, 4000000, 10000000, 33000000};
+    for (unsigned int rate = 0; rate < sizeof(frame_steps) / sizeof(*frame_steps); ++rate) {
+        ENGINE_CLOCK varied;
+        unsigned int updates = 0;
+        engine_clock_reset(&varied, 0);
+        unsigned long long now = 0;
+        while (now < 10000000000ULL) {
+            now += frame_steps[rate];
+            if (now > 10000000000ULL) now = 10000000000ULL;
+            assert(engine_dispatch_ticks(&varied, now, update, &updates) >= 0);
+            assert(engine_dispatch_ticks(&varied, now, update, &updates) == 0);
+        }
+        assert(updates == 504);
+    }
     assert(engine_dispatch_ticks(&clock, 9999999999ULL, update, &count) == -1);
     assert(count == 504);
     engine_clock_reset(&clock, 10000000000ULL);

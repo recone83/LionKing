@@ -198,10 +198,13 @@ static void check_lives(void)
     for (unsigned int death = 0; death < 3; ++death) {
         player.health = 0;
         player.player.flags_high = 4;
+        player.player.immunity = 100;
+        render_set_animation_period(player.player.body.node, 2);
         player.damage_source = &checkpoint->body.owner;
         assert(engine_level_life_tick(&life, camera) == ENGINE_LIFE_DYING);
         assert(life.remaining == 221 && life.lives == 2 - death && life.deaths == death + 1);
         assert(!player.player.flags_high && !player.damage_source && !player.contact_source);
+        assert(!player.player.immunity && !(player.player.body.node->flags & 0x20));
         for (unsigned int i = 0; i < 221; ++i) {
             int result = engine_level_life_tick(&life, (RENDER_OWNER){0, 0});
             if (i < 220) assert(result == ENGINE_LIFE_DYING);
@@ -380,6 +383,24 @@ static void check_hud(void)
     puts("PASS: original BARS.MCH health/roar art, exact zero/half/full clipping, portrait and all life digits");
 }
 
+static void check_completion(void)
+{
+    setup();
+    RENDER_OWNER camera = {0, 0};
+    ENGINE_LEVEL_LIFE life;
+    assert(engine_level_life_initialize(&life, &player, player_object, 3) == 0);
+    assert(engine_level_life_complete(&life, 0) == 0 && !life.complete);
+    player.health = 0;
+    assert(engine_level_life_complete(&life, 1) == 0 && !life.complete);
+    player.health = 4;
+    assert(engine_level_life_complete(&life, 1) == 0 && life.complete);
+    assert(engine_level_life_tick(&life, camera) == ENGINE_LIFE_COMPLETE);
+    assert(!life.deaths && !life.dying && life.lives == 3 && !player_object->behavior);
+    assert(engine_level_life_complete(&life, 1) == 0 &&
+        engine_level_life_tick(&life, camera) == ENGINE_LIFE_COMPLETE);
+    puts("PASS: original LEVEL1 nonzero hyena-death completion, no zero/dead-player false win, idempotent terminal result");
+}
+
 int main(void)
 {
     DOS64_API api = {0};
@@ -390,6 +411,15 @@ int main(void)
     api.Fs.Tell = tell_file;
     api.Fs.Read = read_file;
     unsigned int loaded;
+    static unsigned char gameover[4096];
+    assert(resources_load_entry(&api, "data/LIONKING.EPF", "GAMEOVER.MCH",
+        packed, sizeof(packed), gameover, sizeof(gameover), &dictionary, &loaded) == 0);
+    memset(pixels, 0, sizeof(pixels));
+    assert(render_draw_sprite(gameover, loaded, 0, 98, 35, pixels) == 0);
+    unsigned int gameover_pixels = 0;
+    for (unsigned int i = 0; i < sizeof(pixels); ++i) gameover_pixels += pixels[i] != 0;
+    assert(gameover_pixels > 200);
+    puts("PASS: original GAMEOVER sprite is visible at recovered definition/part coordinates");
     assert(resources_load_entry(&api, "data/LIONKING.EPF", "BARS.MCH",
         packed, sizeof(packed), bars, sizeof(bars), &dictionary, &bars_size) == 0);
     assert(resources_load_entry(&api, "data/LIONKING.EPF", "LEVEL1.MAP",
@@ -438,5 +468,6 @@ int main(void)
     check_restart_and_errors();
     check_specials();
     check_hud();
+    check_completion();
     return 0;
 }

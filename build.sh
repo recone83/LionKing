@@ -41,7 +41,7 @@ perl tools/extract_animation.pl bin/obj2_data.bin > "$Temporary/animation_data.c
 "$Compiler" -m64 -O2 -Wall -Wextra -Werror -ffreestanding -nostdlib -nostartfiles \
     -fno-stack-protector -mno-red-zone -Iinclude -Isrc -DLK_DOS64_NATIVE \
     -Wl,-e,dos64_entry -Wl,--subsystem,windows -Wl,--dynamicbase \
-    src/dos64/start.c src/dos64/platform.c src/engine/resources.c \
+    src/dos64/start.c src/dos64/platform.c src/dos64/frontend.c src/engine/resources.c \
     src/engine/resource_decoder.c \
     src/engine/sprites.c src/libs/vga.c \
     src/engine/tile_blitters.c \

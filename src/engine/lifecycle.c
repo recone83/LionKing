@@ -17,7 +17,7 @@ int engine_level_life_initialize(ENGINE_LEVEL_LIFE *life, ENGINE_PLAYER_AIR *pla
 int engine_level_life_fall(ENGINE_LEVEL_LIFE *life, const ENGINE_PLAYER_CALL *call)
 {
     if (!life || !life->player || !life->object || !call || life->dying ||
-        life->falling || life->game_over || call->handler != 0xc884 ||
+        life->falling || life->game_over || life->complete || call->handler != 0xc884 ||
         call->script != 0x5e35 || call->counter != 100) return -1;
     ENGINE_FALLING_OBJECT *body = &life->player->player.body;
     if (animation_program_initialize(&body->animation, animation_movement_data,
@@ -33,12 +33,23 @@ int engine_level_life_fall(ENGINE_LEVEL_LIFE *life, const ENGINE_PLAYER_CALL *ca
     return 0;
 }
 
+int engine_level_life_complete(ENGINE_LEVEL_LIFE *life, unsigned int defeated)
+{
+    if (!life || !life->player || !life->object || !life->object->active) return -1;
+    if (!defeated || life->dying || life->falling || life->game_over ||
+        life->player->health <= 0) return 0;
+    life->complete = 1;
+    life->object->behavior = 0;
+    return 0;
+}
+
 int engine_level_life_tick(ENGINE_LEVEL_LIFE *life, RENDER_OWNER camera)
 {
     if (!life || !life->player || !life->object || !life->object->active ||
         !life->player->player.body.node || !life->player->player.body.node->active)
         return -1;
     if (life->game_over) return ENGINE_LIFE_GAME_OVER;
+    if (life->complete) return ENGINE_LIFE_COMPLETE;
     ENGINE_PLAYER_AIR *player = life->player;
     ENGINE_FALLING_OBJECT *body = &player->player.body;
     if (life->falling) {
@@ -64,6 +75,7 @@ int engine_level_life_tick(ENGINE_LEVEL_LIFE *life, RENDER_OWNER camera)
         player->player.flags_high = 0;
         player->damage_source = player->contact_source = 0;
         body->node->flags &= 0x3f;
+        render_disable_animation(body->node);
         body->node->pass_flags &= 0xe7;
         body->owner.x = (short)(body->owner.x - camera.x);
         body->owner.y = (short)(body->owner.y - camera.y);

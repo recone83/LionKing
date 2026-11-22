@@ -5,6 +5,7 @@
 #include "engine/enemies.h"
 #include "engine/animation_data.h"
 #include "engine/assets.h"
+#include "engine/lifecycle.h"
 
 static unsigned char packed[79311], map[580488], contours[4096];
 static RESOURCE_DICTIONARY dictionary;
@@ -27,12 +28,12 @@ static RENDER_POOL renders;
 static ENGINE_PLAYER_AIR player;
 static ENGINE_OBJECT *player_object;
 static unsigned char collision_flags;
-static unsigned char original_map[580488], enemy_banks[10][32768], player_bank[32768];
+static unsigned char original_map[580488], enemy_banks[18][65536], player_bank[32768];
 static unsigned char pixels[64000], previous_pixels[64000];
 static RENDER_SPRITE_BANK banks[81];
 static const RENDER_OWNER camera = {0, 1080};
 static unsigned int sound_requests;
-static unsigned int lizard_sound_requests;
+static unsigned int lizard_sound_requests, hyena_sound_requests;
 
 static int sound(void *context, unsigned short sample)
 {
@@ -43,8 +44,11 @@ static int sound(void *context, unsigned short sample)
 
 static int enemy_sound(void *context, unsigned short channel, unsigned short sample)
 {
-    assert(context == &player && channel == 1 && sample == 15);
-    ++lizard_sound_requests;
+    assert(context == &player && channel <= 1 && sample >= 15 && sample <= 18);
+    if (sample == 15) {
+        assert(channel == 1);
+        ++lizard_sound_requests;
+    } else ++hyena_sound_requests;
     return 0;
 }
 
@@ -71,10 +75,12 @@ static void setup(void)
     player.roar_charge = 100;
     sound_requests = 0;
     lizard_sound_requests = 0;
+    hyena_sound_requests = 0;
     assert(engine_enemies_initialize(&enemies, &pool, &renders, &collision, &player) == 0);
     enemies.sound = enemy_sound;
-    assert(enemies.count == 32 && enemies.lizard_count == 14 &&
-        enemies.porcupine_count == 5 && enemies.beetle_count == 4 && enemies.leaf_marker_count == 9);
+    assert(enemies.count == 33 && enemies.lizard_count == 14 &&
+        enemies.porcupine_count == 5 && enemies.beetle_count == 4 &&
+        enemies.leaf_marker_count == 9 && enemies.hyena_count == 1);
     assert(engine_enemies_tick(&enemies, camera) == 0);
     assert(enemies.spawned == 1);
 }
@@ -137,12 +143,33 @@ static void check_contact(void)
     assert(player.damage_source == &lizard->body.owner);
     assert(engine_player_damage(&pool, player_object, &player) == 0);
     assert(player.health == 9 && player.player.immunity == 100 && sound_requests == 1);
+    for (RENDER_NODE *node = renders.head; node; node = node->next)
+        if (node != player.player.body.node) node->flags |= 0x80;
+    player.player.body.node->flags |= 0x40;
+    unsigned int visible_frames = 0, hidden_frames = 0;
     for (unsigned int i = 0; i < 100; ++i) {
         assert(engine_enemies_player_clock(&enemies) == 0);
         assert(!(player.player.flags_high & 4));
+        assert(player.player.body.node->period == 2 &&
+            (player.player.body.node->flags & 0x20));
+        memset(pixels, 0, sizeof(pixels));
+        assert(render_object_pass(&renders, 0, -100, -1080, banks, 81, pixels) == 0);
+        int visible = 0;
+        for (unsigned int p = 0; p < sizeof(pixels); ++p) visible |= pixels[p];
+        assert(!!visible == (i % 3 != 0));
+        if (visible) ++visible_frames;
+        else ++hidden_frames;
         ++pool.update_count;
     }
-    assert(player.player.immunity == 0 && player.roar_charge == 4);
+    assert(player.player.immunity == 0 && player.roar_charge == 4 &&
+        visible_frames == 66 && hidden_frames == 34);
+    assert(engine_enemies_player_clock(&enemies) == 0 &&
+        !(player.player.body.node->flags & 0x20));
+    player.player.immunity = 102;
+    assert(engine_enemies_player_clock(&enemies) == 0 && player.player.body.node->period == 4);
+    assert(engine_enemies_player_clock(&enemies) == 0 && player.player.body.node->period == 2);
+    puts("PASS: damage blink renders 66 visible/34 hidden frames over 100 immunity ticks, "
+        "original 2/4 periods and visibility restored on expiry");
     setup();
     lizard = lower_lizard();
     for (unsigned int i = 0; i < 30; ++i) tick();
@@ -391,6 +418,102 @@ static void check_beetles(void)
     puts("PASS: four original BOMB beetles, patrol/turn, unsafe body contact, stomp, roar threshold, return/terminal departure and all explosion frames");
 }
 
+static void check_hyena(void)
+{
+    setup();
+    ENGINE_LIZARD *hyena = 0;
+    for (unsigned int i = 0; i < enemies.count; ++i)
+        if (enemies.lizards[i].marker_type == 43) hyena = &enemies.lizards[i];
+    assert(hyena && hyena->marker.x == 1536 && hyena->marker.y == 240);
+    RENDER_OWNER view = {1360, 180};
+    player.player.body.owner = (RENDER_OWNER){1400, 360};
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(hyena->object && hyena->handler == 0x12c66 &&
+        hyena->health == 2 && hyena->timer == 60);
+    ENGINE_LEVEL_LIFE life;
+    assert(engine_level_life_initialize(&life, &player, player_object, 3) == 0);
+    player.player.body.owner = hyena->body.owner;
+    player.player.flags_high = 0x10;
+    player.player.body.motion.velocity_y = 0x4001;
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(hyena->health == 2 && (player.player.flags_high & 4) &&
+        !(player.player.flags_high & 0x20));
+    player.player.body.owner = (RENDER_OWNER){1488, 340};
+    assert(engine_enemies_tick(&enemies, view) == 0);
+    assert(hyena->handler == 0x1301a &&
+        hyena->body.motion.velocity_x == 0xfffc0000 &&
+        hyena->body.motion.velocity_y == 0xfffe0000);
+    unsigned int panting = 0, damaged = 0, seen_states = 0;
+    static const unsigned int handlers[] = {
+        0x1301a, 0x130b7, 0x13165, 0x12702, 0x12aed, 0x12ddd, 0x12ef0, 0x12f98
+    };
+    for (unsigned int i = 0; i < 2400 && hyena->object; ++i) {
+        for (unsigned int state = 0; state < sizeof(handlers) / sizeof(handlers[0]); ++state)
+            if (hyena->handler == handlers[state]) seen_states |= 1U << state;
+        view = (RENDER_OWNER){(short)(hyena->body.owner.x - 160),
+            (short)(hyena->body.owner.y - 100)};
+        player.player.body.owner = (RENDER_OWNER){
+            (short)(hyena->body.owner.x + (hyena->facing ? -30 : 30)),
+            hyena->body.owner.y};
+        player.player.flags_high = 0;
+        player.player.body.motion.velocity_y = 0;
+        if (hyena->handler == 0x12ddd) {
+            player.player.body.owner = hyena->body.owner;
+            player.player.flags_high = 0x10;
+            player.player.body.motion.velocity_y = 0x4000;
+            short health = hyena->health;
+            assert(engine_enemies_tick(&enemies, view) == 0);
+            assert(hyena->health == health && (player.player.flags_high & 4));
+            ++panting;
+            player.player.body.owner = hyena->body.owner;
+            player.player.flags_high = 0x10;
+            player.player.body.motion.velocity_y = 0x4001;
+            player.player.body.node->pass_flags = damaged ? 8 : 0;
+        }
+        short before = hyena->health;
+        ++pool.update_count;
+        assert(engine_enemies_tick(&enemies, view) == 0);
+        if (hyena->health < before) {
+            ++damaged;
+            assert(player.player.flags_high & 0x20);
+            assert(hyena->facing == (damaged == 1));
+            assert(hyena->attacks_left == 2);
+            assert(!enemies.hyenas_defeated && !life.complete);
+        }
+        assert(engine_level_life_complete(&life, enemies.hyenas_defeated) == 0);
+        assert(life.complete == (hyena->object == 0));
+        memset(pixels, 0, sizeof(pixels));
+        assert(render_object_pass(&renders, 0, -view.x, -view.y, banks, 81, pixels) == 0);
+    }
+    assert(!hyena->object && hyena->destroyed && hyena->health == 0);
+    assert(panting == 2 && damaged == 2 && enemies.hyenas_defeated == 1);
+    assert(seen_states == 0xff);
+    assert(hyena_sound_requests >= 3);
+    assert(engine_level_life_tick(&life, view) == ENGINE_LIFE_COMPLETE);
+    assert(life.lives == 3 && !life.deaths && !life.restarts);
+    assert(engine_enemies_tick(&enemies, view) == 0 && enemies.hyenas_defeated == 1);
+    player.player.body.owner = (RENDER_OWNER){0,1261};
+    assert(engine_enemies_restart(&enemies) == 0 && !enemies.hyenas_defeated);
+    assert(engine_enemies_tick(&enemies, (RENDER_OWNER){1360, 180}) == 0);
+    assert(hyena->object && hyena->health == 2 && hyena->handler == 0x12c66);
+    assert(engine_enemies_tick(&enemies, (RENDER_OWNER){1360, 180}) == 0);
+    assert(hyena->object && hyena->handler == 0x12c66 && hyena->timer == 60);
+    player.player.body.owner = (RENDER_OWNER){1488,340};
+    assert(engine_enemies_tick(&enemies, (RENDER_OWNER){1360, 180}) == 0);
+    for (unsigned int i = 0; hyena->handler == 0x1301a && i < 64; ++i)
+        assert(engine_enemies_tick(&enemies, (RENDER_OWNER){1360, 180}) == 0);
+    assert(hyena->handler == 0x130b7);
+    player.player.body.owner = (RENDER_OWNER){0,1261};
+    assert(engine_enemies_tick(&enemies, (RENDER_OWNER){1360, 180}) == 0);
+    assert(!hyena->object && !hyena->destroyed && !enemies.hyenas_defeated);
+    assert(engine_enemies_tick(&enemies, (RENDER_OWNER){1360, 180}) == 0);
+    assert(hyena->object && hyena->handler == 0x12c66 && hyena->health == 2);
+    puts("PASS: real hyena marker, launch gate, jump/landing/attack/pant/hit/death sprites, "
+        "two vulnerable stomps, original facing on hits, completion only after death animation, "
+        "single terminal transition and restart");
+    puts("PASS: distant waiting boss remains active; moving-jump cull is not a victory and respawns with full health");
+}
+
 static void check_leaves(void)
 {
     setup();
@@ -439,11 +562,10 @@ int main(void)
         packed, sizeof(packed), contours, sizeof(contours), &dictionary, &contour_size) == 0);
     assert(engine_map_collision_initialize(&collision, map, size, contours, contour_size) == 0);
     memcpy(original_map, map, size);
-    static const unsigned int indices[10] = {0, 1, 2, 3, 11, 12, 13, 14, 15, 16};
-    for (unsigned int i = 0; i < 10; ++i) {
+    for (unsigned int i = 0; i < 18; ++i) {
         unsigned int slot, loaded;
         assert(assets_load_named_bank(&api, "data/LIONKING.EPF", animation_level1_bank_list,
-            sizeof(animation_level1_bank_list), indices[i], packed, sizeof(packed),
+            sizeof(animation_level1_bank_list), i, packed, sizeof(packed),
             enemy_banks[i], sizeof(enemy_banks[i]), &dictionary, &slot, &loaded) == 0);
         banks[slot] = (RENDER_SPRITE_BANK){enemy_banks[i], loaded};
     }
@@ -459,6 +581,7 @@ int main(void)
     check_porcupines();
     check_beetles();
     check_leaves();
+    check_hyena();
     setup();
     assert(engine_enemies_tick(&enemies, (RENDER_OWNER){700, 0}) == 0);
     assert(enemies.culled == 1 && !lower_lizard()->object);

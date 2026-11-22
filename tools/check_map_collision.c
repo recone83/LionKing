@@ -191,6 +191,64 @@ static unsigned long long __attribute__((ms_abi)) read_file(void *buffer,
     return fread(buffer, (size_t)size, (size_t)count, file);
 }
 
+static void check_hyena_platform_jump(void)
+{
+    for (int start = 1280; start <= 1288; start += 4) {
+        engine_initialize_objects(&pool);
+        render_initialize_nodes(&renders);
+        memset(&player, 0, sizeof(player));
+        player.player.context = &player;
+        player.player.collision_flags = &flags;
+        player.player.body.owner = (RENDER_OWNER){(short)start, 144};
+        ENGINE_MAP_GROUND ground;
+        assert(engine_map_ground(&collision, (short)start, 144, &ground) == 0 &&
+            ground.supported);
+        player.player.body.owner.y += ground.delta_y;
+        player.player.body.render_pool = &renders;
+        player.player.body.node = render_acquire_node(&renders, &player.player.body.owner,
+            0, 0, animation_movement_data + 0x78b4 - ANIMATION_MOVEMENT_BASE, 20);
+        object = engine_acquire_object(&pool, 0);
+        assert(object && player.player.body.node);
+        player.support = map_support; player.ground = map_ground; player.edge = map_edge;
+        player.ledge_height = ledge_height; player.transition = transition;
+        player.player.probe = probe; player.sound = sound;
+        player.player.body.motion.velocity_x = 0x40000;
+        ENGINE_PLAYER_CALL jump = {0xb604, 0x6180, 4};
+        assert(engine_player_begin_jump(&pool, object, &player, &jump, 0x612c) == 0);
+        assert(animation_program_step(&player.player.body.animation, player.player.body.node,
+            &player.player.body.owner, 0, 0) == 0);
+        unsigned int airborne_ticks = 0, ticks;
+        for (ticks = 0; ticks < 80; ++ticks) {
+            player.pressed = ticks < 20 ? 0x28 : 8;
+            tick();
+            if (object->behavior == &engine_player_air_behavior) {
+                assert((player.player.flags_high & 0x10) &&
+                    player.player.body.motion.velocity_x == 0x40000);
+                ++airborne_ticks;
+            } else if (object->behavior != &engine_player_jump_behavior) {
+                break;
+            }
+        }
+        assert(ticks < 80 && airborne_ticks > 30);
+        if (start == 1280) {
+            assert(player.player.handler == 0xd7a3 &&
+                player.player.body.owner.x == 1536 && player.player.body.owner.y == 256);
+        } else {
+            assert(object->behavior == &engine_player_ground_behavior &&
+                player.player.body.owner.x == 1540 && player.player.body.owner.y == 255);
+            assert(engine_map_ground(&collision, 1540, 255, &ground) == 0 &&
+                ground.supported && ground.delta_y == -1);
+            player.pressed = 0;
+            tick();
+            assert(player.player.body.owner.x == 1540 && player.player.body.owner.y == 254);
+            assert(engine_map_ground(&collision, 1540, 254, &ground) == 0 &&
+                ground.supported && !ground.delta_y);
+        }
+    }
+    puts("PASS: real final hyena jump lands at X1540/Y255 and settles at Y254 from X1284/X1288; "
+        "rightward descent keeps four-pixel speed, earlier X1280 launch still grabs the edge");
+}
+
 int main(void)
 {
     DOS64_API api = {0};
@@ -292,6 +350,7 @@ int main(void)
         assert(object->behavior == &engine_player_air_behavior);
     }
     puts("PASS: real LEVEL1 ceiling stops both original jump directions");
+    check_hyena_platform_jump();
     unsigned char fixture[512] = {0}, heights[4096] = {0};
     fixture[8] = 8; fixture[12] = 4; fixture[16] = 128;
     heights[16 + 3] = 13 | 0xe0;

@@ -1,10 +1,9 @@
-# Lion King: reconstructed code and DOS64 port
+# Lion King: DOS64 and Windows port
 
-This project separates the recovered DOS game code into modules and prepares
-it for DOS64. **The DOS64 platform test builds; the game is not playable yet.**
-The original export contains invalid C and missing functions. The executable
-currently displays a real decoded Simba sprite with the first level's palette,
-not gameplay.
+The game is playable on both DOS64 and Windows. This project ports the DOS
+version using native engine modules and the original game assets. The recovered
+decompiler export is kept as analysis material; it is not the executable
+game implementation.
 
 ## Layout
 
@@ -61,17 +60,194 @@ do not mistake an old executable for a successful new build.
 
 The [DOS64 entry](src/dos64/start.c) provides
 `int __attribute__((ms_abi)) start(const DOS64_API *Api)`.
-The build links only this entry, [platform.c](src/dos64/platform.c) and SDK startup,
+The build links this entry, [platform.c](src/dos64/platform.c),
+[frontend.c](src/dos64/frontend.c), the native engine modules and SDK startup,
 not the pseudocode aggregator or legacy DOS drivers. The platform test exercises
 indexed 320x200 image conversion to ARGB, integer scaling, input polling and
-monotonic time. Escape exits; `--selftest` exits after approximately one second.
+monotonic time. `--selftest` exits after approximately one second.
 It is not yet connected to `game_main`. The existing resource module now has a
 native DOS64 branch selected by `LK_DOS64_NATIVE`; it validates the real EPF
 header, index and payload bounds through DOS64 filesystem callbacks.
-Its original exported bodies remain in the non-native branch for migration,
-not in the executable. Memory management, decoding, audio and the actual game
-loop remain to be migrated. Run the executable from a directory containing
-`LIONKING.EPF`.
+
+### Main menu and loading screen
+
+Launching without arguments shows the original Disney/Virgin and East
+Point Software screens from layers 0 and 2 of `CREDITS.MAP`, each for
+210 IRQ ticks or until a key is pressed, then opens a basic menu.
+The menu composes both original `TITLES.MAP` layers (sky before rock),
+the `TITLE_S.MCH` logo at its recovered X44/Y17 position, `F8X8_S.MCH`
+font and `SUN.MCH` selection marker. No replacement logo or font is drawn.
+The SUN selector now follows the original horizontal oscillation from
+`0x2730`: ten one-pixel steps, a direction-change tick, then ten steps back.
+It follows the currently selected row and uses the original logic clock.
+The available options remain a subset, not a recreation of all original
+menu animations or settings.
+
+- Up/Down selects **START GAME**, **SOUND ON/OFF**, or **EXIT**, wrapping
+  at either end. Enter or Space activates the selection.
+- The startup Rafiki/baby-Simba animation plays after the logos, before
+  the menu. The original manual-word/password screen is deliberately omitted.
+- Start plays the separate original Timon intro before loading LEVEL1 at
+  its original start position, on every new game.
+  The sequence is **logos → baby-Simba intro → menu → Start Game → Timon intro → LEVEL1 + level name**.
+  The loading display
+  uses the original `LEVELS.MCH` frame 0 ("The Pridelands"), not the
+  previous custom text/progress bar. It remains visible between resource
+  groups; after initialization the title overlays the first 100 gameplay
+  ticks. Input, movement, enemies and audio run underneath it; there is no
+  separate 100-tick black-screen hold.
+- Original `TITLE.AMF` begins on the Disney/Virgin splash and continues
+  through East Point, the baby-Simba intro and the menu without restarting.
+  It stops before the Timon scene, whose speech has a separate PCM stream.
+  Title playback primes a 250 ms queue and refills before and after drawing
+  to tolerate slower QEMU presentations. Gameplay and speech retain their
+  100 ms queues, preserving responsive sound effects. A draining-ring test
+  covers 1000 consecutive 170 ms presentation delays without title underruns.
+  Title/menu music uses linear sample interpolation rather than repeated
+  nearest samples; gameplay music and PCM effects keep their existing
+  sampling. Tests cover exact fractional values at sample loops and ends,
+  unchanged timing and chunk-invariant output. On the opening second of
+  the real title song at corrected pitch this reduces squared adjacent-sample
+  steps by 71%; this is a resampling measurement, not a claim of 71% better sound.
+  Title sample rates are calibrated to DSMI C5, correcting the previous
+  octave-too-high/double-speed playback. The 31492-byte sample now remains
+  active past two seconds instead of ending prematurely. LEVEL1 keeps its
+  previous calibration so this title fix does not alter gameplay audio.
+- Sound selection controls title music immediately and both AMF music and PCM effects for the next
+  session. Muted gameplay does not require an audio device. The setting
+  survives returns to the menu, but is not saved to disk.
+- Escape during gameplay returns to the menu. GAME OVER, or defeating the
+  final hyena, also returns after the scene finishes. Audio is stopped
+  before returning, and a new game initializes fresh level state.
+- Victory now plays the original separate Rafiki reward scene, not the
+  baby-Simba startup intro or Timon pre-game scene. It uses both `TITLES.MAP`
+  layers without the menu logo, `RWDLVL1.MCH` slot 80, and the two original
+  scripts at DS `0x130f0`/`0x13125`, with owners X142/Y163 and X142/Y162.
+  `SPEECH1` starts on both PCM channels at logic tick 19; the script finishes
+  at tick 475. Escape skips it, and menu mute also mutes its speech.
+  The gameplay audio stream closes before reward speech opens.
+- Escape in the menu, or EXIT, returns to the launcher.
+
+`--map` still enters LEVEL1 directly; `--preview` preserves the previous
+automatic locomotion demonstration. Other diagnostic arguments retain
+their existing behavior. Missing or invalid title/level resources fail
+explicitly rather than falling back to a fake successful loading screen.
+
+The actual-entry sanitizer test
+[check_frontend.c](tools/check_frontend.c) exercises original title assets,
+menu wrapping, mute/unmute, 142 original level-title presentations across two starts,
+startup-intro-before-menu ordering, distinct Timon intro on both starts,
+the 100-tick level-name overlay during moving gameplay,
+Escape return, three real-contact deaths/two
+restarts/GAME OVER return, audio reopening/cleanup, exit and missing-resource
+failure. Build it with the native source list from [build.sh](build.sh),
+substituting the host compiler and `tools/check_frontend.c` for SDK startup:
+
+```bash
+cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -fno-omit-frame-pointer -DLK_DOS64_NATIVE -Iinclude -Isrc \
+    tools/check_frontend.c src/dos64/start.c src/dos64/platform.c src/dos64/frontend.c \
+    src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
+    src/libs/vga.c src/engine/tile_blitters.c src/engine/tiles.c src/engine/timing.c \
+    src/engine/objects.c src/engine/input.c src/engine/render.c src/engine/assets.c \
+    src/engine/animation.c src/engine/physics.c src/engine/behaviors.c \
+    src/engine/music.c src/engine/enemies.c src/engine/pickups.c \
+    src/engine/lifecycle.c src/engine/hud.c build/animation_data.c \
+    -o build/check_frontend_san
+build/check_frontend_san
+build/check_frontend_san --skip-splash
+```
+
+Both publisher screens are compared against every original indexed pixel;
+the menu's sky/rock/logo composition, intro frames and original level-title
+artwork are also checked pixel-for-pixel. The intro uses original DS table
+`0x30a0` and parts `0xbd60` onwards: 120 ticks of the original changing
+poses followed by a 240-tick hold, skippable during the hold. Its graphics
+and timing are restored. Tests compare every submitted title-music sample,
+including playback on the first splash and through the intro/menu, exercise
+mute/reopening and ensure streams never overlap. The original selector
+motion is also compared pixel-for-pixel across its full oscillation.
+
+[check_victory.c](tools/check_victory.c) tests the actual adapter's victory
+transition separately. Build with the same host source list above, replacing
+`tools/check_frontend.c` with `tools/check_victory.c`, adding
+`-Wl,--wrap=engine_enemies_tick`, and choosing `build/check_victory_san` as output.
+The wrapper runs the real enemy update but injects a nonzero boss-death counter
+at tick 60; this tests controller wiring, not a keyboard-driven boss victory.
+The real two-hit fight and death-animation completion are covered by the
+enemy test. Run:
+
+```bash
+build/check_victory_san
+build/check_victory_san --menu
+build/check_victory_san --skip
+build/check_victory_san --muted
+build/check_victory_san --missing
+build/check_victory_san --audio-failure
+```
+
+The reward fixture compares every rendered pixel against an independent
+frame-duration table and original assets, all 22 reward frames, tick-19
+speech, tick-475 completion and exact two-channel speech PCM. It verifies
+direct-map and menu-start victory paths, return to menu, skip/mute, explicit
+resource/audio failure, closed logs and nonoverlapping audio ownership.
+The pre-game intro follows code `0x4711`/`0x47b2`, with
+`1TIMONS.MCH` at owner X160/Y160 and the original script at DS `0x5435`.
+It lasts 130 logic ticks: the first 30 retain the initial pose, then the
+22 original animation frames run. `SPEECH5` starts on both PCM channels
+when the remaining counter reaches 80; the menu sound setting also mutes
+this speech. Effect-only output reuses the existing mixer without loading
+an AMF song and is closed before LEVEL1 opens its own audio stream.
+The bounded AMF reader supports the verified `TITLE.AMF` shape (31 instrument
+slots, 5 orders, 20 tracks) as well as `LION1.AMF` (31/15/60), including
+TITLE's instrument-without-note-retrigger marker. The title song loops
+after approximately 59 seconds with the original tempo changes.
+Independent libopenmpt inspection reports 58.520 seconds for the original
+title module. This validates the song structure, not bit-exact equivalence
+to the original sound-card mixer.
+An independent pattern comparison also matches all 333 notes and 219
+instrument selections over the title's 1280 channel rows. This checks for
+missing decoded parts, not full mixer equivalence to a video recording.
+An isolated native QEMU run confirmed the corrected title menu, starting
+LEVEL1, returning to the menu and exiting with code zero; the closed log
+recorded both publisher screens and successful audio/scene startup.
+Every presentation clears the entire DOS64 surface to opaque black, then
+draws the integer-scaled 320x200 image in the center. The letterbox areas
+therefore never expose the DOS console; the tests verify the clear color and
+scaled image without changing game pixels.
+Gameplay displays a compact white 3x5-font FPS counter with no background
+box in the bottom-right of the HUD, inset four game pixels from the image
+edges. It uses completed presentations over the
+actual elapsed monotonic time and refreshes once per second; `FPS: --` is
+shown until the first sample. Menus and cutscenes do not show the counter,
+and returning to gameplay starts a fresh measurement. It does not change
+the fixed gameplay logic clock.
+
+Gameplay also accumulates frame-stage timings and writes a summary to
+`LIONKING.LOG` when the game exits cleanly. The report lists average
+microseconds per presented gameplay frame and peak microseconds per call for
+input polling, audio streaming, scene rendering, palette conversion, screen
+clearing, image drawing (including the FPS overlay), presentation, game logic,
+and sleep. No profiling log writes occur inside the frame loop. Menus and
+cutscenes are excluded. The stages do not include every bookkeeping operation,
+so their sum is not an exact total frame time.
+Gameplay, menus, and cutscenes do not explicitly sleep or busy-wait to cap
+rendering. Game logic and animations still advance from elapsed monotonic
+time, independently of render FPS. Rendering runs as fast as the runtime
+allows; this can increase CPU usage. The sleep profile stage remains available
+but should report zero during normal gameplay.
+The supplied QEMU launcher uses software CPU emulation (`-accel tcg`), which
+can limit FPS independently of rendering cost.
+
+```bash
+cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -Iinclude -Isrc tools/check_fps.c src/dos64/platform.c -o build/check_fps
+build/check_fps
+```
+
+The original exported bodies remain in the non-native branch as reference;
+the playable build uses the native engine and DOS64 platform modules. Run the
+executable from a directory containing `LIONKING.EPF`.
 
 The native resource test uses the real supplied archive:
 
@@ -114,6 +290,7 @@ The existing [tile blitter module](src/engine/tile_blitters.c) has a native
 `render_blit_tile` implementation shared by opaque and transparent operations.
 It preserves 8x8 indexed pixels, zero-pixel transparency, horizontal `0x8000`
 and vertical `0x4000` flags, row windows and 320-byte destination rows.
+Fully visible, unflipped opaque tiles skip per-pixel clipping checks.
 The old six entry points remain only in the reference branch.
 Zero-length windows intentionally do nothing; invalid windows fail before writes.
 
@@ -416,11 +593,13 @@ build/check_vga_present
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
 cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
     tools/check_viewer.c build/animation_data.c src/dos64/start.c src/dos64/platform.c \
+    src/dos64/frontend.c \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
     src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \
     src/engine/input.c src/engine/render.c src/engine/assets.c \
     src/engine/animation.c src/engine/objects.c src/engine/physics.c \
-    src/engine/behaviors.c src/libs/vga.c \
+    src/engine/behaviors.c src/engine/music.c src/engine/enemies.c \
+    src/engine/pickups.c src/engine/lifecycle.c src/engine/hud.c src/libs/vga.c \
     -o build/check_viewer
 build/check_viewer
 build/check_viewer --automatic
@@ -691,6 +870,10 @@ undefined signed overflow. It does not invent the sign of the decrement.
 `engine_motion_right/left` port `0x1a886/0x1a8f2`, setting a minimum rightward
 velocity +2 or leftward velocity -2 in 16.16 before integration. Only the
 rightward original helper observes the stop bit 0x10 of object byte +0x4f.
+This is the high byte of movement flags, not status byte +0x49:
+the airborne status bit 0x10 must not stop horizontal movement. Jump ascent
+and descent now use the original movement flag byte, preserving rightward
+travel after the apex instead of shortening jumps into a ledge grab.
 
 `engine_setup_emitter_group` ports original `0x287bb`. It resets the activation
 flag and creates four original emitters in order: X 3480/3512/3536/3568,
@@ -1005,7 +1188,8 @@ manual keyboard takeover and an Escape exit with code zero.
 
 ### Default test: original ground locomotion and connected player states
 
-Run `bash build.sh`. Ground idle/input is no longer fabricated: the default
+Run with `--preview` (without arguments the main menu opens).
+Ground idle/input is no longer fabricated: this diagnostic
 preview connects ten more original handlers:
 
 | State | Original code addresses |
@@ -1236,6 +1420,11 @@ Diagnostics and exit measurements remain in `LIONKING.LOG`.
 connected running across six height changes, jumping and map landing,
 plus synthetic contour/tag boundary checks. Compile it with the player
 test source list plus `resources.c` and `resource_decoder.c`.
+It also checks the final hyena-platform jump against unmodified LEVEL1:
+held running jumps from X1284/X1288 land normally at X1540/Y255, while
+the earlier X1280 launch still grabs the edge. The next support tick settles
+Simba at Y254 on the platform's slope. Four-pixel rightward movement
+continues through descent, matching the original flag operand at `0x1a8a8`.
 Native DOS64 verification recorded six contour adjustments, one jump/landing,
 and final position X506/Y1261. The captured frame shows Simba on LEVEL1's
 real terrain; Escape returned zero. The default preview's exact-pixel
@@ -1326,7 +1515,7 @@ all effects present in it: instrument/note/volume events, volume slides,
 vibrato with parameter memory, combined vibrato/volume slides, pattern
 breaks and tempo changes. The opening row changes tempo from 125 to 165.
 Playback uses fixed-point sample positions, original sample loops and
-AMF stereo panning, and loops the song. This is a focused LEVEL1 player,
+AMF stereo panning, and loops the song. This is a focused LEVEL1/title player,
 not a general AMF implementation or a bit-exact recreation of the old
 sound-card mixer.
 
@@ -1347,7 +1536,7 @@ cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
 build/check_music
 ```
 
-The check covers non-silent stereo, row timing, the full song loop,
+The check covers non-silent stereo, row timing, both full song loops,
 chunk-invariant synthesis, truncated/invalid data, partial output writes
 and stopping. Independent libopenmpt inspection reports a duration of
 81.424 seconds; the native player crosses the song boundary during the
@@ -1374,6 +1563,27 @@ air/roll flags selects the existing rebound and defeats the lizard.
 Walking into it instead costs one health point. Defeated lizards do not
 respawn during the current run; live ones culled by scrolling can return at
 their original marker.
+
+After damage, Simba alternates between full and approximately 30% opacity during the
+100-tick immunity window (about two seconds), using the original blink
+timing helpers at `0x1893c/0x18941`.
+The period is 2 normally, or 4 when more than 100 immunity ticks remain.
+The softer opacity effect is an intentional visual change from the original
+on/off blink. Dimmed pixels use a private DOS64 layer with opacity 77/255
+(about 30.2%), not per-pixel RGB blending in the game. The base scene contains
+no Simba; only pixels that differ between the with/without-Simba scenes are
+submitted as opaque horizontal runs to his otherwise transparent layer using
+batched `FillRects`. Foreground scenery, other sprites, the FPS text and the
+HUD retain their normal draw order. The layer is hidden on full-opacity
+frames and menus, reused between hits, and destroyed on exit. Layer service
+failures are logged and terminate the game rather than silently falling back.
+The two indexed scene renders are still needed to preserve occlusion; this
+change moves blending to the runtime, not to a guaranteed GPU path. Render
+timers advance only once. Collision and movement are unchanged; full opacity
+returns when immunity expires, and the death animation is not left blinking.
+[check_opacity.c](tools/check_opacity.c) checks all 65536 palette pairs at
+77/255 opacity, real LEVEL1/Simba layers, both sprite draw passes, unchanged
+HUD, single timer advancement and immunity expiry.
 
 Original `LIZRDWLK`, `LIZRDTRN`, `LIZRDATK` and `DUST` banks and DS
 animation streams are used, including the original shared death effect.
@@ -1447,12 +1657,43 @@ now use `Enemy` labels; marker counts remain separate for each class.
 LEVEL1 is **not complete yet**. The authoritative fourth-plane inventory
 contains 47 nonzero markers of 13 types, not just the enemies on the lower
 route. Its counts are: 1:1, 3:2, 9:9, 10:5, 11:4, 14:14, 16:1, 17:3,
-18:4, 40:1, 41:1, 43:1, 49:1. Remaining work includes the hyena boss,
-complete world hazards, bonus-game transitions, difficulty/starting setup
-and the original level-completion/game-over presentation.
-The implemented twelve marker types cover 46 of the 47 positions.
+18:4, 40:1, 41:1, 43:1, 49:1. All thirteen marker types now cover all
+47 positions, including the final hyena. The original starting descriptor
+uses X65/Y1255, rather than the previous contour-search preview start.
+Remaining fidelity work includes a complete world-hazard audit,
+bonus-game/continue/menu transitions and difficulty selection.
+The normal-difficulty boss, death-count completion condition and original
+GAMEOVER artwork/timing are implemented. Completion plays the original
+Rafiki reward before returning to the menu (or launcher with `--map`),
+rather than entering an unported next level or bonus game.
 Unmigrated types are not
 substituted with generic enemy or pickup behavior.
+
+The hyena uses the original waiting gate, jumping/landing, patrol/attack,
+panting vulnerability, hit and final-death scripts, including all seven
+HYENA banks and samples 17/18. Normal difficulty requires two hits.
+Only panting permits a stomp, with downward velocity strictly above
+`0x4000`; other contacts damage Simba. A successful hit rebounds Simba,
+and the defeated counter advances only after the terminal death animation.
+The LEVEL1 controller at base-zero `0x7c6d` tests this counter, not the
+bonus-only reward collectible. The native terminal result is idempotent
+and rejects completion while Simba is dead or in a death/fall transition.
+Hit/death facing follows the original inverse of Simba's sprite direction,
+not their relative X positions. Patrol jumps require a clear side probe.
+The original 512-pixel cull applies to patrol, pause and moving jumps,
+not the waiting gate or terminal hit/death animation.
+
+`tools/check_enemies.c` exercises the natural boss cycle with real terrain,
+sprites, sound requests, unsafe/threshold stomps, both hits, terminal
+cleanup and restart. It asserts all eight naturally reached boss states,
+both hit directions and a single completion only after final death;
+host builds of this test also link `src/engine/lifecycle.c`.
+`tools/check_pickups.c` checks the completion result
+and visible GAMEOVER artwork. `tools/check_scene.c --map-gameover` drives
+the actual adapter with keyboard input and real enemy contacts through
+three deaths, two restarts, zero lives and the 200-tick GAMEOVER display.
+The ordinary map, stomp, stationary-camera and lifecycle selectors remain
+separate regression tests; the stomp input timing now reflects X65.
 
 ### LEVEL1 pickups, checkpoint state and lives
 
@@ -1480,12 +1721,19 @@ fidelity is not claimed.
 
 Fatal enemy damage removes a life and plays the original young Simba
 `SYDIE` sequence for 221 ticks. World updates pause while the death sprite
-converges on screen position (160,128). With lives left, Simba restarts at
+converges on screen position (160,128). This is the original short lost-life
+animation, not a separate movie file. It is rendered in screen space above
+the world, so the level camera cannot move it off-screen. The original
+palette transition at code `0x1409d` preserves the first eight colors and
+fades the remaining colors to black using the IRQ-rate fade clock. The
+normal level palette is restored on checkpoint restart. The scene plays
+on every lost life, including the last life before GAME OVER.
+With lives left, Simba restarts at
 the saved checkpoint (or the preview spawn), with health restored, empty
 roar charge and 100 ticks of immunity. Enemy instances are reset; their
 diagnostic counters remain cumulative. At zero lives the native scene
 returns cleanly to the launcher. The original game-over/menu artwork,
-death screen transitions, non-normal difficulty and special hazard-death
+additional death screen transitions, non-normal difficulty and special hazard-death
 branches are not migrated by this block.
 The timed fatal support branch `0xc884` is connected separately: its
 original invisible `0x5e35` sequence delays zero health by exactly 100

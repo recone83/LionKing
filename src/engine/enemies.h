@@ -4,7 +4,7 @@
 #include "behaviors.h"
 #include "tiles.h"
 
-#define ENGINE_LIZARD_CAPACITY 32U
+#define ENGINE_LIZARD_CAPACITY 33U
 
 typedef struct {
     ENGINE_FALLING_OBJECT body;
@@ -16,6 +16,8 @@ typedef struct {
     short pause;
     short cell_x;
     short stun_x;
+    short health;
+    short attacks_left;
     RENDER_OWNER target;
     unsigned char kind;
     unsigned char facing;
@@ -40,6 +42,8 @@ typedef struct {
     unsigned int porcupine_count;
     unsigned int beetle_count;
     unsigned int leaf_marker_count;
+    unsigned int hyena_count;
+    unsigned int hyenas_defeated;
     unsigned int leaves_spawned;
     unsigned int spawned;
     unsigned int culled;

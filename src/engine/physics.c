@@ -103,12 +103,12 @@ int engine_motion_brake_x(ENGINE_MOTION *motion, uint32_t decrement)
 }
 
 int engine_motion_right(ENGINE_MOTION *motion, RENDER_OWNER *owner,
-    unsigned char flags_high)
+    unsigned char movement_flags_high)
 {
     if (!motion || !owner) {
         return -1;
     }
-    if (flags_high & 0x10) {
+    if (movement_flags_high & 0x10) {
         motion->velocity_x = 0;
     } else if (motion->velocity_x >= UINT32_C(0x80000000) ||
         motion->velocity_x < UINT32_C(0x20000)) {

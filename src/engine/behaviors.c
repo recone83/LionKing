@@ -189,7 +189,7 @@ static void update_player_deflection(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *ob
         UINT32_C(0xfffd0000) : UINT32_C(0x30000);
     int status = state->handler == 0xe410U ?
         engine_motion_left(&state->body.motion, &state->body.owner) :
-        engine_motion_right(&state->body.motion, &state->body.owner, state->flags_high);
+        engine_motion_right(&state->body.motion, &state->body.owner, state->movement_flags_high);
     if (status != 0) {
         pool->update_status = -1;
     }
@@ -379,7 +379,7 @@ static int step_player_air(ENGINE_PLAYER_AIR *state)
         body->motion.velocity_x = 0;
         return 0;
     }
-    return right ? engine_motion_right(&body->motion, &body->owner, player->flags_high) :
+    return right ? engine_motion_right(&body->motion, &body->owner, (unsigned char)(state->flags >> 8)) :
         engine_motion_left(&body->motion, &body->owner);
 }
 
@@ -490,7 +490,7 @@ static int step_player_jump(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         body->motion.velocity_x = 0;
         return 0;
     }
-    return right ? engine_motion_right(&body->motion, &body->owner, player->flags_high) :
+    return right ? engine_motion_right(&body->motion, &body->owner, (unsigned char)(state->flags >> 8)) :
         engine_motion_left(&body->motion, &body->owner);
 }
 

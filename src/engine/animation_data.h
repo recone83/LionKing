@@ -47,5 +47,7 @@ extern const unsigned char animation_level1_bank_list[156];
 extern const unsigned char animation_common_bank_list[116];
 extern const unsigned char animation_common_sound_list[92];
 extern const unsigned char animation_level1_sound_list[36];
+extern const unsigned char animation_intro_frames[120];
+extern const unsigned char animation_pregame_data[0x12f30 - 0x5435];
 
 #endif

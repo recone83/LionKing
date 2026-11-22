@@ -22,26 +22,41 @@ static void clear_player(MUSIC_PLAYER *player)
     for (unsigned int i = 0; i < sizeof(*player); ++i) bytes[i] = 0;
 }
 
+int music_effects_initialize(MUSIC_PLAYER *player)
+{
+    if (!player) return -1;
+    clear_player(player);
+    player->tempo = 125;
+    player->speed = 6;
+    player->order_count = MUSIC_ORDERS;
+    player->sample_reference_period = 1712;
+    return 0;
+}
+
 int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned int size)
 {
-    /* This migration handles the verified LION1 DSMI 1.4 shape, not arbitrary AMF. */
+    /* Verified four-channel DSMI 1.4 modules, bounded by the LION1 capacities. */
     if (!player || !data || size < 75 || data[0] != 'A' || data[1] != 'M' ||
         data[2] != 'F' || data[3] != 14 || data[36] != MUSIC_INSTRUMENTS ||
-        data[37] != MUSIC_ORDERS || read16(data + 38) != MUSIC_TRACKS ||
+        !data[37] || data[37] > MUSIC_ORDERS || !read16(data + 38) ||
+        read16(data + 38) > MUSIC_TRACKS ||
         data[40] != 4 || data[73] < 33 || !data[74]) return -1;
     clear_player(player);
     player->tempo = data[73]; player->speed = data[74];
+    player->order_count = data[37];
+    player->sample_reference_period = 1712;
+    unsigned int track_count = read16(data + 38);
     for (unsigned int ch = 0; ch < 4; ++ch) {
         int pan = 128 + signed_byte(data[41 + ch]) * 2;
         if (pan < 0 || pan > 255) return -1;
         player->pan[ch] = (unsigned int)pan;
     }
     unsigned int offset = 75;
-    for (unsigned int i = 0; i < MUSIC_ORDERS; ++i) {
+    for (unsigned int i = 0; i < player->order_count; ++i) {
         if (offset + 10 > size || read16(data + offset) != 64) return -1;
         for (unsigned int ch = 0; ch < 4; ++ch) {
             unsigned int track = read16(data + offset + 2 + ch * 2);
-            if (track > MUSIC_TRACKS) return -1;
+            if (track > track_count) return -1;
             player->orders[i][ch] = (unsigned short)track;
         }
         offset += 10;
@@ -61,16 +76,16 @@ int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned i
         if (indices[i] > maximum_sample) maximum_sample = indices[i];
         offset += 65;
     }
-    if (offset + MUSIC_TRACKS * 2 > size) return -1;
+    if (offset + track_count * 2 > size) return -1;
     unsigned short mapping[MUSIC_TRACKS + 1] = {0};
     unsigned int stored_tracks = 0;
-    for (unsigned int i = 1; i <= MUSIC_TRACKS; ++i) {
+    for (unsigned int i = 1; i <= track_count; ++i) {
         mapping[i] = (unsigned short)read16(data + offset);
-        if (mapping[i] > MUSIC_TRACKS) return -1;
+        if (mapping[i] > track_count) return -1;
         if (mapping[i] > stored_tracks) stored_tracks = mapping[i];
         offset += 2;
     }
-    for (unsigned int order = 0; order < MUSIC_ORDERS; ++order)
+    for (unsigned int order = 0; order < player->order_count; ++order)
         for (unsigned int ch = 0; ch < 4; ++ch)
             player->orders[order][ch] = mapping[player->orders[order][ch]];
     for (unsigned int track = 1; track <= stored_tracks; ++track) {
@@ -89,6 +104,9 @@ int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned i
                     if (value > 64) return -1;
                     event->volume = (unsigned char)(value + 1);
                 }
+            } else if (type == 127) {
+                /* DSMI's instrument-without-retrigger marker follows instrument selection. */
+                continue;
             } else if (type == 128) {
                 if (value >= MUSIC_INSTRUMENTS) return -1;
                 event->instrument = (unsigned char)(value + 1);
@@ -177,8 +195,8 @@ static void music_tick(MUSIC_PLAYER *player)
         voice->step = 0;
         if (voice->instrument && period > 0) {
             const MUSIC_SAMPLE *sample = &player->samples[voice->instrument - 1];
-            /* Sample C4 rate is calibrated to period 428 (1712 quarter units). */
-            voice->step = (unsigned int)((unsigned long long)sample->rate * 1712 * 65536 /
+            voice->step = (unsigned int)((unsigned long long)sample->rate *
+                player->sample_reference_period * 65536 /
                 ((unsigned int)period * (unsigned long long)MUSIC_RATE));
         }
     }
@@ -190,7 +208,7 @@ static void music_tick(MUSIC_PLAYER *player)
         if (player->breaking || ++player->row >= 64) {
             player->row = player->breaking ? player->break_row : 0;
             player->breaking = 0;
-            if (++player->order >= MUSIC_ORDERS) {
+            if (++player->order >= player->order_count) {
                 player->order = 0; ++player->loops;
             }
         }
@@ -208,7 +226,9 @@ int music_effect_play(MUSIC_PLAYER *player, unsigned int channel,
 int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames)
 {
     if (!player || !stereo || !player->speed || player->tempo < 33 ||
-        player->order >= MUSIC_ORDERS || player->row >= 64) return -1;
+        (player->sample_reference_period != 856 && player->sample_reference_period != 1712) ||
+        !player->order_count || player->order_count > MUSIC_ORDERS ||
+        player->order >= player->order_count || player->row >= 64) return -1;
     for (unsigned int frame = 0; frame < frames; ++frame) {
         if (!player->tick_remaining) music_tick(player);
         int left = 0, right = 0;
@@ -227,7 +247,15 @@ int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames)
                     voice->period = 0; continue;
                 }
             }
-            int value = ((int)sample->data[position] - 128) * (int)voice->volume * 2;
+            int value = (int)sample->data[position] - 128;
+            if (player->interpolate_samples) {
+                unsigned int next = position + 1;
+                if (next >= end)
+                    next = sample->loop_end > sample->loop_start ? sample->loop_start : position;
+                int difference = (int)sample->data[next] - (int)sample->data[position];
+                value = (value * 65536 + difference * (int)(voice->phase & 65535)) *
+                    (int)voice->volume * 2 / 65536;
+            } else value *= (int)voice->volume * 2;
             int pan = (int)player->pan[ch];
             left += value * (256 - pan) / 256; right += value * pan / 256;
             voice->phase += voice->step;
@@ -260,21 +288,23 @@ int music_output_open(MUSIC_OUTPUT *output, MUSIC_PLAYER *player, const DOS64_AP
         !api->Audio.Stop || api->Audio.Open(MUSIC_RATE) != 0) return -1;
     *output = (MUSIC_OUTPUT){0};
     output->player = player; output->api = api; output->opened = 1;
+    output->target_frames = MUSIC_RATE / 10;
     return 0;
 }
 
 int music_output_service(MUSIC_OUTPUT *output)
 {
-    if (!output || !output->opened) return -1;
-    /* Bound cooperative work and keep about 100 ms queued without discarding partial writes. */
+    if (!output || !output->opened || !output->target_frames ||
+        output->target_frames > MUSIC_RATE) return -1;
+    /* Bound cooperative work and preserve pending PCM across partial writes. */
     for (unsigned int block = 0; block < 8; ++block) {
         unsigned long long queued = output->api->Audio.QueuedFrames();
-        if (queued >= MUSIC_RATE / 10) break;
+        if (queued >= output->target_frames) break;
         unsigned long long free = output->api->Audio.FreeFrames();
         if (!free) break;
         if (output->position == output->count) {
             output->position = 0;
-            unsigned long long want = MUSIC_RATE / 10 - queued;
+            unsigned long long want = output->target_frames - queued;
             if (want > free) want = free;
             output->count = want > 1024 ? 1024 : (unsigned int)want;
             if (music_samples(output->player, output->pending, output->count) != 0) return -1;

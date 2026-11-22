@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include "mock_layers.h"
 #include "dos64/platform.h"
 #include "engine/behaviors.h"
 #include "engine/animation_data.h"
@@ -48,6 +49,9 @@ static unsigned int action_frames, roar_sounds, damage_sounds;
 static int map_test;
 static int map_animation;
 static int map_lifecycle;
+static int map_gameover;
+static unsigned int gameover_iteration;
+static unsigned int restart_iteration;
 static unsigned int map_deaths, map_restarts, map_lives, map_collected;
 static unsigned int stomp_jump;
 static unsigned int enemy_damage_logs, map_stuns, map_defeats, map_contacts;
@@ -77,6 +81,8 @@ static unsigned char player_collision_flags, flip_sprites[ASSETS_YOUNG_BANK_COUN
 static RENDER_OWNER previous_player_position;
 static void record_log(const char *text)
 {
+    if (strstr(text, "original GAMEOVER presentation.")) gameover_iteration = iteration;
+    if (strstr(text, "restarted at the saved checkpoint.")) restart_iteration = iteration;
     if (strstr(text, "failed") || strstr(text, "invalid") || strstr(text, "cannot")) {
         fputs(text, stderr);
     }
@@ -143,6 +149,7 @@ static int __attribute__((ms_abi)) close_file(void *file)
         assert(map_counter(text, "Porcupine map markers: ") == 5);
         assert(map_counter(text, "Beetle map markers: ") == 4);
         assert(map_counter(text, "Leaf map markers: ") == 9);
+        assert(map_counter(text, "Hyena map markers: ") == 1);
         assert(map_counter(text, "Pickup map markers: ") == 14);
         map_deaths = map_counter(text, "Player deaths: ");
         map_restarts = map_counter(text, "Player checkpoint restarts: ");
@@ -170,9 +177,11 @@ static long long __attribute__((ms_abi)) tell_file(void *file) { return ftell(fi
 static unsigned long long __attribute__((ms_abi)) read_file(void *buffer,
     unsigned long long size, unsigned long long count, void *file)
 { return fread(buffer, (size_t)size, (size_t)count, file); }
-static void __attribute__((ms_abi)) sleep_ms(unsigned int ms) { now += ms * 1000000ULL; }
+static void __attribute__((ms_abi)) sleep_ms(unsigned int ms) { (void)ms; assert(0); }
 static unsigned long long __attribute__((ms_abi)) time_ns(void) { return now; }
 static int __attribute__((ms_abi)) select_layer(int layer) { assert(layer == 0); return 0; }
+static void __attribute__((ms_abi)) set_color(DOS64_COLOR color) { (void)color; }
+static void __attribute__((ms_abi)) clear(void) {}
 static void __attribute__((ms_abi)) present(void) { ++shown; }
 static int __attribute__((ms_abi)) audio_open(unsigned int rate)
 {
@@ -204,6 +213,7 @@ static void __attribute__((ms_abi)) audio_stop(void)
 { assert(audio_opened); audio_opened = 0; ++audio_stops; }
 static void __attribute__((ms_abi)) poll(void)
 {
+    now += 10000000ULL;
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
@@ -232,7 +242,7 @@ static void __attribute__((ms_abi)) poll(void)
         if (map_lifecycle) {
             memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
             memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
-            api.Input.KeyDown[0x4f] = 1;
+            api.Input.KeyDown[0x4f] = !map_gameover || iteration - restart_iteration < 280;
         }
     }
     if (ground_steering && iteration <= 1400) {
@@ -266,7 +276,7 @@ static void __attribute__((ms_abi)) poll(void)
         api.Input.KeyDown[0x4f] = 1;
         api.Input.KeyPressed[0x4f] = iteration == 41;
     }
-    if (iteration == (map_lifecycle ? 6002U : 2002U)) {
+    if (iteration == (map_gameover ? 20002U : map_lifecycle ? 6002U : 2002U)) {
         api.Input.KeyDown[0x29] = api.Input.KeyPressed[0x29] = 1;
     }
     if (jump_test && api.Input.KeyPressed[0x2c]) {
@@ -283,7 +293,7 @@ static void __attribute__((ms_abi)) poll(void)
         }
         ground_taps |= taps;
     }
-    assert(iteration <= (map_lifecycle ? 6002U : 2002U));
+    assert(iteration <= (map_gameover ? 20002U : map_lifecycle ? 6002U : 2002U));
 }
 static void update_reference(void *context)
 {
@@ -549,6 +559,16 @@ static void draw_reference_player(const DOS64_COLOR *image)
 static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int w,
     unsigned int h, unsigned int stride, int x, int y, unsigned int dw, unsigned int dh)
 {
+    if (h == 5 && stride == 60) {
+        assert(w <= 60 && x == (int)(640 - (w + 4) * 2) &&
+            y == 422 && dw == w * 2 && dh == 10);
+        return;
+    }
+    if (w == 1 && h == 1) {
+        assert(stride == 1 && x == 0 && y == 0 && dw == api.Gfx.Width &&
+            dh == api.Gfx.Height && image[0] == 0xff000000U);
+        return;
+    }
     assert(w == 320 && h == 200 && stride == 320 && x == 0 && y == 40 && dw == 640 && dh == 400);
     if (map_test) {
         if (map_animation && shown) {
@@ -627,10 +647,12 @@ int main(int argc, char **argv)
         strcmp(argv[1], "--flight") == 0 || strcmp(argv[1], "--jump-steering") == 0 ||
         strcmp(argv[1], "--jump") == 0 || strcmp(argv[1], "--ground-steering") == 0 ||
         strcmp(argv[1], "--map") == 0 || strcmp(argv[1], "--map-stomp") == 0 ||
-        strcmp(argv[1], "--map-animation") == 0 || strcmp(argv[1], "--map-lifecycle") == 0)));
-    map_lifecycle = argc == 2 && strcmp(argv[1], "--map-lifecycle") == 0;
+        strcmp(argv[1], "--map-animation") == 0 || strcmp(argv[1], "--map-lifecycle") == 0 ||
+        strcmp(argv[1], "--map-gameover") == 0)));
+    map_gameover = argc == 2 && strcmp(argv[1], "--map-gameover") == 0;
+    map_lifecycle = map_gameover || (argc == 2 && strcmp(argv[1], "--map-lifecycle") == 0);
     map_animation = argc == 2 && strcmp(argv[1], "--map-animation") == 0;
-    stomp_jump = argc == 2 && strcmp(argv[1], "--map-stomp") == 0 ? 60 : 0;
+    stomp_jump = argc == 2 && strcmp(argv[1], "--map-stomp") == 0 ? 104 : 0;
     map_test = map_lifecycle || map_animation || stomp_jump ||
         (argc == 2 && strcmp(argv[1], "--map") == 0);
     steering_test = argc == 2 && strcmp(argv[1], "--steering") == 0;
@@ -642,11 +664,13 @@ int main(int argc, char **argv)
         (argc == 2 && strcmp(argv[1], "--flight") == 0);
     deflection_test = argc == 2 && strcmp(argv[1], "--deflection") == 0;
     api.Size = sizeof(api); api.Version = DOS64_API_VERSION;
-    api.Arguments = map_test ? "--map" : ground_test ? "" : jump_test ? "--jump" : flight_test ? "--flight" :
+    api.Arguments = map_test ? "--map" : ground_test ? "--preview" : jump_test ? "--jump" : flight_test ? "--flight" :
         deflection_test ? "--deflection" : "--emitters";
     api.Write = log_text; api.Sleep = sleep_ms; api.Time.Nanoseconds = time_ns;
     api.Input.Poll = poll; api.Gfx.Width = 640; api.Gfx.Height = 480;
+    api.Gfx.SetColor = set_color; api.Gfx.Clear = clear;
     api.Gfx.SelectLayer = select_layer; api.Gfx.Present = present; api.DrawImage = draw;
+    mock_install_layers(&api);
     api.Fs.Open = open_file; api.Fs.Close = close_file; api.Fs.Seek = seek_file;
     api.Fs.Tell = tell_file; api.Fs.Read = read_file; api.Fs.Write = write_file;
     if (map_test) {
@@ -657,11 +681,16 @@ int main(int argc, char **argv)
         printf("Map measurements: %u spawns/%u contacts/%u stuns/%u defeats, %u damage logs/"
             "%u landings, %u changed frames, %llu audio frames\n", map_spawns, map_contacts,
             map_stuns, map_defeats, enemy_damage_logs, map_jumps, changed, audio_written);
+        fflush(stdout);
         if (map_lifecycle) {
             printf("Lifecycle measurements: %u deaths/%u restarts/%u lives/%u pickups\n",
                 map_deaths, map_restarts, map_lives, map_collected);
             assert(map_deaths > 0 && map_restarts > 0 && map_lives == 3 - map_deaths);
-            assert(shown > 2001 && iteration <= 6002);
+            if (map_gameover) {
+                assert(map_deaths == 3 && map_restarts == 2 && map_lives == 0);
+                assert(gameover_iteration && iteration - gameover_iteration >= 395 &&
+                    iteration < 20002);
+            } else assert(shown > 2001 && iteration <= 6002);
         } else assert(iteration == 2002 && shown == 2001 && !map_deaths);
         assert(audio_written > 800000 && audio_energy > 0 && audio_stops == 1 && !log_file);
         if (map_lifecycle) {
@@ -755,7 +784,7 @@ int main(int argc, char **argv)
             assert(jump_min_y[0] - jump_min_y[1] >= 40 &&
                 jump_min_y[2] - jump_min_y[3] >= 40);
         } else {
-            assert(moving_frames == 350 && airborne_frames == 768 &&
+            assert(moving_frames == 355 && airborne_frames == 768 &&
                 jump_min_y[0] == 123 && jump_min_y[1] == 83);
         }
         printf("PASS: default jump%s, %llu exact ARGB pixels, %u visible/%u moving/"

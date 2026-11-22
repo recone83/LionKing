@@ -11,6 +11,53 @@ jawnych buforów, rozmiarów i błędów zamiast rejestrów oraz globalnych adre
 Sprawdzanie eksportu nadal dotyczy zachowanych ciał; testy natywnych gałęzi są
 osobne, opisane w [README projektu](../../README.md).
 
+Start bez argumentów pokazuje oryginalne ekrany Disney/Virgin i East Point
+Software z warstw 0/2 `CREDITS.MAP` (210 ticków lub klawisz), następnie
+podstawowe menu z obydwoma warstwami `TITLES.MAP`, `TITLE_S.MCH`,
+fontem `F8X8_S.MCH` i wskaźnikiem `SUN.MCH`.
+[frontend.c](../dos64/frontend.c) obsługuje wybór startu,
+dźwięku i wyjścia. Przed menu, po ekranach wydawców,
+odtwarzana jest oryginalna animacja Rafikiego/Simby z tabeli
+DS `0x30a0`: 120 ticków animacji i 240 ticków oczekiwania (klawisz skraca
+oczekiwanie). Ekran ładowania używa oryginalnego `LEVELS.MCH`, frame 0,
+bez własnego paska i fontu; po inicjalizacji nakłada nazwę na pierwsze
+100 ticków działającej rozgrywki, zamiast zatrzymywać grę na czarnym ekranie.
+Po START GAME odtwarzana jest osobna oryginalna animacja Timona:
+`1TIMONS.MCH`, skrypt DS `0x5435`, callback `0x47b2`, 130 ticków,
+z `SPEECH5` na obu kanałach przy liczniku 80. Wyciszenie obejmuje też mowę.
+Ekran hasła/słowa z instrukcji jest celowo pominięty.
+Oryginalne `TITLE.AMF` zaczyna się na ekranie Disney/Virgin i trwa bez
+restartu przez East Point, intro i menu. Przed sceną Timona jest zatrzymywane;
+mowa i muzyka LEVEL1 korzystają z osobnych, niepokrywających się strumieni.
+SUN w menu wykonuje oryginalne kroki w poziomie z callbacku `0x2730`,
+według zegara logiki; zmiana wiersza zachowuje fazę ruchu.
+Czytnik AMF obsługuje także zweryfikowany kształt TITLE (31/5/20)
+i znacznik instrumentu bez ponownego wyzwolenia nuty; nie jest ogólnym
+playerem wszystkich odmian AMF.
+Tylko muzyka tytułowa używa liniowej interpolacji próbek, aby uniknąć
+schodkowego resamplingu. Muzyka rozgrywki i efekty zachowują dotychczasowy
+mikser; testy kontrolują granice pętli/końca próbki i identyczne PCM LEVEL1.
+Kalibracja tytułu odnosi częstotliwości próbek do C5, zgodnie z DSMI,
+zamiast odtwarzać je oktawę wyżej i dwa razy szybciej. Kalibracja LEVEL1
+pozostaje bez zmian; jej ewentualna korekta wymaga osobnej weryfikacji.
+Całe okno jest wypełniane nieprzezroczystą czernią przed rysowaniem
+320x200, więc konsola DOS-a nie prześwituje w ramce. Escape z gry oraz zakończenie
+poziomu/GAME OVER wracają do menu po zamknięciu audio. Wyciszenie dotyczy
+muzyki i efektów, nie zmienia kolizji ani logiki gry; ustawienie jest
+zachowane tylko do wyjścia z programu. `--map` pomija menu, a `--preview`
+zachowuje poprzednią demonstrację lokomocji. To podstawowe menu, nie pełne
+odtworzenie oryginalnych animacji, continue, wyboru poziomów i trudności.
+Po pokonaniu hieny callback `0x7c6d` wybiera oryginalną scenę nagrody
+`0x5110`: dwie warstwy `TITLES.MAP` bez logo menu, `RWDLVL1.MCH`
+slot 80 i skrypty DS `0x130f0`/`0x13125`, właściciele (142,163)/(142,162).
+`SPEECH1` startuje na obu kanałach w ticku 19; stan końcowy jest w ticku
+475. Escape skraca scenę, a wyciszenie nie zmienia jej animacji.
+Audio LEVEL1 jest zamykane przed otwarciem mowy nagrody. Test
+[check_victory.c](../../tools/check_victory.c) sprawdza oryginalne piksele,
+wszystkie 22 klatki, czas, PCM, przejście menu i błędy zasobów/audio;
+test kontrolera podaje licznik zwycięstwa przez linker wrapper, a realną
+walkę i moment zwiększenia licznika osobno sprawdza test przeciwników.
+
 [assets.c](assets.c) ma teraz natywny odczyt list nazw banków MCH oraz ładowanie
 wybranego banku przez sprawdzony loader EPF. Lista młodego Simby z DS `0x744c`
 zachowuje wszystkie 28 nazw i sloty 6-33. Próbka pozwala przełączać banki
@@ -93,6 +140,9 @@ te progi, oba znaki i niezmienione ułamki pozycji.
 `engine_motion_right/left` przenoszą `0x1a886/0x1a8f2`, wymuszając odpowiednio
 prędkość co najmniej +2 lub co najwyżej -2 przed integracją X. Tylko prawy
 helper sprawdza bit 0x10 bajtu obiektu +0x4f i zeruje wtedy prędkość;
+To wysoki bajt flag ruchu, nie status +0x49. Bit lotu 0x10 w +0x49
+nie zatrzymuje ruchu w prawo; skok i lot przekazują flags >> 8,
+a izolowany stan odrzutu używa movement_flags_high.
 nie wprowadzono symetrycznej flagi, której nie ma w oryginale.
 [check_directional_motion.c](../../tools/check_directional_motion.c) sprawdza
 pełny zakres ułamków i granice porównań ze znakiem.
@@ -529,7 +579,7 @@ odbicia facing i sąsiedniej komórki z regułami `0x171b3`.
 krawędzi jest czytana z wiersza Y/16, nie (Y-8)/16.
 Zachowano bazę DS bez przesuwania adresów danych.
 
-Scena `--map` wybiera X160 i szuka rzeczywistej powierzchni dla startu,
+Scena `--map` używa oryginalnego deskryptora startu X65/Y1255,
 przewija kamerę w obu osiach i wyłącza skróty kontaktów testowych.
 Obsługę dynamicznych przeciwników opisano niżej; pełna obsługa pułapek
 pozostaje nieprzeniesiona. Poprzednie tryby nadal służą
@@ -545,6 +595,14 @@ pełne kontakty >=0xb0 oraz sąsiadów +/-2 bajty i asymetrię korekt X.
 Granice podglądu to X16 i szerokość mapy minus 16; przesuwane granice
 poziomu oraz wymuszanie kontaktów przez obiekty dynamiczne pozostają
 poza tym blokiem.
+
+Zegar odporności gracza z `0x14e49` włącza oryginalne miganie renderera
+przez `render_set_animation_period`: okres 2, albo 4 przy odporności >100.
+Po wygaśnięciu używa `render_disable_animation`. Miganie nie zmienia
+kolizji; inicjalizacja śmierci przywraca normalne rysowanie.
+Scena DOS64 zastępuje niewidoczną fazę 30-procentową warstwą RGB Simby.
+Obie warstwy zachowują kolejność terenu, innych sprite'ów i HUD; stan
+liczników renderera jest odtwarzany, więc aktualizacja następuje raz.
 
 `engine_map_ceiling` odpowiada `0x1739c`: dodaje signed +4 aktualnego
 deskryptora do Y, wywołuje geometrię (Y-8)/16 i czyta następny wiersz
@@ -658,13 +716,23 @@ pełna zgodność oryginalnego skanera aktywacji nadal nie jest deklarowana.
 
 Inwentaryzacja LEVEL1: 47 znaczników, typy/count:
 1/1, 3/2, 9/9, 10/5, 11/4, 14/14, 16/1, 17/3, 18/4,
-40/1, 41/1, 43/1, 49/1. Typy 1, 3, 9, 10, 11, 14, 16, 17, 18, 40, 41 i 49 są podłączone; pozostałe
-nie otrzymały jeszcze zastępczych handlerów. Tablica dispatch
+40/1, 41/1, 43/1, 49/1. Wszystkie 13 typów są podłączone, w tym
+hiena typu 43. Tablica dispatch
 base-zero `0x5c5c` wskazuje ich oryginalne definicje DS. Typy 17/18
 używają `BUGS` slot 81 (leczenie +4/do maksimum), 16/49 zwiększają
 metry po locie do HUD, a typ 3 zapisuje pozycję checkpointu.
-Pełny HUD, hiena i zakończenie poziomu nadal
-pozostają częścią niezakończonej migracji LEVEL1.
+Pełny HUD, hiena na normalnym poziomie trudności oraz warunek zakończenia
+`0x7c6d` są podłączone. Licznik pokonanych hien zwiększa się dopiero po
+końcu animacji śmierci; pierwsze trafienie i culling nie kończą poziomu.
+Restart zeruje licznik i odtwarza bossa. Kierunek po trafieniu/śmierci
+jest odwrotny do kierunku sprite'u Simby; skok patrolu wymaga wolnej sondy
+bocznej. Culling 512 pikseli dotyczy patrolu, pauzy i ruchomego skoku,
+nie oczekiwania ani końcowej animacji trafienia/śmierci.
+Zakończenie odtwarza scenę nagrody Rafikiego i wraca do menu (launchera
+przy `--map`), nie symuluje nieprzeniesionej mapy ani minigry bonusowej.
+Po wyczerpaniu trzech żyć oryginalny `GAMEOVER.MCH` jest wyświetlany
+przez 200 ticków. Nadal pozostają wybór trudności, pełny audyt pułapek
+oraz przejścia bonus/continue/menu.
 
 `pickups.c/h` podłącza wszystkie 11 znaczników leczenia/ulepszeń/checkpointów.
 `engine_map_marker` współdzieli odczyt płaszczyzny 3 ze skanerem przeciwników,

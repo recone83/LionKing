@@ -64,6 +64,193 @@ static int supported_gravity(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
     return engine_motion_gravity(&body->motion, &body->owner);
 }
 
+static int blocked(unsigned char kind, int left);
+static int obstacle_level(unsigned char kind, unsigned int side);
+
+static int hyena_state(ENGINE_LIZARD *hyena, unsigned int handler,
+    unsigned int entry, short timer)
+{
+    hyena->handler = handler;
+    hyena->timer = timer;
+    hyena->body.animation.state = 0;
+    hyena->body.node->pass_flags = (unsigned char)(
+        (hyena->body.node->pass_flags & 0xf7) | (hyena->facing ? 8 : 0));
+    return script(hyena, entry);
+}
+
+static int hyena_sound(ENGINE_ENEMIES *enemies, unsigned short channel,
+    unsigned short sample)
+{
+    return enemies->sound ?
+        enemies->sound(enemies->player->player.context, channel, sample) : -1;
+}
+
+static int hyena_jump(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *hyena,
+    uint32_t vx, uint32_t vy)
+{
+    hyena->body.motion.velocity_x = vx;
+    hyena->body.motion.velocity_y = vy;
+    ++enemies->jumps;
+    if (hyena_state(hyena, 0x1301a, 0x13e5a, 0) != 0) return -1;
+    return animate(hyena);
+}
+
+static int hyena_patrol(ENGINE_LIZARD *hyena, short timer)
+{
+    hyena->body.node->pass_flags &= 0xdf;
+    return hyena_state(hyena, 0x12702, 0x13bed, timer);
+}
+
+static int hyena_cycle(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *hyena)
+{
+    if (--hyena->attacks_left)
+        return hyena_patrol(hyena, 90);
+    hyena->attacks_left = 1;
+    if (hyena_state(hyena, 0x12ddd, 0x13dc1, 0) != 0 ||
+        hyena_sound(enemies, 0, 18) != 0) return -1;
+    return 0;
+}
+
+static int hyena_side(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *hyena, int left,
+    short *hit)
+{
+    return engine_map_side(enemies->map, &hyena->body.owner, left ? -32 : 32,
+        !left, hit);
+}
+
+static int update_hyena(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *hyena)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    unsigned int state = hyena->body.animation.state;
+    short hit;
+    int dx = player->player.body.owner.x - hyena->body.owner.x;
+    int dy = player->player.body.owner.y - hyena->body.owner.y;
+    if ((hyena->handler == 0x12702 || hyena->handler == 0x12ba0 ||
+        hyena->handler == 0x130b7) &&
+        (dx < -512 || dx > 512 || dy < -512 || dy > 512))
+        return remove_lizard(enemies, hyena, 0);
+    if (hyena->handler == 0x12f98) {
+        if (state) {
+            ++enemies->hyenas_defeated;
+            return remove_lizard(enemies, hyena, 1);
+        }
+        if (supported_gravity(enemies, hyena) != 0) return -1;
+        return animate(hyena);
+    }
+    if (hyena->handler == 0x12ef0) {
+        if (state) {
+            hyena->body.node->pass_flags &= 0xdf;
+            return hyena_patrol(hyena, 120);
+        }
+        if (supported_gravity(enemies, hyena) != 0) return -1;
+        return animate(hyena);
+    }
+    if (render_objects_hit(hyena->body.node, player->player.body.node, &hit) != 0)
+        return -1;
+    if (hit) {
+        ++enemies->contacts;
+        player->damage_source = player->contact_source = &hyena->body.owner;
+        if (hyena->handler == 0x12ddd &&
+            player->player.body.motion.velocity_y > 0x4000 &&
+            player->player.body.motion.velocity_y < UINT32_C(0x80000000) &&
+            (player->player.flags_high & 0x18)) {
+            player->player.flags_high |= 0x20;
+            hyena->attacks_left = 2;
+            hyena->facing = (unsigned char)!(player->player.body.node->pass_flags & 8);
+            hyena->body.node->pass_flags |= 0x20;
+            unsigned int handler = --hyena->health <= 0 ? 0x12f98 : 0x12ef0;
+            if (hyena_state(hyena, handler, handler == 0x12f98 ? 0x13b80 : 0x13e29, 0) != 0 ||
+                supported_gravity(enemies, hyena) != 0) return -1;
+            return animate(hyena);
+        }
+        player->player.flags_high |= 4;
+    }
+    if (hyena->handler == 0x12c66) {
+        if (player->player.body.owner.x >= 1488 && player->player.body.owner.y <= 340)
+            return hyena_jump(enemies, hyena, 0xfffc0000, 0xfffe0000);
+        if (dx >= -64 && dx <= 64 && dy > 0 && dy <= 64 && hyena->timer)
+            hyena->timer = signed_word(hyena->timer - 1);
+        if (!hyena->timer)
+            return hyena_jump(enemies, hyena, 0xfffc0000, 0xfffe0000);
+        if (supported_gravity(enemies, hyena) != 0) return -1;
+        return animate(hyena);
+    }
+    if (hyena->handler == 0x1301a) {
+        if (state == 1) {
+            if (hyena_sound(enemies, 0, 17) != 0) return -1;
+            hyena->handler = 0x130b7;
+        } else {
+            return animate(hyena);
+        }
+    }
+    if (hyena->handler == 0x130b7) {
+        if (supported_gravity(enemies, hyena) != 0) return -1;
+        if (!hyena->body.motion.velocity_y && state == 2) {
+            hyena->body.motion.velocity_x = 0;
+            return hyena_state(hyena, 0x13165, 0x13ea9, 0);
+        }
+        if (hyena->body.owner.x < 496) hyena->body.owner.x = 496;
+        if (engine_motion_x(&hyena->body.motion, &hyena->body.owner) != 0) return -1;
+        return animate(hyena);
+    }
+    if (hyena->handler == 0x13165 || hyena->handler == 0x12aed ||
+        hyena->handler == 0x12d23 || hyena->handler == 0x12ddd) {
+        if (state == 1) return hyena->handler == 0x12ddd ?
+            hyena_patrol(hyena, 60) : hyena_cycle(enemies, hyena);
+        if (state == 2) {
+            if (hyena_sound(enemies, 1, hyena->handler == 0x12ddd ? 18 : 17) != 0)
+                return -1;
+            hyena->body.animation.state = hyena->handler == 0x12d23 ? 0 : 3;
+        }
+        return animate(hyena);
+    }
+    if (hyena->handler == 0x12ba0) {
+        if (!--hyena->timer) return hyena_patrol(hyena, 60);
+        return animate(hyena);
+    }
+    if (hyena->handler != 0x12702) return -1;
+    --hyena->timer;
+    if (dx > -40 && dx < 40 && dy < -32 &&
+        player->player.body.motion.velocity_y > 0x10000 &&
+        player->player.body.motion.velocity_y < UINT32_C(0x80000000)) {
+        if (hyena_state(hyena, 0x12d23, 0x13d4a, 0) != 0 ||
+            hyena_sound(enemies, 0, 17) != 0) return -1;
+        ++enemies->attacks;
+        return animate(hyena);
+    }
+    ENGINE_MAP_GROUND ahead;
+    if (engine_map_ground(enemies->map,
+        signed_word(hyena->body.owner.x + (hyena->facing ? -16 : 16)),
+        hyena->body.owner.y, &ahead) != 0) return -1;
+    if (hyena->attacks_left == 1 &&
+        (hyena->facing ? dx < -40 && dx > -100 : dx > 40 && dx < 100) &&
+        player->player.body.motion.velocity_y >= UINT32_C(0x80000000) &&
+        player->player.body.motion.velocity_y < UINT32_C(0xfffd0000))
+        return hyena_jump(enemies, hyena, 0, 0xfffb0000);
+    short side;
+    if (hyena_side(enemies, hyena, hyena->facing, &side) != 0) return -1;
+    if ((hyena->facing ? dx < -40 && dx > -200 : dx > 40 && dx < 200) &&
+        !side && state == 2 && obstacle_level(ahead.kind, 3) != (hyena->facing ? 1 : 2)) {
+        return hyena_jump(enemies, hyena, hyena->facing ? 0xfffc0000 : 0x40000,
+            0xfffb0000);
+    }
+    if ((hyena->facing ? dx < 0 && dx > -80 : dx > 0 && dx < 80) &&
+        state == 2 && (dy < 0 ? -dy : dy) < 30) {
+        if (hyena_state(hyena, 0x12aed, 0x13cfd, 0) != 0) return -1;
+        ++enemies->attacks;
+        return animate(hyena);
+    }
+    int direction = side || blocked(ahead.kind, hyena->facing) || !ahead.supported;
+    if (state == 1 && (hyena->facing ? dx > 20 : dx < -20)) direction = 1;
+    if (direction) {
+        hyena->facing ^= 1;
+        ++enemies->turns;
+        if (hyena_state(hyena, 0x12702, 0x13c0f, hyena->timer) != 0) return -1;
+    }
+    if (supported_gravity(enemies, hyena) != 0) return -1;
+    return animate(hyena);
+}
+
 static int walking(ENGINE_LIZARD *lizard)
 {
     int beetle = lizard->marker_type == 11;
@@ -429,6 +616,7 @@ static int update_beetle(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
 
 static int update_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 {
+    if (lizard->marker_type == 43) return update_hyena(enemies, lizard);
     if (lizard->marker_type == 11) return update_beetle(enemies, lizard);
     if (lizard->marker_type == 10) return update_porcupine(enemies, lizard);
     if (lizard->handler == 0x11609) {
@@ -597,14 +785,15 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
             unsigned int type;
             RENDER_OWNER marker;
             if (engine_map_marker(map, col, row, &type, &marker) != 0) return -1;
-            if (type != 14 && type != 10 && type != 11 && type != 9) continue;
+            if (type != 14 && type != 10 && type != 11 && type != 9 && type != 43) continue;
             if (enemies->count == ENGINE_LIZARD_CAPACITY) return -1;
             ENGINE_LIZARD *enemy = &enemies->lizards[enemies->count++];
             enemy->marker_type = (unsigned char)type;
             if (type == 14) ++enemies->lizard_count;
             else if (type == 10) ++enemies->porcupine_count;
             else if (type == 11) ++enemies->beetle_count;
-            else ++enemies->leaf_marker_count;
+            else if (type == 9) ++enemies->leaf_marker_count;
+            else ++enemies->hyena_count;
             enemy->marker = marker;
         }
     }
@@ -613,11 +802,17 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
 
 int engine_enemies_player_clock(ENGINE_ENEMIES *enemies)
 {
-    if (!enemies || !enemies->objects || !enemies->player) return -1;
+    if (!enemies || !enemies->objects || !enemies->player ||
+        !enemies->player->player.body.node || !enemies->player->player.body.node->active)
+        return -1;
     ENGINE_PLAYER_AIR *player = enemies->player;
     if (player->player.immunity) {
         --player->player.immunity;
         player->player.flags_high &= 0xfb;
+        render_set_animation_period(player->player.body.node,
+            player->player.immunity > 100 ? 4 : 2);
+    } else {
+        render_disable_animation(player->player.body.node);
     }
     if (((enemies->objects->update_count + 1U) & 31) == 0)
         ++player->roar_charge;
@@ -627,6 +822,7 @@ int engine_enemies_player_clock(ENGINE_ENEMIES *enemies)
 int engine_enemies_restart(ENGINE_ENEMIES *enemies)
 {
     if (!enemies || !enemies->objects || !enemies->renders) return -1;
+    enemies->hyenas_defeated = 0;
     for (unsigned int i = 0; i < enemies->count; ++i) {
         ENGINE_LIZARD *enemy = &enemies->lizards[i];
         if (enemy->object && remove_lizard(enemies, enemy, 0) != 0) return -1;
@@ -684,7 +880,14 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
                 lizard->body.node = 0;
                 return -1;
             }
-            if (walking(lizard) != 0) return -1;
+            if (lizard->marker_type == 43) {
+                lizard->health = 2;
+                lizard->attacks_left = 2;
+                lizard->facing = 1;
+                lizard->body.motion.velocity_x = 0;
+                if (hyena_state(lizard, 0x12c66, 0x13bd4, 60) != 0 ||
+                    update_hyena(enemies, lizard) != 0) return -1;
+            } else if (walking(lizard) != 0) return -1;
             ++enemies->spawned;
         } else if ((lizard->handler == 0x1127e || lizard->handler == 0x11a51 ||
             lizard->marker_type == 10 || lizard->marker_type == 11) &&

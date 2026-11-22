@@ -282,6 +282,13 @@ int main(void)
             assert(engine_player_begin_recovery(&pool, object, &air, &recovery) == -1);
             setup(right, forms[f]);
             launch(right, forms[f], 0);
+            air.player.flags_high = 0x10;
+            air.pressed = right ? 0x28 : 0x24;
+            assert(engine_update_objects(&pool, &keys) == 0 &&
+                air.player.body.motion.velocity_x == (right ? 0x30000U : 0xfffd0000U) &&
+                air.player.body.owner.x == word(32767U + (right ? 3U : 0U - 3U)));
+            setup(right, forms[f]);
+            launch(right, forms[f], 0);
             air.player.probe = 0;
             assert(engine_update_objects(&pool, &keys) == -1);
             air.player.collision_flags = 0;

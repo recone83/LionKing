@@ -40,6 +40,8 @@ int engine_map_edge(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *no
     short *hit, short *kind, short *x, short *y);
 int engine_map_lateral(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
     unsigned short flags, unsigned char flags_high, unsigned char *blocked);
+int engine_map_side(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
+    short offset, int right, short *hit);
 int engine_map_ceiling(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE *node,
     short x, short y, short *hit);
 

@@ -82,6 +82,7 @@ typedef struct {
     unsigned short form;
     unsigned short immunity;
     unsigned char flags_high;
+    unsigned char movement_flags_high;
     unsigned char controls;
     unsigned char age;
     unsigned char *collision_flags;

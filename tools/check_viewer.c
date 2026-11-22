@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dos64/platform.h"
+#include "mock_layers.h"
 #include "engine/resources.h"
 #include "engine/sprites.h"
 #include "engine/tiles.h"
@@ -132,16 +133,17 @@ static unsigned long long __attribute__((ms_abi)) read_file(
 }
 static void __attribute__((ms_abi)) sleep_ms(unsigned int milliseconds)
 {
-    now += milliseconds * 1000000ULL;
-    if (iteration >= 172) {
-        now += milliseconds * 1000000ULL;
-    }
+    (void)milliseconds;
+    assert(0);
 }
 static unsigned long long __attribute__((ms_abi)) time_ns(void) { return now; }
 static int __attribute__((ms_abi)) select_layer(int layer) { assert(layer == 0); return 0; }
+static void __attribute__((ms_abi)) set_color(DOS64_COLOR color) { (void)color; }
+static void __attribute__((ms_abi)) clear(void) {}
 static void __attribute__((ms_abi)) present(void) { ++shown; }
 static void __attribute__((ms_abi)) poll_input(void)
 {
+    now += iteration >= 172 ? 20000000ULL : 10000000ULL;
     memset(api.Input.KeyDown, 0, sizeof(api.Input.KeyDown));
     memset(api.Input.KeyPressed, 0, sizeof(api.Input.KeyPressed));
     ++iteration;
@@ -185,6 +187,16 @@ static void __attribute__((ms_abi)) draw_image(const DOS64_COLOR *image,
     unsigned int width, unsigned int height, unsigned int stride,
     int x, int y, unsigned int dest_width, unsigned int dest_height)
 {
+    if (height == 5 && stride == 60) {
+        assert(width <= 60 && x == (int)(640 - (width + 4) * 2) &&
+            y == 422 && dest_width == width * 2 && dest_height == 10);
+        return;
+    }
+    if (width == 1 && height == 1) {
+        assert(stride == 1 && x == 0 && y == 0 && dest_width == api.Gfx.Width &&
+            dest_height == api.Gfx.Height && image[0] == 0xff000000U);
+        return;
+    }
     assert(width == 320 && height == 200 && stride == 320);
     assert(x == 0 && y == 40 && dest_width == 640 && dest_height == 400);
     if (automatic_test) {
@@ -353,6 +365,8 @@ int main(int argc, char **argv)
     api.Gfx.SelectLayer = select_layer;
     api.Gfx.Present = present;
     api.DrawImage = draw_image;
+    api.Gfx.SetColor = set_color; api.Gfx.Clear = clear;
+    mock_install_layers(&api);
     api.Fs.Open = open_file; api.Fs.Close = close_file;
     api.Fs.Read = read_file; api.Fs.Seek = seek_file; api.Fs.Tell = tell_file;
     api.Fs.Write = write_file;

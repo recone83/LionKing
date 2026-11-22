@@ -42,9 +42,13 @@ typedef struct {
     unsigned int tick_remainder, break_row, loops, rows_played;
     unsigned long long frames_generated;
     int breaking;
+    unsigned int order_count;
+    int interpolate_samples;
+    unsigned int sample_reference_period;
 } MUSIC_PLAYER;
 
 int music_initialize(MUSIC_PLAYER *player, const unsigned char *data, unsigned int size);
+int music_effects_initialize(MUSIC_PLAYER *player);
 int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames);
 int music_effect_play(MUSIC_PLAYER *player, unsigned int channel,
     const unsigned char *data, unsigned int size);
@@ -56,6 +60,7 @@ typedef struct {
     unsigned int position, count;
     unsigned long long submitted;
     int opened;
+    unsigned int target_frames;
 } MUSIC_OUTPUT;
 
 int music_output_open(MUSIC_OUTPUT *output, MUSIC_PLAYER *player, const DOS64_API *api);

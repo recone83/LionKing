@@ -108,7 +108,7 @@ int main(void)
     assert(engine_motion_player_gravity(0, 0, 0) == -1);
     unsigned int updates = 0;
     for (unsigned int f = 0; f < 3; ++f) {
-        for (unsigned int mode = 0; mode < 32; ++mode) {
+        for (unsigned int mode = 0; mode < 64; ++mode) {
             ENGINE_OBJECT_POOL pool;
             RENDER_POOL renders;
             ENGINE_PLAYER_DEFLECTION state;
@@ -118,6 +118,7 @@ int main(void)
             state.form = forms[f];
             fixture.hit = mode & 4 ? -1 : 0;
             state.flags_high = mode & 8 ? 0x10 : 0;
+            state.movement_flags_high = mode & 32 ? 0x10 : 0;
             state.body.node->pass_flags = mode & 16 ? 8 : 0;
             int middle = !!(mode & 2);
             ENGINE_PLAYER_CALL call;
@@ -136,7 +137,7 @@ int main(void)
                 vy = (fixture.hit ? 0 : vy) + (state.form ? 0x6000U : 0x4e00U);
                 y += vy;
                 x += call.handler == 0xe410 ? (unsigned int)-3 :
-                    state.flags_high & 0x10 ? 0 : 3;
+                    state.movement_flags_high & 0x10 ? 0 : 3;
                 assert(engine_update_objects(&pool, &keys) == 0);
                 assert(fixture.transitions == 0 && fixture.probes == tick && state.age == tick);
                 assert(state.body.animation.state == 77 &&
@@ -147,7 +148,7 @@ int main(void)
                     state.body.motion.fraction_x == 65535);
                 assert(state.body.motion.velocity_y == vy);
                 assert(state.body.motion.velocity_x == (call.handler == 0xe410 ?
-                    UINT32_C(0xfffd0000) : state.flags_high & 0x10 ? 0 : UINT32_C(0x30000)));
+                    UINT32_C(0xfffd0000) : state.movement_flags_high & 0x10 ? 0 : UINT32_C(0x30000)));
                 assert(state.body.node->parts == animation_movement_data +
                     descriptor(state.form, middle, tick) - ANIMATION_MOVEMENT_BASE);
                 assert(collision_flags == (fixture.hit ? 0x65 : 0x45));

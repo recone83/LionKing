@@ -305,6 +305,17 @@ int main(void)
     assert(engine_player_begin_air(&pool, object, &air, &call) == 0);
     assert(air.player.handler == 0xaa97 && air.player.flags_high == 0x10 &&
         !(air.player.body.node->pass_flags & 8) && object->context == &air);
+    assert(air.player.body.owner.x == word(32762) &&
+        air.player.body.motion.velocity_x == 0x20000);
+    for (unsigned int stop = 0; stop < 2; ++stop) {
+        setup(1, 0);
+        air.player.flags_high = 0x10;
+        air.flags = stop ? 0x1000 : 0;
+        air.pressed = 8;
+        assert(engine_update_objects(&pool, &keys) == 0);
+        assert(air.player.body.owner.x == word(32760 + (stop ? 0 : 3)) &&
+            air.player.body.motion.velocity_x == (stop ? 0 : 0x30000));
+    }
     call = (ENGINE_PLAYER_CALL){0xae53, 0, 0};
     assert(engine_player_begin_air(&pool, object, &air, &call) == -1 &&
         air.player.handler == 0xaa97);

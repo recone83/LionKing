@@ -125,9 +125,9 @@ static short map_word(unsigned int value)
 }
 
 static int lateral_probe(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
-    unsigned short flags, unsigned char flags_high, int right, short *hit)
+    unsigned short flags, unsigned char flags_high, int right, short offset, short *hit)
 {
-    int x = map_word((unsigned short)owner->x + (right ? 12U : 0U - 12U));
+    int x = map_word((unsigned short)owner->x + (unsigned short)offset);
     int y = map_word((unsigned short)owner->y - 8U);
     if (flags & 0x8000) {
         x = map_word((unsigned short)x + (right ? 0U - 4U : 4U));
@@ -172,6 +172,14 @@ static int lateral_probe(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *ow
     return 0;
 }
 
+int engine_map_side(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
+    short offset, int right, short *hit)
+{
+    if (!collision || !collision->map || !collision->contours || !owner || !hit ||
+        (right != 0 && right != 1)) return -1;
+    return lateral_probe(collision, owner, 0, 0, right, offset, hit);
+}
+
 int engine_map_lateral(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owner,
     unsigned short flags, unsigned char flags_high, unsigned char *blocked)
 {
@@ -182,14 +190,14 @@ int engine_map_lateral(const ENGINE_MAP_COLLISION *collision, RENDER_OWNER *owne
     if (owner->x <= 16) {
         owner->x = 16; *blocked |= 4;
     } else {
-        if (lateral_probe(collision, owner, flags, flags_high, 0, &hit) != 0) return -1;
+        if (lateral_probe(collision, owner, flags, flags_high, 0, -12, &hit) != 0) return -1;
         if (hit) *blocked |= 4;
     }
     int limit = (int)collision->width * 8 - 16;
     if (owner->x >= limit) {
         owner->x = (short)limit; *blocked |= 8;
     } else {
-        if (lateral_probe(collision, owner, flags, flags_high, 1, &hit) != 0) return -1;
+        if (lateral_probe(collision, owner, flags, flags_high, 1, 12, &hit) != 0) return -1;
         if (hit) *blocked |= 8;
     }
     return 0;
