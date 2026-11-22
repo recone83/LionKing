@@ -358,6 +358,40 @@ int main(void)
     assert(samples[0] == 128 && samples[1] == 128 && samples[2] == 0 && samples[3] == 0);
     puts("PASS: title interpolation produces exact fractional PCM across loop/end boundaries; "
         "default gameplay/effect sampling remains unchanged");
+    static const unsigned char positive[] = {228,228}, negative[] = {28,28};
+    assert(music_effects_initialize(&player) == 0);
+    player.samples[0] = (MUSIC_SAMPLE){positive,2,0,2,22050,64};
+    player.samples[1] = (MUSIC_SAMPLE){negative,2,0,2,22050,64};
+    player.orders[0][0] = 1;
+    player.tracks[1][0].instrument = 2;
+    player.voices[0].instrument = 1;
+    player.voices[0].volume = 64;
+    player.voices[0].period = 1712;
+    player.voices[0].step = 65536;
+    player.pan[0] = 128;
+    player.tick_remaining = 1;
+    player.smooth_transitions = 1;
+    reference = player;
+    reference.smooth_transitions = 0;
+    assert(music_samples(&player, samples, 66) == 0);
+    assert(music_samples(&reference, fragmented, 66) == 0);
+    assert(samples[0] == 6400 && samples[2] == 6400);
+    assert(fragmented[0] == 6400 && fragmented[2] == -6400);
+    assert(samples[2 + 64 * 2] == -6400);
+    for (unsigned int i = 1; i < 65; ++i)
+        assert(samples[i * 2] - samples[(i + 1) * 2] == 200);
+    assert(music_effects_initialize(&player) == 0);
+    player.samples[0] = (MUSIC_SAMPLE){positive,1,0,0,22050,64};
+    player.voices[0].instrument = 1;
+    player.voices[0].volume = 64;
+    player.voices[0].period = 1712;
+    player.voices[0].step = 65536;
+    player.pan[0] = 128;
+    player.tick_remaining = 100;
+    player.smooth_transitions = 1;
+    assert(music_samples(&player, samples, 66) == 0);
+    assert(samples[0] == 6400 && samples[2] == 6400 && samples[2 + 64 * 2] == 0);
+    puts("PASS: instrument switches and sample ends use a 64-frame transition without discontinuities");
     unsigned int continue_size;
     assert(resources_load_entry(&api, "data/LIONKING.EPF", "CONTINUE.AMF",
         packed, sizeof(packed), data, sizeof(data), &dictionary, &continue_size) == 0);
@@ -372,5 +406,181 @@ int main(void)
         continue_energy += samples[i] < 0 ? (unsigned int)-samples[i] : (unsigned int)samples[i];
     assert(continue_energy > 1000000);
     puts("PASS: original CONTINUE.AMF produces non-silent, chunk-invariant PCM");
+
+    static const unsigned char slide_sample[] = {128, 129};
+    static const struct {
+        unsigned char effect, parameter;
+        int first_delta, next_delta;
+    } slides[] = {
+        {0x84, 0xfd, 0, -12}, {0x84, 0x03, 0, 12},
+        {0x84, 0x80, 0, 0}, {0x92, 0xfe, -8, 0},
+        {0x92, 0x11, 4, 0}, {0x92, 0xf0, 0, 0}
+    };
+    for (unsigned int i = 0; i < sizeof(slides) / sizeof(slides[0]); ++i) {
+        assert(music_effects_initialize(&player) == 0);
+        player.samples[0] = (MUSIC_SAMPLE){slide_sample, 2, 0, 2, 8368, 64};
+        player.orders[0][0] = 1;
+        player.tracks[1][0] = (MUSIC_EVENT){60, 1, 0, slides[i].effect, slides[i].parameter};
+        assert(music_samples(&player, samples, 1) == 0);
+        assert(player.voices[0].period == (unsigned int)(856 + slides[i].first_delta));
+        player.tick_remaining = 0;
+        assert(music_samples(&player, samples, 1) == 0);
+        assert(player.voices[0].period ==
+            (unsigned int)(856 + slides[i].first_delta + slides[i].next_delta));
+        assert(music_effects_initialize(&player) == 0);
+        player.scaled_pitch_slides = 1;
+        player.samples[0] = (MUSIC_SAMPLE){slide_sample, 2, 0, 2, 8368, 64};
+        player.orders[0][0] = 1;
+        player.tracks[1][0] = (MUSIC_EVENT){60, 1, 0, slides[i].effect, slides[i].parameter};
+        assert(music_samples(&player, samples, 1) == 0);
+        assert(player.voices[0].period == (unsigned int)(856 + slides[i].first_delta / 2));
+        player.tick_remaining = 0;
+        assert(music_samples(&player, samples, 1) == 0);
+        assert(player.voices[0].period ==
+            (unsigned int)(856 + (slides[i].first_delta + slides[i].next_delta) / 2));
+    }
+    assert(music_effects_initialize(&player) == 0);
+    player.scaled_pitch_slides = 1;
+    player.samples[0] = (MUSIC_SAMPLE){slide_sample, 2, 0, 2, 16726, 64};
+    player.orders[0][0] = 1;
+    player.tracks[1][0] = (MUSIC_EVENT){60, 1, 0, 0x84, 3};
+    assert(music_samples(&player, samples, 1) == 0);
+    player.tick_remaining = 0;
+    assert(music_samples(&player, samples, 1) == 0 && player.voices[0].period == 868);
+    puts("PASS: signed regular and fine slides retain legacy behavior and use sample-rate-scaled AMF units when enabled");
+
+    static unsigned char level2_data[131072];
+    unsigned int level2_size;
+    assert(resources_load_entry(&api, "data/LIONKING.EPF", "LION2.AMF",
+        packed, sizeof(packed), level2_data, sizeof(level2_data),
+        &dictionary, &level2_size) == 0);
+    assert(music_initialize(&player, level2_data, level2_size) == 0);
+    player.sample_reference_period = 856;
+    player.scaled_pitch_slides = 1;
+    player.row = 12;
+    assert(player.tracks[player.orders[0][1]][12].effect == 0x84 &&
+        player.tracks[player.orders[0][1]][12].parameter == 0xfd);
+    assert(music_samples(&player, samples, 1) == 0);
+    assert(player.voices[1].period == 508);
+    player.tick_remaining = 0;
+    assert(music_samples(&player, samples, 1) == 0);
+    assert(player.voices[1].period == 502);
+    player.row = 13;
+    player.tick = 0;
+    player.tick_remaining = 0;
+    assert(music_samples(&player, samples, 1) == 0);
+    assert(player.voices[1].period == 504);
+    puts("PASS: real LEVEL2 melody slide FD (-3) and following fine slide 01");
+    assert(music_initialize(&player, level2_data, level2_size) == 0);
+    player.sample_reference_period = 856;
+    player.scaled_pitch_slides = 1;
+    player.order = 13;
+    player.row = 39;
+    player.voices[0].instrument = 1;
+    player.voices[0].period = 856;
+    assert(player.tracks[player.orders[13][0]][39].effect == 0x86 &&
+        player.tracks[player.orders[13][0]][39].parameter == 15);
+    assert(music_samples(&player, samples, 1) == 0);
+    assert(player.voices[0].period == 856 && player.voices[0].target_period == 428);
+    player.tick_remaining = 0;
+    assert(music_samples(&player, samples, 1) == 0 && player.voices[0].period == 826);
+    player.row = 40;
+    player.tick = 0;
+    player.tick_remaining = 0;
+    assert(player.tracks[player.orders[13][0]][40].effect == 0x86 &&
+        player.tracks[player.orders[13][0]][40].parameter == 0);
+    assert(music_samples(&player, samples, 1) == 0);
+    player.tick_remaining = 0;
+    assert(music_samples(&player, samples, 1) == 0 && player.voices[0].period == 796);
+    puts("PASS: real LEVEL2 tone portamento uses scaled speed and continues with remembered parameter");
+    assert(music_initialize(&player, level2_data, level2_size) == 0);
+    reference = player;
+    player.sample_reference_period = reference.sample_reference_period = 856;
+    player.scaled_pitch_slides = reference.scaled_pitch_slides = 1;
+    player.interpolate_samples = 1;
+    unsigned long long level2_steps[2] = {0, 0};
+    int last[2][2] = {{0}};
+    seconds = 0;
+    while (!player.loops && seconds < 180) {
+        assert(music_samples(&player, samples, MUSIC_RATE) == 0);
+        assert(music_samples(&reference, fragmented, MUSIC_RATE) == 0);
+        for (unsigned int i = 0; i < MUSIC_RATE; ++i) {
+            for (unsigned int ch = 0; ch < 2; ++ch) {
+                int a = samples[i * 2 + ch] - last[0][ch];
+                int b = fragmented[i * 2 + ch] - last[1][ch];
+                level2_steps[0] += (unsigned long long)((long long)a * a);
+                level2_steps[1] += (unsigned long long)((long long)b * b);
+                last[0][ch] = samples[i * 2 + ch];
+                last[1][ch] = fragmented[i * 2 + ch];
+            }
+        }
+        assert(player.order == reference.order && player.row == reference.row &&
+            player.tick == reference.tick && player.loops == reference.loops);
+        ++seconds;
+    }
+    assert(player.loops == 1 && seconds == 108);
+    assert(level2_steps[0] * 100 < level2_steps[1] * 75);
+    assert(music_initialize(&player, level2_data, level2_size) == 0);
+    player.sample_reference_period = 856;
+    player.scaled_pitch_slides = 1;
+    player.interpolate_samples = 1;
+    reference = player;
+    assert(music_samples(&player, samples, MUSIC_RATE) == 0);
+    for (unsigned int pos = 0; pos < MUSIC_RATE;) {
+        unsigned int count = MUSIC_RATE - pos;
+        if (count > 137) count = 137;
+        assert(music_samples(&reference, fragmented + pos * 2, count) == 0);
+        pos += count;
+    }
+    assert(memcmp(samples, fragmented, sizeof(samples)) == 0);
+    printf("PASS: full LEVEL2 loop (%u seconds) retains timing; interpolation reduces "
+        "squared adjacent-sample steps by %llu%% and is chunk invariant\n",
+        seconds, 100 - level2_steps[0] * 100 / level2_steps[1]);
+    assert(music_initialize(&player, level2_data, level2_size) == 0);
+    player.sample_reference_period = 856;
+    player.scaled_pitch_slides = 1;
+    player.interpolate_samples = 1;
+    player.smooth_transitions = 1;
+    reference = player;
+    reference.smooth_transitions = 0;
+    unsigned long long boundary_energy[2] = {0, 0};
+    int previous[2][2] = {{0}};
+    while (!player.loops) {
+        assert(music_samples(&player, samples, 1) == 0);
+        assert(music_samples(&reference, fragmented, 1) == 0);
+        for (unsigned int ch = 0; ch < 2; ++ch) {
+            int a = samples[ch] - previous[0][ch];
+            int b = fragmented[ch] - previous[1][ch];
+            boundary_energy[0] += (unsigned long long)((long long)a * a);
+            boundary_energy[1] += (unsigned long long)((long long)b * b);
+        }
+        unsigned int count = player.tick_remaining;
+        assert(count && count <= MUSIC_RATE && count == reference.tick_remaining);
+        assert(music_samples(&player, samples, count) == 0);
+        assert(music_samples(&reference, fragmented, count) == 0);
+        for (unsigned int ch = 0; ch < 2; ++ch) {
+            previous[0][ch] = samples[(count - 1) * 2 + ch];
+            previous[1][ch] = fragmented[(count - 1) * 2 + ch];
+        }
+        assert(player.order == reference.order && player.row == reference.row &&
+            player.tick == reference.tick && player.loops == reference.loops);
+    }
+    assert(boundary_energy[0] * 100 < boundary_energy[1] * 80);
+    printf("PASS: LEVEL2 tick-boundary step energy reduced by %llu%% over the full loop\n",
+        100 - boundary_energy[0] * 100 / boundary_energy[1]);
+    assert(music_initialize(&player, level2_data, level2_size) == 0);
+    player.sample_reference_period = 856;
+    player.scaled_pitch_slides = 1;
+    player.interpolate_samples = player.smooth_transitions = 1;
+    reference = player;
+    assert(music_samples(&player, samples, MUSIC_RATE) == 0);
+    for (unsigned int pos = 0; pos < MUSIC_RATE;) {
+        unsigned int count = MUSIC_RATE - pos;
+        if (count > 137) count = 137;
+        assert(music_samples(&reference, fragmented + pos * 2, count) == 0);
+        pos += count;
+    }
+    assert(memcmp(samples, fragmented, sizeof(samples)) == 0);
+    puts("PASS: LEVEL2 transition smoothing is chunk invariant");
     return 0;
 }

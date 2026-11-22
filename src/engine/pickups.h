@@ -46,5 +46,6 @@ int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objec
     unsigned int *continues);
 int engine_pickups_tick(ENGINE_PICKUPS *pickups, RENDER_OWNER camera);
 int engine_pickups_restart(ENGINE_PICKUPS *pickups);
+int engine_pickups_suspend_for_ride(ENGINE_PICKUPS *pickups);
 
 #endif

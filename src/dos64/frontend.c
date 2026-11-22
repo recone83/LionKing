@@ -636,7 +636,9 @@ int frontend_loading_for_level(unsigned int completed, unsigned int total,
     if (ready && frontend_level_title_for_level(level, view) != 0) return -1;
     lk_platform_present(view, ready ? loading_colors : colors);
     if (ready && completed == total) {
-        lk_platform_log("Loading: LEVEL1 assets ready; title overlays the first 100 gameplay ticks.\n");
+        lk_platform_log(level == 2 ?
+            "Loading: LEVEL2 assets ready; title overlays the first 100 gameplay ticks.\n" :
+            "Loading: LEVEL1 assets ready; title overlays the first 100 gameplay ticks.\n");
     }
     return 0;
 }

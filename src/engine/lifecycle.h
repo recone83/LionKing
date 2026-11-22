@@ -22,12 +22,16 @@ typedef struct {
     unsigned char falling;
     unsigned char game_over;
     unsigned char complete;
+    unsigned char out_of_bounds;
 } ENGINE_LEVEL_LIFE;
 
 int engine_level_life_initialize(ENGINE_LEVEL_LIFE *life, ENGINE_PLAYER_AIR *player,
     ENGINE_OBJECT *object, unsigned char lives);
 int engine_level_life_tick(ENGINE_LEVEL_LIFE *life, RENDER_OWNER camera);
+int engine_level_life_check_bounds(ENGINE_LEVEL_LIFE *life, unsigned int height_tiles,
+    unsigned int level);
 int engine_level_life_fall(ENGINE_LEVEL_LIFE *life, const ENGINE_PLAYER_CALL *call);
+int engine_level_life_water(ENGINE_LEVEL_LIFE *life);
 int engine_level_life_complete(ENGINE_LEVEL_LIFE *life, unsigned int defeated);
 
 #endif

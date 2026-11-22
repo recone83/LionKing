@@ -356,9 +356,12 @@ W tej ścieżce całkowite różnice pozycji trafiają do wysokiego słowa EDX;
 wygładzania różnicy przez dzielenie przez 8.
 `--map` aktualizuje zachowaną kamerę raz po ticku Simby i używa tej samej
 pozycji do aktywacji przeciwników i renderowania, zamiast przeliczać
-`Simba.x−160, Simba.y−120` przy każdej klatce. Inicjalizacja podglądu
-kadruje jego punkt startowy; freeze/owijanie z innych poziomów pozostają
-poza zakresem. Nie zmieniono strumieni animacji ani renderowania sprite'ów.
+`Simba.x−160, Simba.y−120` przy każdej klatce. Podczas chwytu ogona
+nosorożca kamera i jej kotwica pozostają nieruchome, jak dla flagi
+DS:0x1939b oryginału, a po puszczeniu ogona śledzenie jest wznawiane.
+Inicjalizacja podglądu kadruje jego punkt startowy; pozostałe zastosowania
+freeze i owijanie z innych poziomów pozostają poza zakresem. Nie zmieniono
+strumieni animacji ani renderowania sprite'ów.
 `check_scene --map-animation` sprawdza 2000 kolejnych porównań tła podczas
 trzech ryków, powrotów do idle i krótkich przykucnięć; `--map-stomp`
 nadal sprawdza śmierć jaszczurki, odbicie i dalszą grę.

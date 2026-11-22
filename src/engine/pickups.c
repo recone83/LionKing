@@ -150,12 +150,26 @@ int engine_pickups_initialize(ENGINE_PICKUPS *pickups, ENGINE_OBJECT_POOL *objec
             unsigned int type;
             RENDER_OWNER marker;
             if (engine_map_marker(map, column, row, &type, &marker) != 0) return -1;
+            if (type == 162) type = 1;
             if (!pickup_parts(type)) continue;
             if (pickups->count == ENGINE_PICKUP_CAPACITY) return -1;
             ENGINE_PICKUP *item = &pickups->items[pickups->count++];
             item->marker = marker;
             item->type = (unsigned char)type;
         }
+    }
+    return 0;
+}
+
+int engine_pickups_suspend_for_ride(ENGINE_PICKUPS *pickups)
+{
+    if (!pickups || !pickups->objects || !pickups->renders) return -1;
+    for (unsigned int i = 0; i < pickups->count; ++i) {
+        ENGINE_PICKUP *item = &pickups->items[i];
+        if (!item->object) continue;
+        if (pickup_release(pickups, item) != 0) return -1;
+        item->flying = item->glowing = 0;
+        ++pickups->culled;
     }
     return 0;
 }

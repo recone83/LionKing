@@ -22,14 +22,18 @@
 #include "libs/vga.h"
 #include "dos64_memory.h"
 
+#define GAME_EFFECT_SLOTS 24
+#define LEVEL1_ENEMY_BANK_COUNT 18U
+#define LEVEL2_ENEMY_BANK_COUNT 21U
+
 typedef struct {
     unsigned char pixels[LK_WIDTH * (LK_HEIGHT + 7)];
     unsigned char hurt_layer[LK_WIDTH * LK_HEIGHT];
     unsigned char packed[79311], map[580488], map_contours[4096];
     unsigned char animated_tiles[12800], level_music[131072];
-    unsigned char enemy_sprites[21][65536], game_over_sprites[4096];
+    unsigned char enemy_sprites[LEVEL2_ENEMY_BANK_COUNT][65536], game_over_sprites[4096];
     unsigned char pickup_sprites[5][131072], hud_sprites[32768];
-    unsigned char effect_samples[19][65536], sprite[32768];
+    unsigned char effect_samples[GAME_EFFECT_SLOTS][65536], sprite[32768];
     unsigned char idle_sprites[3][32768];
     unsigned char player_sprites[ASSETS_YOUNG_BANK_COUNT][32768];
 } GAME_BUFFERS;
@@ -54,7 +58,7 @@ extern ENGINE_DIFFICULTY game_difficulty;
 extern ENGINE_ENEMIES map_enemies;
 extern ENGINE_PICKUPS map_pickups;
 extern unsigned int game_over_size;
-extern unsigned int effect_sizes[19];
+extern unsigned int effect_sizes[GAME_EFFECT_SLOTS];
 extern RESOURCE_DICTIONARY dictionary;
 extern RENDER_POOL render_pool;
 extern VGA_FADE fade;

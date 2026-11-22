@@ -3,6 +3,8 @@
 #include "preview_idle.h"
 #include "frontend.h"
 #include "preview_bonus.h"
+#include "engine/level2.h"
+#include "engine/ostrich_ride.h"
 
 typedef struct {
     const DOS64_API *api;
@@ -41,6 +43,8 @@ typedef struct {
     RENDER_FOLLOW_CAMERA camera;
     ENGINE_MAP_COLLISION collision;
     ENGINE_LEVEL_LIFE life;
+    ENGINE_OSTRICH_RIDE *ostrich;
+    unsigned short background_scroll;
     short map_spawn_y;
     short map_spawn_x;
     unsigned int level_number;
@@ -64,6 +68,7 @@ typedef struct {
 } DEFLECTION_PREVIEW;
 
 static unsigned char next_level_lives;
+static ENGINE_OSTRICH_RIDE preview_ostrich;
 static unsigned int next_level_continues;
 static unsigned short next_level_max_roar;
 static int next_level_state_valid;
@@ -126,7 +131,8 @@ static int preview_player_support(void *context, short *supported)
             return 0;
         }
         ENGINE_MAP_GROUND ground;
-        if (engine_map_ground(&preview->collision, body->owner.x, body->owner.y, &ground) != 0) {
+        if (engine_map_ground_ostrich(&preview->collision, body->owner.x, body->owner.y,
+            preview->ostrich->active ? preview->ostrich->scroll.base_x : 0, &ground) != 0) {
             lk_platform_log("Lion King: invalid map support query.\n");
             return -1;
         }
@@ -182,25 +188,26 @@ static int preview_player_sound(void *context, unsigned short sample)
 {
     DEFLECTION_PREVIEW *preview = context;
     if (sample != 0 && sample != 1 && sample != 10 && sample != 16 &&
+        !(sample == 23 && preview->map_mode && preview->level_number == 2) &&
         (sample < 2 || sample > 6)) {
         lk_platform_log("Lion King: unexpected player sound.\n");
         return -1;
     }
     if (preview->map_mode) {
         if (!sound_enabled) {
-            lk_platform_log("Original LEVEL1 sample requested; sound muted.\n");
+            lk_platform_log("Original level sample requested; sound muted.\n");
             return 0;
         }
-        if (sample >= 19 || !effect_sizes[sample] ||
+        if (sample >= GAME_EFFECT_SLOTS || !effect_sizes[sample] ||
             music_effect_play(&music_player, 0, effect_samples[sample],
                 effect_sizes[sample]) != 0) {
-            lk_platform_log("Lion King: cannot play original LEVEL1 sound effect.\n");
+            lk_platform_log("Lion King: cannot play original level sound effect.\n");
             return -1;
         }
         lk_platform_log(sample == 0 ?
             "Original rebound sample 0 requested; PCM output active.\n" : sample == 2 || sample == 3 ?
             "Original roar sample requested; PCM output active.\n" :
-            "Original LEVEL1 sample requested; PCM output active.\n");
+            "Original level sample requested; PCM output active.\n");
         return 0;
     }
     lk_platform_log(sample == 16 ?
@@ -218,7 +225,7 @@ static int preview_enemy_sound(void *context, unsigned short channel, unsigned s
 {
     DEFLECTION_PREVIEW *preview = context;
     if (preview && preview->map_mode && !sound_enabled) return 0;
-    if (!preview || !preview->map_mode || sample >= 19 || !effect_sizes[sample] ||
+    if (!preview || !preview->map_mode || sample >= GAME_EFFECT_SLOTS || !effect_sizes[sample] ||
         music_effect_play(&music_player, channel, effect_samples[sample],
             effect_sizes[sample]) != 0) {
         lk_platform_log("Lion King: cannot play original enemy sound effect.\n");
@@ -251,9 +258,9 @@ static int preview_player_transition(void *context, const ENGINE_PLAYER_CALL *ca
         lk_platform_log("Lion King: unexpected player preview transition.\n");
         return -1;
     }
-    if (preview->flight) {
+    if (preview->flight || preview->map_mode) {
         preview->airborne = 1;
-        preview->air.pressed = preview->variant & 1 ? 4 : 8;
+        if (!preview->map_mode) preview->air.pressed = preview->variant & 1 ? 4 : 8;
         return engine_player_begin_air(&scene_objects, preview->object, &preview->air, call);
     }
     preview->object->behavior = 0;
@@ -267,8 +274,15 @@ static int preview_player_ground(void *context, short *kind, short *delta_y)
     DEFLECTION_PREVIEW *preview = context;
     if (preview->map_mode) {
         ENGINE_FALLING_OBJECT *body = &preview->air.player.body;
+        if (preview->air.player.flags_high & 0x80) {
+            *kind = 1;
+            *delta_y = 0;
+            preview->air.contact_kind = 0;
+            return 0;
+        }
         ENGINE_MAP_GROUND ground;
-        if (engine_map_ground(&preview->collision, body->owner.x, body->owner.y, &ground) != 0) {
+        if (engine_map_ground_ostrich(&preview->collision, body->owner.x, body->owner.y,
+            preview->ostrich->active ? preview->ostrich->scroll.base_x : 0, &ground) != 0) {
             lk_platform_log("Lion King: invalid map landing query.\n");
             return -1;
         }
@@ -311,6 +325,15 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
 {
     DEFLECTION_PREVIEW *preview = context;
     if (preview->ground_mode) {
+        if (call->handler == 0xf94dU && preview->map_mode &&
+            preview->level_number == 2 && preview->ostrich->active) {
+            return engine_player_begin_ostrich(&scene_objects, preview->object, &preview->air);
+        }
+        if (preview->map_mode && preview->level_number == 2 && call->handler == 0x10d78U) {
+            int result = engine_level_life_water(&preview->life);
+            if (result != 0) lk_platform_log("Lion King: water death initialization failed.\n");
+            return result;
+        }
         if (preview->map_mode && call->handler == 0xc884U) {
             lk_platform_log("LEVEL1: original lethal-fall countdown selected.\n");
             return engine_level_life_fall(&preview->life, call);
@@ -330,7 +353,8 @@ static int preview_player_landed(void *context, const ENGINE_PLAYER_CALL *call,
             call->handler == 0xee60U || call->handler == 0xf017U || call->handler == 0xf160U ||
             call->handler == 0xf2b1U || call->handler == 0xf3fbU || call->handler == 0xf6ccU ||
             call->handler == 0x10075U || call->handler == 0xd40aU || call->handler == 0xd4ffU ||
-            call->handler == 0xdc42U || call->handler == 0xdeafU) {
+            call->handler == 0xdc42U || call->handler == 0xdeafU ||
+            call->handler == 0xfcb5U) {
             lk_platform_log("Original player action handler selected.\n");
             return engine_player_begin_action(&scene_objects, preview->object, &preview->air, call);
         }
@@ -410,8 +434,12 @@ static int begin_player_preview(DEFLECTION_PREVIEW *preview)
 static int preview_map_life(DEFLECTION_PREVIEW *preview)
 {
     unsigned int deaths = preview->life.deaths;
+    if (engine_level_life_check_bounds(&preview->life, preview->collision.height,
+        preview->level_number) != 0) return -1;
     int result = engine_level_life_tick(&preview->life, preview->camera.position);
     if (preview->life.deaths != deaths) {
+        if (preview->ostrich->marker &&
+            engine_ostrich_ride_release(preview->ostrich, &preview->air) != 0) return -1;
         unsigned char death_rgb[768] = {0};
         for (unsigned int i = 0; i < 24; ++i) death_rgb[i] = level_rgb[i];
         if (vga_fade_begin(&fade, death_rgb) != 0) return -1;
@@ -419,6 +447,7 @@ static int preview_map_life(DEFLECTION_PREVIEW *preview)
         lk_platform_log("LEVEL1: original SYDIE lost-life scene and palette fade started.\n");
     }
     if (result == ENGINE_LIFE_RESTART) {
+        preview->background_scroll = 0;
         if (vga_fade_initialize(&fade, level_rgb) != 0 ||
             vga_palette_colors(fade.current, palette) != 0) return -1;
         if (engine_enemies_restart(&map_enemies) != 0 ||
@@ -496,6 +525,7 @@ static int preview_map_life(DEFLECTION_PREVIEW *preview)
                 engine_level_life_initialize(&preview->life, &preview->air,
                     preview->object, restored_lives) != 0) return -1;
             preview->air.health = map_pickups.max_health;
+            preview->background_scroll = 0;
             preview->air.roar_charge = 0;
             preview->air.player.body.owner = map_pickups.checkpoint;
             preview->air.player.body.motion = (ENGINE_MOTION){0};
@@ -529,8 +559,17 @@ static int preview_map_life(DEFLECTION_PREVIEW *preview)
             if (preview_ground_ready(preview, &call) != 0) return -1;
             if (music_enabled || sound_enabled) {
                 if ((music_enabled ? music_initialize(&music_player, level_music, preview->level_music_size) :
-                        music_effects_initialize(&music_player)) != 0 ||
-                    music_output_open(&music_output, &music_player, preview->api) != 0) {
+                        music_effects_initialize(&music_player)) != 0) {
+                    lk_platform_log("Lion King: cannot restart level music after continue.\n");
+                    return -1;
+                }
+                if (music_enabled && preview->level_number == 2) {
+                    music_player.interpolate_samples = 1;
+                    music_player.smooth_transitions = 1;
+                    music_player.sample_reference_period = 856;
+                    music_player.scaled_pitch_slides = 1;
+                }
+                if (music_output_open(&music_output, &music_player, preview->api) != 0) {
                     lk_platform_log("Lion King: cannot restart LEVEL1 music after continue.\n");
                     return -1;
                 }
@@ -544,7 +583,9 @@ static int preview_map_life(DEFLECTION_PREVIEW *preview)
             preview->completed = 1;
         }
     } else if (result == ENGINE_LIFE_COMPLETE) {
-        lk_platform_log("LEVEL1: hyena defeated; original level-completion condition reached.\n");
+        lk_platform_log(preview->level_number == 1 ?
+            "LEVEL1: hyena defeated; original level-completion condition reached.\n" :
+            "LEVEL2: original level-completion condition reached.\n");
         preview->completed = 1;
     }
     return result;
@@ -738,7 +779,7 @@ static void update_player_preview(void *context)
             }
             if (preview->air.roar_charge > map_pickups.max_roar)
                 preview->air.roar_charge = map_pickups.max_roar;
-            if (engine_map_lateral(&preview->collision, &preview->air.player.body.owner,
+            if (!preview->ostrich->marker && engine_map_lateral(&preview->collision, &preview->air.player.body.owner,
                 preview->air.flags, preview->air.player.flags_high,
                 &preview->air.boundary_controls) != 0) {
                 lk_platform_log("Lion King: invalid map lateral query.\n");
@@ -755,25 +796,56 @@ static void update_player_preview(void *context)
         }
         if (preview->map_mode) {
             RENDER_OWNER camera;
-            if (render_follow_camera(&preview->camera, preview->air.player.body.owner,
-                (unsigned char)(preview->air.player.body.node->pass_flags & 8),
-                preview->air.player.flags_high, preview->collision.width,
-                preview->collision.height) != 0 ||
-                preview_camera(preview, &camera) != 0 ||
-                engine_enemies_tick(&map_enemies, camera) != 0) {
-                lk_platform_log("Lion King: original LEVEL1 enemy update failed.\n");
+            if (preview->ostrich->marker && !preview->ostrich->active &&
+                engine_ostrich_ride_release(preview->ostrich, &preview->air) != 0) {
+                lk_platform_log("Lion King: cannot release ostrich ride.\n");
                 preview->failed = 1;
                 return;
             }
-            if (engine_pickups_tick(&map_pickups, camera) != 0) {
+            if (preview->ostrich->marker) {
+                unsigned int previous_wrap = preview->ostrich->scroll.wrapped_distance;
+                if (engine_ostrich_ride_update(preview->ostrich, &map_enemies) != 0 ||
+                    engine_ostrich_ride_camera(preview->ostrich, &map_enemies,
+                        &preview->camera) != 0) {
+                    lk_platform_log("Lion King: ostrich ride update failed.\n");
+                    preview->failed = 1;
+                    return;
+                }
+                preview->background_scroll = (unsigned short)(preview->background_scroll +
+                    preview->ostrich->scroll.wrapped_distance - previous_wrap);
+            } else {
+                if (render_follow_camera(&preview->camera, preview->air.player.body.owner,
+                    (unsigned char)(preview->air.player.body.node->pass_flags & 8),
+                    preview->air.player.flags_high, preview->collision.width,
+                    preview->collision.height, (preview->air.flags & 0x400U) != 0) != 0 ||
+                    preview_camera(preview, &camera) != 0 ||
+                    engine_enemies_tick(&map_enemies, camera) != 0) {
+                    lk_platform_log(preview->level_number == 1 ?
+                        "Lion King: original LEVEL1 enemy update failed.\n" :
+                        "Lion King: original LEVEL2 enemy update failed.\n");
+                    preview->failed = 1;
+                    return;
+                }
+                if (preview->level_number == 2) {
+                    int started = engine_ostrich_ride_find_and_start(preview->ostrich,
+                        &map_enemies, &preview->camera);
+                    if (started < 0 || (started &&
+                        (engine_enemies_suspend_for_ride(&map_enemies, preview->ostrich->marker) != 0 ||
+                            engine_pickups_suspend_for_ride(&map_pickups) != 0))) {
+                        lk_platform_log("Lion King: cannot start ostrich ride.\n");
+                        preview->failed = 1;
+                        return;
+                    }
+                }
+            }
+            if (!preview->ostrich->marker && engine_pickups_tick(&map_pickups, camera) != 0) {
                 lk_platform_log("Lion King: original LEVEL1 pickup update failed.\n");
                 preview->failed = 1;
                 return;
             }
             unsigned int objective = preview->level_number == 1 ?
                 map_enemies.hyenas_defeated :
-                preview->air.player.body.owner.x >=
-                    (short)(preview->collision.width * 8U - 32U);
+                engine_level2_complete(preview->air.player.body.owner.x);
             if (engine_level_life_complete(&preview->life, objective) != 0) {
                 lk_platform_log(preview->level_number == 1 ?
                     "Lion King: LEVEL1 completion transition failed.\n" :
@@ -890,16 +962,19 @@ static int render_player_frame(const DEFLECTION_PREVIEW *preview, unsigned int m
         return 0;
     }
     if (preview->life.dying) player->flags |= 0x80;
-    if ((preview->map_mode && render_map_background(map, map_size,
+    unsigned short ride_base = preview->map_mode && preview->ostrich->active ?
+        (unsigned short)preview->ostrich->scroll.base_x : 0;
+    if ((preview->map_mode && render_map_background_scrolled(map, map_size,
             preview->level_number,
-            camera_x, camera_y, view) != 0) ||
-        render_map_tile_pass(map, map_size, 0, camera_x, camera_y, 0, view) != 0 ||
+            camera_x, camera_y, preview->background_scroll, view) != 0) ||
+        render_map_tile_pass_ostrich(map, map_size, 0, camera_x, camera_y, 0,
+            ride_base, view) != 0 ||
         (!preview->map_mode && render_map_tile_pass(map, map_size, 0,
             camera_x, camera_y, 1, view) != 0) ||
         render_object_pass(&render_pool, 0, (short)-(int)camera_x, (short)-(int)camera_y,
             banks, 127, view) != 0 ||
-        (preview->map_mode && (render_map_tile_pass(map, map_size, 0,
-            camera_x, camera_y, 1, view) != 0 ||
+        (preview->map_mode && (render_map_tile_pass_ostrich(map, map_size, 0,
+            camera_x, camera_y, 1, ride_base, view) != 0 ||
             render_object_pass(&render_pool, 0x80, (short)-(int)camera_x,
                 (short)-(int)camera_y, banks, 127, view) != 0)) ||
         (preview->map_mode && engine_hud_draw(hud_sprites, banks[1].size,
@@ -967,8 +1042,11 @@ int run_deflection_preview(const DOS64_API *api, int mode)
 {
     int flight = mode != 0;
     unsigned int level_number = mode == 9 ? 2 : 1;
+    unsigned int enemy_bank_count = level_number == 1 ?
+        LEVEL1_ENEMY_BANK_COUNT : LEVEL2_ENEMY_BANK_COUNT;
+    int gameplay_loading = mode == 7 || mode == 9;
     loading_level = level_number;
-    if (mode == 7 && loading_progress(0) != 0) return 1;
+    if (gameplay_loading && loading_progress(0) != 0) return 1;
     unsigned int map_size;
     const char *map_name = level_number == 2 ? "LEVEL2.MAP" : "LEVEL1.MAP";
     if (resources_load_entry(&resource_api, "LIONKING.EPF", map_name, packed, sizeof(game_buffers->packed),
@@ -979,8 +1057,8 @@ int run_deflection_preview(const DOS64_API *api, int mode)
         lk_platform_log("Lion King: cannot load player reaction preview map.\n");
         return 1;
     }
-    if (mode == 7 && menu_active && frontend_level_palette(palette) != 0) return 1;
-    if (mode == 7 && loading_progress(1) != 0) return 1;
+    if (gameplay_loading && menu_active && frontend_level_palette(palette) != 0) return 1;
+    if (gameplay_loading && loading_progress(1) != 0) return 1;
     RENDER_SPRITE_BANK banks[127] = {0};
     unsigned int count = flight ? ASSETS_YOUNG_BANK_COUNT : 2;
     for (unsigned int i = 0; i < count; ++i) {
@@ -994,11 +1072,13 @@ int run_deflection_preview(const DOS64_API *api, int mode)
             return 1;
         }
         banks[slot] = (RENDER_SPRITE_BANK){player_sprites[i], loaded};
-        if (mode == 7 && loading_progress(2 + i) != 0) return 1;
+        if (gameplay_loading && loading_progress(2 + i) != 0) return 1;
     }
     engine_initialize_objects(&scene_objects);
     render_initialize_nodes(&render_pool);
     DEFLECTION_PREVIEW preview = {0};
+    preview_ostrich = (ENGINE_OSTRICH_RIDE){0};
+    preview.ostrich = &preview_ostrich;
     preview.api = api;
     preview.level_number = level_number;
     preview.flight = flight;
@@ -1039,15 +1119,18 @@ int run_deflection_preview(const DOS64_API *api, int mode)
         }
         banks[1] = (RENDER_SPRITE_BANK){hud_sprites, loaded_hud};
         if (loading_progress(3 + ASSETS_YOUNG_BANK_COUNT) != 0) return 1;
+        for (unsigned int slot = 0; slot < GAME_EFFECT_SLOTS; ++slot)
+            effect_sizes[slot] = 0;
         for (unsigned int index = 0; index < 15; ++index) {
             const unsigned char *list = index < 11 ? animation_common_sound_list :
-                animation_level1_sound_list;
+                level_number == 1 ? animation_level1_sound_list : animation_level2_sound_list;
             unsigned int size = index < 11 ? sizeof(animation_common_sound_list) :
-                sizeof(animation_level1_sound_list);
+                level_number == 1 ? sizeof(animation_level1_sound_list) :
+                sizeof(animation_level2_sound_list);
             unsigned int slot;
             char name[13];
             if (assets_slot_list_name(list, size, index < 11 ? index : index-11,
-                &slot, name) != 0 || slot >= 19 ||
+                &slot, name) != 0 || slot >= GAME_EFFECT_SLOTS ||
                 resources_load_entry(&resource_api, "LIONKING.EPF", name, packed,
                     sizeof(game_buffers->packed), effect_samples[slot], sizeof(effect_samples[slot]),
                     &dictionary, &effect_sizes[slot]) != 0) {
@@ -1065,8 +1148,10 @@ int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: cannot initialize real map collision.\n");
             return 1;
         }
-        preview.map_spawn_x = 65;
-        preview.map_spawn_y = level_number == 1 ? 1255 : 398;
+        RENDER_OWNER start = level_number == 1 ?
+            (RENDER_OWNER){65, 1255} : engine_level2_start();
+        preview.map_spawn_x = start.x;
+        preview.map_spawn_y = start.y;
         preview.manual = 1;
         if (loading_progress(19 + ASSETS_YOUNG_BANK_COUNT) != 0) return 1;
     }
@@ -1085,6 +1170,9 @@ int run_deflection_preview(const DOS64_API *api, int mode)
     preview.air.transition = preview_player_landed;
     preview.air.sound = preview_player_sound;
     preview.air.support = preview_player_support;
+    preview.air.ostrich_active = &preview.ostrich->active;
+    preview.air.ostrich_motion = &preview.ostrich->motion;
+    preview.air.ostrich_sound = preview_enemy_sound;
     preview.air.animation_event = record_player_idle_event;
     preview.air.damage_source = preview.map_mode ? 0 : &preview.damage_source;
     preview.air.contact = preview_player_contact;
@@ -1106,7 +1194,6 @@ int run_deflection_preview(const DOS64_API *api, int mode)
             lk_platform_log("Lion King: cannot initialize map follow camera.\n");
             return 1;
         }
-        unsigned int enemy_bank_count = level_number == 1 ? 18 : 21;
         const unsigned char *enemy_bank_list = level_number == 1 ?
             animation_level1_bank_list : animation_level2_bank_list;
         unsigned int enemy_bank_list_size = level_number == 1 ?
@@ -1136,10 +1223,10 @@ int run_deflection_preview(const DOS64_API *api, int mode)
                 return 1;
             }
             banks[slot] = (RENDER_SPRITE_BANK){pickup_sprites[i], loaded};
-            if (loading_progress(38 + ASSETS_YOUNG_BANK_COUNT + i) != 0) return 1;
+            if (loading_progress(20 + ASSETS_YOUNG_BANK_COUNT + enemy_bank_count + i) != 0) return 1;
         }
         if (engine_enemies_initialize(&map_enemies, &scene_objects, &render_pool,
-            &preview.collision, &preview.air) != 0) {
+            &preview.collision, &preview.air, level_number) != 0) {
             lk_platform_log(level_number == 1 ?
                 "Lion King: invalid LEVEL1 enemy marker plane.\n" :
                 "Lion King: invalid LEVEL2 enemy marker plane.\n");
@@ -1165,17 +1252,24 @@ int run_deflection_preview(const DOS64_API *api, int mode)
     }
     if (preview.ground_mode) {
         if (preview.map_mode) {
-            lk_platform_log("Real LEVEL1.MAP collision and CONTOUR.CON are active.\n"
+            lk_platform_log(level_number == 1 ?
+                "Real LEVEL1.MAP collision and CONTOUR.CON are active.\n" :
+                "Real LEVEL2.MAP collision and CONTOUR.CON are active.\n");
+            lk_platform_log(
                 "Left/Right: move; Space: jump; Down: crouch/roll; Ctrl: roar; Escape: exit.\n"
                 "Floor, slopes, landing and edge queries use map planes, not a fixed Y.\n"
-                "Original LEVEL1 descriptor starting position X65/Y1255 is active.\n"
                 "Lateral contacts mask movement before each tick; ceiling probes use animation geometry.\n"
-                "Original LEVEL1 parallax and foreground/object layer order are active.\n"
-                "Original lizard/porcupine/beetle movement/roar/contact/removal and leaf markers are active.\n"
                 "Original healing/upgrades/checkpoint and special collectible markers are active.\n"
                 "Normal starting health 4, roar capacity 16 and 3 lives; roar recharges from zero.\n"
-                "Checkpoint/death/restart, BARS HUD, PCM effects, hyena and completion are active.\n"
+                "Checkpoint/death/restart, BARS HUD and PCM effects are active.\n"
                 "Synthetic contact controls are disabled; no diagnostic text is rendered.\n");
+            lk_platform_log(level_number == 1 ?
+                "Original LEVEL1 descriptor starting position X65/Y1255 is active.\n"
+                "Original LEVEL1 parallax and foreground/object layer order are active.\n"
+                "Original lizard/porcupine/beetle movement/roar/contact/removal and leaf markers are active.\n"
+                "Hyena and LEVEL1 completion are active.\n" :
+                "Original LEVEL2 descriptor starting position X67/Y387 and X6360 completion threshold are active.\n"
+                "Original LEVEL2 bird markers and contact-triggered flight are active.\n");
         } else {
             lk_platform_log("Original Simba ground test: idle -> run -> turn -> jump -> land -> run.\n"
             "Left/Right: run; Down: crouch; Space: jump/hold; Ctrl: roar. Escape: exit.\n"
@@ -1226,6 +1320,12 @@ int run_deflection_preview(const DOS64_API *api, int mode)
             return 1;
         }
         preview.level_music_size = music_size;
+        if (music_enabled && level_number == 2) {
+            music_player.interpolate_samples = 1;
+            music_player.smooth_transitions = 1;
+            music_player.sample_reference_period = 856;
+            music_player.scaled_pitch_slides = 1;
+        }
         if ((music_enabled || sound_enabled) && music_output_open(&music_output, &music_player, api) != 0) {
             lk_platform_log(level_number == 1 ?
                 "Lion King: LEVEL1 music requires a usable DOS64 audio output.\n" :
@@ -1238,7 +1338,7 @@ int run_deflection_preview(const DOS64_API *api, int mode)
                 "LEVEL2 music: original LION2.AMF samples, 44100 Hz stereo, looping.\n") :
             (sound_enabled ? "LEVEL1 music muted; sound effects enabled.\n" :
                 "LEVEL1 music and effects muted by menu selection.\n"));
-        if (loading_progress(43 + ASSETS_YOUNG_BANK_COUNT) != 0) return 1;
+        if (loading_progress(25 + ASSETS_YOUNG_BANK_COUNT + enemy_bank_count) != 0) return 1;
         if (menu_active) preview.level_title_ticks = 100;
         if (mode == 8 && preview_map_life(&preview) < 0) {
             lk_platform_log("Lion King: cannot start continue test.\n");
@@ -1364,6 +1464,11 @@ int run_deflection_preview(const DOS64_API *api, int mode)
             (preview.life.game_over || preview.life.complete)) break;
     }
     lk_platform_profile_enable(0);
+    if (preview.ostrich->marker &&
+        engine_ostrich_ride_release(preview.ostrich, &preview.air) != 0) {
+        lk_platform_log("Lion King: cannot release ostrich ride on exit.\n");
+        return 1;
+    }
     frontend_stop_continue();
     lk_platform_log(preview.ground_mode ? "Original player ground preview finished.\n" :
         preview.jump ? "Original player jump preview finished.\n" :
@@ -1375,6 +1480,7 @@ int run_deflection_preview(const DOS64_API *api, int mode)
         log_map_measurement("Beetle map markers: ", map_enemies.beetle_count);
         log_map_measurement("Leaf map markers: ", map_enemies.leaf_marker_count);
         log_map_measurement("Hyena map markers: ", map_enemies.hyena_count);
+        log_map_measurement("Bird map markers: ", map_enemies.bird_count);
         log_map_measurement("Hyenas defeated: ", map_enemies.hyenas_defeated);
         log_map_measurement("Level completed: ", preview.life.complete);
         log_map_measurement("Leaves spawned: ", map_enemies.leaves_spawned);
@@ -1413,7 +1519,7 @@ int run_deflection_preview(const DOS64_API *api, int mode)
     if (preview.map_mode && preview.life.complete) {
         music_output_stop(&music_output);
         if (level_number == 2) {
-            lk_platform_log("LEVEL2: end of playable map reached; returning to menu.\n");
+            lk_platform_log("LEVEL2: original completion threshold reached; returning to menu.\n");
             return 0;
         }
         if (frontend_victory(api, &resource_api, sound_enabled) != 0) return 1;

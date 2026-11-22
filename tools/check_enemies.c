@@ -76,7 +76,7 @@ static void setup(void)
     sound_requests = 0;
     lizard_sound_requests = 0;
     hyena_sound_requests = 0;
-    assert(engine_enemies_initialize(&enemies, &pool, &renders, &collision, &player) == 0);
+    assert(engine_enemies_initialize(&enemies, &pool, &renders, &collision, &player, 1) == 0);
     enemies.sound = enemy_sound;
     assert(enemies.count == 33 && enemies.lizard_count == 14 &&
         enemies.porcupine_count == 5 && enemies.beetle_count == 4 &&
@@ -611,7 +611,7 @@ int main(void)
     unsigned int table = dword(map + 16);
     ENGINE_MAP_COLLISION truncated = collision;
     truncated.size = table;
-    assert(engine_enemies_initialize(&enemies, &pool, &renders, &truncated, &player) == -1);
+    assert(engine_enemies_initialize(&enemies, &pool, &renders, &truncated, &player, 1) == -1);
     puts("PASS: viewport spawning/culling, original marker respawn, unchanged map bytes and bounded input");
     return 0;
 }

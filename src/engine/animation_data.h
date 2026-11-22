@@ -41,13 +41,24 @@ extern const unsigned char animation_emitter_data[ANIMATION_EMITTER_SIZE];
 extern const unsigned char animation_level6_bank_list[188];
 
 #define ANIMATION_ENEMY_BASE 0xa1fcU
-#define ANIMATION_ENEMY_SIZE (0x1405dU - ANIMATION_ENEMY_BASE)
+#define ANIMATION_ENEMY_SIZE (0x19c27U - ANIMATION_ENEMY_BASE)
 extern const unsigned char animation_enemy_data[ANIMATION_ENEMY_SIZE];
+#define ANIMATION_MONKEY_VELOCITY_COUNT 512U
+extern const unsigned char animation_monkey_velocities[ANIMATION_MONKEY_VELOCITY_COUNT * 4U];
+#define ANIMATION_RHINO_VELOCITY_COUNT 128U
+extern const unsigned char animation_rhino_velocities[ANIMATION_RHINO_VELOCITY_COUNT * 4U];
+#define ANIMATION_OSTRICH_DEFINITIONS_SIZE (0x19c4bU - 0x19becU)
+#define ANIMATION_OSTRICH_FIRST_ROUTE_SIZE 40U
+#define ANIMATION_OSTRICH_SECOND_ROUTE_SIZE 72U
+extern const unsigned char animation_ostrich_definitions[ANIMATION_OSTRICH_DEFINITIONS_SIZE];
+extern const unsigned char animation_ostrich_first_route[ANIMATION_OSTRICH_FIRST_ROUTE_SIZE];
+extern const unsigned char animation_ostrich_second_route[ANIMATION_OSTRICH_SECOND_ROUTE_SIZE];
 extern const unsigned char animation_level1_bank_list[156];
 extern const unsigned char animation_level2_bank_list[172];
 extern const unsigned char animation_common_bank_list[116];
 extern const unsigned char animation_common_sound_list[92];
 extern const unsigned char animation_level1_sound_list[36];
+extern const unsigned char animation_level2_sound_list[36];
 extern const unsigned char animation_intro_frames[120];
 extern const unsigned char animation_pregame_data[0x12f30 - 0x5435];
 

@@ -6,6 +6,9 @@
 int render_map_tile_pass(const unsigned char *map, unsigned int size,
     unsigned int layer, unsigned int camera_x, unsigned int camera_y,
     int flagged, unsigned char *pixels);
+int render_map_tile_pass_ostrich(const unsigned char *map, unsigned int size,
+    unsigned int layer, unsigned int camera_x, unsigned int camera_y,
+    int flagged, unsigned short base_x, unsigned char *pixels);
 
 typedef struct {
     const unsigned char *map;
@@ -29,6 +32,8 @@ int engine_map_collision_initialize(ENGINE_MAP_COLLISION *collision,
     const unsigned char *contours, unsigned int contour_size);
 int engine_map_ground(const ENGINE_MAP_COLLISION *collision, short x, short y,
     ENGINE_MAP_GROUND *ground);
+int engine_map_ground_ostrich(const ENGINE_MAP_COLLISION *collision, short x, short y,
+    short base_x, ENGINE_MAP_GROUND *ground);
 int engine_map_kind(const ENGINE_MAP_COLLISION *collision, short x, short y,
     unsigned short *kind);
 int engine_map_marker(const ENGINE_MAP_COLLISION *collision, unsigned int column,
@@ -48,6 +53,9 @@ int engine_map_ceiling(const ENGINE_MAP_COLLISION *collision, const RENDER_NODE 
 int render_map_background(const unsigned char *map, unsigned int size,
     unsigned int level, unsigned int camera_x, unsigned int camera_y,
     unsigned char *pixels);
+int render_map_background_scrolled(const unsigned char *map, unsigned int size,
+    unsigned int level, unsigned int camera_x, unsigned int camera_y,
+    unsigned short scroll_offset, unsigned char *pixels);
 
 typedef struct {
     unsigned char *map;

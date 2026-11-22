@@ -33,6 +33,28 @@ int engine_level_life_fall(ENGINE_LEVEL_LIFE *life, const ENGINE_PLAYER_CALL *ca
     return 0;
 }
 
+int engine_level_life_water(ENGINE_LEVEL_LIFE *life)
+{
+    if (!life || !life->player || !life->object || !life->object->active ||
+        life->dying || life->falling || life->game_over || life->complete ||
+        !life->player->sound) return -1;
+    ENGINE_PLAYER_AIR *player = life->player;
+    ENGINE_FALLING_OBJECT *body = &player->player.body;
+    if (animation_program_initialize(&body->animation, animation_movement_data,
+        ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, 0x635d,
+        animation_movement_data, ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE) != 0 ||
+        animation_program_step(&body->animation, body->node, &body->owner, 0, 0) != 0 ||
+        player->sound(player->player.context, 23) != 0) return -1;
+    if (player->level_variant == 8) body->owner.y = (short)(body->owner.y - 32);
+    if (animation_program_step(&body->animation, body->node, &body->owner, 0, 0) != 0)
+        return -1;
+    life->remaining = player->player.form ? 15 : 23;
+    life->falling = 1;
+    player->player.handler = 0x10d78;
+    life->object->behavior = 0;
+    return 0;
+}
+
 int engine_level_life_complete(ENGINE_LEVEL_LIFE *life, unsigned int defeated)
 {
     if (!life || !life->player || !life->object || !life->object->active) return -1;
@@ -40,6 +62,21 @@ int engine_level_life_complete(ENGINE_LEVEL_LIFE *life, unsigned int defeated)
         life->player->health <= 0) return 0;
     life->complete = 1;
     life->object->behavior = 0;
+    return 0;
+}
+
+int engine_level_life_check_bounds(ENGINE_LEVEL_LIFE *life, unsigned int height_tiles,
+    unsigned int level)
+{
+    if (!life || !life->player || !life->object || !life->object->active ||
+        !height_tiles || height_tiles > 2047 || !level) return -1;
+    /* 0x4e22 compares the player with the maximum camera Y plus 240. */
+    if (level != 4 && !life->falling && !life->dying && !life->game_over &&
+        !life->complete && life->player->health > 0 &&
+        life->player->player.body.owner.y > (int)height_tiles * 8 + 40) {
+        life->player->health = 0;
+        life->out_of_bounds = 1;
+    }
     return 0;
 }
 
@@ -68,6 +105,16 @@ int engine_level_life_tick(ENGINE_LEVEL_LIFE *life, RENDER_OWNER camera)
         if (!life->lives || player->player.form) return -1;
         --life->lives;
         ++life->deaths;
+        if (life->out_of_bounds) {
+            life->out_of_bounds = 0;
+            life->object->behavior = 0;
+            if (!life->lives) {
+                life->game_over = 1;
+                return ENGINE_LIFE_GAME_OVER;
+            }
+            ++life->restarts;
+            return ENGINE_LIFE_RESTART;
+        }
         life->remaining = 221; /* 0x5011 starts at 220 and finishes when negative. */
         life->dying = 1;
         life->object->behavior = 0;

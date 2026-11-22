@@ -323,21 +323,26 @@ int render_object_pass(RENDER_POOL *pool, unsigned char pass, short viewport_x,
     return 0;
 }
 
-int render_follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
+static int follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
     unsigned char facing_left, unsigned char player_flags_high,
-    unsigned short width_tiles, unsigned short height_tiles)
+    unsigned short width_tiles, unsigned short height_tiles, int frozen,
+    int ostrich, int ending)
 {
     if (!camera || width_tiles < 40 || width_tiles > 4095 ||
         height_tiles < 25 || height_tiles > 4095) return -1;
-    /* 0x17580: integer target deltas, gradual look-ahead and an 8-pixel cap. */
+    /* 0x7580 returns before adjusting the camera while the freeze flag is set. */
+    if (frozen) return 0;
+    /* Integer target deltas, gradual look-ahead and an 8-pixel cap. */
     if (facing_left) {
         if (camera->horizontal_offset < 192) ++camera->horizontal_offset;
     } else {
-        if (camera->horizontal_offset > 128) --camera->horizontal_offset;
-        if (camera->horizontal_offset < 128) camera->horizontal_offset = 128;
+        int minimum = ostrich && !ending ? 48 : 128;
+        if (camera->horizontal_offset > minimum) --camera->horizontal_offset;
+        if (camera->horizontal_offset < minimum) camera->horizontal_offset = (short)minimum;
     }
     int dx = bounds_word((unsigned int)target.x - camera->position.x -
         camera->horizontal_offset);
+    if (ostrich && dx < 0) dx = 0;
     int vertical_offset = player_flags_high & 2 ? 64 :
         player_flags_high & 1 ? 210 : 128;
     int dy = bounds_word((unsigned int)target.y - camera->position.y - vertical_offset);
@@ -352,6 +357,51 @@ int render_follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
     camera->position.y = bounds_word((unsigned int)camera->position.y + dy);
     RENDER_VIEWPORT viewport;
     return render_prepare_viewport(&camera->position, width_tiles, height_tiles, 0, &viewport);
+}
+
+int render_follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
+    unsigned char facing_left, unsigned char player_flags_high,
+    unsigned short width_tiles, unsigned short height_tiles, int frozen)
+{
+    return follow_camera(camera, target, facing_left, player_flags_high,
+        width_tiles, height_tiles, frozen, 0, 0);
+}
+
+int render_follow_ostrich_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
+    unsigned char facing_left, unsigned char player_flags_high,
+    unsigned short width_tiles, unsigned short height_tiles, int ending)
+{
+    return follow_camera(camera, target, facing_left, player_flags_high,
+        width_tiles, height_tiles, 0, 1, ending);
+}
+
+int render_ostrich_scroll_initialize(RENDER_OSTRICH_SCROLL *scroll,
+    short base_x, short camera_x)
+{
+    if (!scroll || !base_x) return -1;
+    *scroll = (RENDER_OSTRICH_SCROLL){base_x, camera_x, 0, 0};
+    return 0;
+}
+
+int render_ostrich_scroll_step(RENDER_OSTRICH_SCROLL *scroll,
+    RENDER_FOLLOW_CAMERA *camera, short *shift)
+{
+    if (!scroll || !camera || !shift || !scroll->base_x) return -1;
+    short x = camera->position.x;
+    scroll->distance = (unsigned short)(scroll->distance +
+        (unsigned short)((unsigned short)x - (unsigned short)scroll->previous_x));
+    *shift = 0;
+    if (x >= scroll->base_x) {
+        short relative = bounds_word((unsigned int)(unsigned short)x -
+            (unsigned short)scroll->base_x);
+        if (relative >= 512) scroll->wrapped_distance += 512;
+        short wrapped = bounds_word((unsigned int)(unsigned short)scroll->base_x +
+            ((unsigned short)relative & 511U));
+        *shift = bounds_word((unsigned int)(unsigned short)x - (unsigned short)wrapped);
+        camera->position.x = wrapped;
+    }
+    scroll->previous_x = camera->position.x;
+    return 0;
 }
 
 static int render_scene_layers(RENDER_SCENE *scene)

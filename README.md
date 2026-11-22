@@ -39,6 +39,14 @@ From the project directory:
 bash build.sh
 ```
 
+To start Level 2 directly without completing Level 1, use:
+
+```bash
+bash build.sh --level2
+```
+
+For the bonus game, use `bash build.sh --bug-toss`.
+
 This builds the game, creates a temporary DOS64 image with the game and its
 archive, then boots it in QEMU. The image is removed after QEMU exits; close
 QEMU before building again. The launcher defaults to PulseAudio-compatible

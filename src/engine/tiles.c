@@ -97,6 +97,14 @@ int engine_map_ground(const ENGINE_MAP_COLLISION *collision, short x, short y,
     return 0;
 }
 
+int engine_map_ground_ostrich(const ENGINE_MAP_COLLISION *collision, short x, short y,
+    short base_x, ENGINE_MAP_GROUND *ground)
+{
+    /* 0x6b9f remaps ground probes in the looping ostrich section. */
+    if (base_x && (int)x >= (int)base_x + 320) x = (short)(x - 320);
+    return engine_map_ground(collision, x, y, ground);
+}
+
 int engine_map_kind(const ENGINE_MAP_COLLISION *collision, short x, short y,
     unsigned short *kind)
 {
@@ -283,9 +291,9 @@ static const BACKGROUND_SCROLL background_scroll[][7] = {
     {{0xffff,1,1}}
 };
 
-int render_map_background(const unsigned char *map, unsigned int size,
+int render_map_background_scrolled(const unsigned char *map, unsigned int size,
     unsigned int level, unsigned int camera_x, unsigned int camera_y,
-    unsigned char *pixels)
+    unsigned short scroll_offset, unsigned char *pixels)
 {
     if (!map || !pixels || size < 0x80 || !level || level > 12 ||
         camera_x > 32767 || camera_y > 32767) return -1;
@@ -316,7 +324,7 @@ int render_map_background(const unsigned char *map, unsigned int size,
             numerator = profile[profile_index].numerator;
             denominator = profile[profile_index++].denominator;
         }
-        unsigned int dx = (camera_x * numerator) & 0xffff;
+        unsigned int dx = (((camera_x + scroll_offset) & 0xffff) * numerator) & 0xffff;
         unsigned int divisor = ((main_width - 40) * 8 * denominator) & 0xffff;
         unsigned int horizontal = (width - 40) * 8;
         if (dx) horizontal *= dx;
@@ -338,6 +346,13 @@ int render_map_background(const unsigned char *map, unsigned int size,
         y += rows;
     }
     return 0;
+}
+
+int render_map_background(const unsigned char *map, unsigned int size,
+    unsigned int level, unsigned int camera_x, unsigned int camera_y,
+    unsigned char *pixels)
+{
+    return render_map_background_scrolled(map, size, level, camera_x, camera_y, 0, pixels);
 }
 
 int engine_tile_animation_initialize(ENGINE_TILE_ANIMATION *animation,
@@ -390,9 +405,9 @@ int engine_tile_animation_tick(ENGINE_TILE_ANIMATION *animation)
     return 1;
 }
 
-int render_map_tile_pass(const unsigned char *map, unsigned int size,
+int render_map_tile_pass_ostrich(const unsigned char *map, unsigned int size,
     unsigned int layer, unsigned int camera_x, unsigned int camera_y,
-    int flagged, unsigned char *pixels)
+    int flagged, unsigned short base_x, unsigned char *pixels)
 {
     /* 0x11658 reads dimensions and offset from 12-byte records at MAP + 8. */
     if (!map || !pixels || size < 0x80 || layer >= 10 ||
@@ -407,11 +422,16 @@ int render_map_tile_pass(const unsigned char *map, unsigned int size,
         (unsigned long long)table + width * (unsigned long long)height * 2 > size) {
         return -1;
     }
+    if (base_x && ((base_x & 7) || (unsigned int)base_x + 512 > width * 8))
+        return -1;
     unsigned int start_x = camera_x / 8, start_y = camera_y / 8;
     for (unsigned int row = start_y; row < height && row <= start_y + LK_HEIGHT / 8; ++row) {
-        for (unsigned int column = start_x; column < width &&
-            column <= start_x + LK_WIDTH / 8; ++column) {
-            unsigned int position = table + (row * width + column) * 2;
+        for (unsigned int column = start_x; column <= start_x + LK_WIDTH / 8; ++column) {
+            unsigned int source_column = column;
+            if (base_x && column * 8 >= (unsigned int)base_x + 512)
+                source_column -= 64;
+            if (source_column >= width) continue;
+            unsigned int position = table + (row * width + source_column) * 2;
             unsigned short value = (unsigned short)((unsigned int)map[position] |
                 (unsigned int)map[position + 1] << 8);
             unsigned int index = value & 0x1fff;
@@ -430,6 +450,14 @@ int render_map_tile_pass(const unsigned char *map, unsigned int size,
         }
     }
     return 0;
+}
+
+int render_map_tile_pass(const unsigned char *map, unsigned int size,
+    unsigned int layer, unsigned int camera_x, unsigned int camera_y,
+    int flagged, unsigned char *pixels)
+{
+    return render_map_tile_pass_ostrich(map, size, layer, camera_x, camera_y,
+        flagged, 0, pixels);
 }
 #else
 #include "tiles_legacy.inc"

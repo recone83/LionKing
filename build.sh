@@ -7,10 +7,10 @@ BuildOnly=0
 LaunchArgument=
 if [ "$#" -eq 1 ] && [ "$1" = "--build-only" ]; then
     BuildOnly=1
-elif [ "$#" -eq 1 ] && [ "$1" = "--bug-toss" ]; then
-    LaunchArgument=--bug-toss
+elif [ "$#" -eq 1 ] && { [ "$1" = "--bug-toss" ] || [ "$1" = "--level2" ]; }; then
+    LaunchArgument=$1
 elif [ "$#" -ne 0 ]; then
-    echo "Usage: bash build.sh [--build-only|--bug-toss]" >&2
+    echo "Usage: bash build.sh [--build-only|--bug-toss|--level2]" >&2
     exit 2
 fi
 
@@ -62,6 +62,11 @@ perl tools/extract_animation.pl bin/obj2_data.bin > "$Temporary/animation_data.c
     src/engine/music.c src/engine/bonus.c src/engine/bonus_toss.c \
     src/engine/bonus_toss_item.c src/engine/bonus_toss_stage.c \
     src/engine/enemies.c \
+    src/engine/ostrich_route.c \
+    src/engine/ostrich_visual.c \
+    src/engine/ostrich_obstacle.c \
+    src/engine/ostrich_sequence.c \
+    src/engine/ostrich_ride.c \
     src/engine/pickups.c \
     src/engine/lifecycle.c \
     src/engine/hud.c \

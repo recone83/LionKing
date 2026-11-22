@@ -428,6 +428,124 @@ static int player_animation(ENGINE_PLAYER_AIR *state)
     return animation_program_step(&body->animation, body->node, &body->owner, 0, 0);
 }
 
+static int player_ostrich_hit(ENGINE_PLAYER_AIR *state, uint32_t velocity)
+{
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    if (player_air_script(player, 0x621a) != 0 ||
+        state->ostrich_sound(player->context, 1, 22) != 0) return -1;
+    player->handler = 0xfb2e;
+    player->body.motion.velocity_y = UINT32_C(0xffff0000);
+    player->body.motion.velocity_x = velocity;
+    state->flags = (unsigned short)((state->flags & ~0x1c0U) | 0x4000U);
+    return 0;
+}
+
+static int step_player_ostrich(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state)
+{
+    ENGINE_PLAYER_DEFLECTION *player = &state->player;
+    ENGINE_FALLING_OBJECT *body = &player->body;
+    if (player->handler == 0xfb2eU) {
+        short supported = 0;
+        if (!(body->motion.velocity_y & UINT32_C(0x80000000)) &&
+            state->support(player->context, &supported) != 0) return -1;
+        if (supported) {
+            body->motion.velocity_y = 0;
+            state->health = 0;
+            return 0;
+        }
+        return engine_motion_gravity(&body->motion, &body->owner) ||
+            engine_motion_x(&body->motion, &body->owner) || player_animation(state) ? -1 : 0;
+    }
+    if (player->handler == 0xf94dU && !*state->ostrich_active) {
+        player->flags_high &= (unsigned char)~4U;
+        state->flags &= (unsigned short)~0x1c0U;
+        body->motion.velocity_x = UINT32_C(0x64000);
+        body->motion.velocity_y = UINT32_C(0xfff50000);
+        ENGINE_PLAYER_CALL call = {0xaa97, 0x61e2, 100};
+        return engine_player_begin_air(pool, object, state, &call);
+    }
+    if (!player->immunity && (player->flags_high & 4))
+        return player_ostrich_hit(state, 0);
+    if (state->flags & 1)
+        return player_ostrich_hit(state, UINT32_C(0x30000));
+    if (player->handler == 0xfbc1U) {
+        if (!*state->ostrich_active) {
+            state->flags &= (unsigned short)~0x1c0U;
+            body->motion.velocity_x = UINT32_C(0x40000);
+            body->motion.velocity_y = UINT32_C(0xfffe0000);
+            ENGINE_PLAYER_CALL call = {0xaa97, 0x6116, 100};
+            return engine_player_begin_air(pool, object, state, &call);
+        }
+        if (state->flags & 0x40)
+            return engine_player_begin_ostrich(pool, object, state);
+        uint32_t previous_y = body->motion.velocity_y;
+        short supported = 0;
+        if (!(previous_y & UINT32_C(0x80000000)) &&
+            state->support(player->context, &supported) != 0) return -1;
+        if (supported) body->motion.velocity_y = 0;
+        else if (engine_motion_gravity(&body->motion, &body->owner) != 0)
+            return -1;
+        if (engine_motion_x(&body->motion, &body->owner) != 0 ||
+            player_animation(state) != 0) return -1;
+        if ((previous_y & UINT32_C(0x80000000) || !previous_y) &&
+            !(body->motion.velocity_y & UINT32_C(0x80000000)))
+            return player_air_script(player, 0x612c);
+        return 0;
+    }
+    if (body->motion.velocity_x & UINT32_C(0x80000000) ||
+        body->motion.velocity_x < UINT32_C(0x40000))
+        body->motion.velocity_x = UINT32_C(0x40000);
+    uint32_t bird_y = state->ostrich_motion->velocity_y;
+    if ((!(bird_y & UINT32_C(0x80000000)) || bird_y > UINT32_C(0xfffa0000)) &&
+        (player->controls & 0x20) && (state->flags & 0x80)) {
+        state->flags &= (unsigned short)~0x40U;
+        if (player_air_script(player, 0x6180) != 0) return -1;
+        player->handler = 0xfbc1;
+        body->motion.velocity_y = UINT32_C(0xfff80000);
+        return step_player_ostrich(pool, object, state);
+    }
+    if (!(state->flags & 0x80)) {
+        if ((state->pressed & 2) && !(state->flags & 0x100)) {
+            state->flags |= 0x100;
+            if (player_air_script(player, 0x6260) != 0) return -1;
+        } else if (!(state->pressed & 2) && (state->flags & 0x100)) {
+            state->flags &= (unsigned short)~0x100U;
+            if (player_air_script(player, 0x626e) != 0) return -1;
+        }
+    }
+    return engine_motion_x(&body->motion, &body->owner) || player_animation(state) ? -1 : 0;
+}
+
+static void update_player_ostrich(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object)
+{
+    ENGINE_PLAYER_AIR *state = object->context;
+    if (!state || !valid_state(&state->player.body) || !state->ostrich_active ||
+        !state->ostrich_motion || !state->ostrich_sound || !state->support ||
+        (state->player.handler != 0xf94dU && state->player.handler != 0xfb2eU &&
+            state->player.handler != 0xfbc1U) ||
+        step_player_ostrich(pool, object, state) != 0) pool->update_status = -1;
+}
+
+const ENGINE_OBJECT_BEHAVIOR engine_player_ostrich_behavior = {update_player_ostrich};
+
+int engine_player_begin_ostrich(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state)
+{
+    if (!pool || !object || !object->active || !state || !valid_state(&state->player.body) ||
+        !state->ostrich_active || !state->ostrich_motion || !state->ostrich_sound ||
+        !state->support || !state->player.collision_flags) return -1;
+    object->context = state;
+    object->behavior = &engine_player_ostrich_behavior;
+    if (state->player.handler == 0xf94dU) return step_player_ostrich(pool, object, state);
+    if (player_air_script(&state->player, 0x6252) != 0) return -1;
+    state->player.handler = 0xf94d;
+    state->flags &= (unsigned short)~0x100U;
+    *state->player.collision_flags |= 0x20;
+    player_facing(&state->player, 0);
+    return 0;
+}
+
 static int step_player_jump(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state)
 {
@@ -1062,7 +1180,7 @@ static int player_action_handler(unsigned int handler)
     return handler == 0xec69U || handler == 0xee35U || handler == 0xee60U ||
         handler == 0xf017U || handler == 0xf160U || handler == 0xf80dU ||
         handler == 0xfe3cU || handler == 0xff83U || handler == 0xf2b1U ||
-        handler == 0xf3fbU || handler == 0xf6ccU || handler == 0xd5f4U ||
+        handler == 0xf3fbU || handler == 0xf6ccU || handler == 0xfcb5U || handler == 0xd5f4U ||
         handler == 0xd7a3U || handler == 0xd40aU || handler == 0xd4ffU ||
         handler == 0x10075U || handler == 0xd985U || handler == 0xdb06U ||
         handler == 0xdc42U || handler == 0xdeafU;
@@ -1082,6 +1200,39 @@ static int step_player_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_DEFLECTION *player = &state->player;
     ENGINE_FALLING_OBJECT *body = &player->body;
     unsigned int handler = player->handler;
+    if (handler == 0xfcb5U) {
+        if (!player->immunity && (player->flags_high & 4)) {
+            state->flags &= (unsigned short)~0x400U;
+            state->swing_source = 0;
+            state->swing_animation = 0;
+            return engine_player_damage(pool, object, state);
+        }
+        if (state->pressed & 0x20) {
+            ENGINE_PLAYER_CALL reaction;
+            unsigned int position = body->animation.visual.position;
+            int left = (body->node->pass_flags & 8) != 0;
+            if ((left ? engine_player_reaction_e6ee(player->form, position, &reaction) :
+                engine_player_reaction_e667(player->form, position, &reaction)) != 0)
+                return -1;
+            state->flags &= (unsigned short)~0x400U;
+            state->swing_source = 0;
+            state->swing_animation = 0;
+            if (engine_player_begin_deflection(object, player, &reaction) != 0) return -1;
+            if (!left) return 0;
+            if (!(state->pressed & 2)) return player_ground_animation(state);
+        }
+        if (state->pressed & 2) {
+            int left = (body->node->pass_flags & 8) != 0;
+            state->flags &= (unsigned short)~0x400U;
+            state->swing_source = 0;
+            state->swing_animation = 0;
+            ENGINE_PLAYER_CALL air = {left ? 0xae53U : 0xaa97U,
+                player->form ? 0x5928U : 0x612cU, 8};
+            if (engine_player_begin_air(pool, object, state, &air) != 0) return -1;
+            return player_ground_animation(state);
+        }
+        return player_ground_animation(state);
+    }
     if (handler == 0xd985U || handler == 0xdb06U ||
         handler == 0xdc42U || handler == 0xdeafU) {
         int grip = handler == 0xd985U || handler == 0xdb06U;
@@ -1447,7 +1598,8 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
             call->handler != 0xee60U && call->handler != 0xf017U && call->handler != 0xf160U &&
             call->handler != 0xf2b1U && call->handler != 0xf3fbU && call->handler != 0xf6ccU &&
             call->handler != 0xd40aU && call->handler != 0xd4ffU && call->handler != 0x10075U &&
-            call->handler != 0xdc42U && call->handler != 0xdeafU)) {
+            call->handler != 0xdc42U && call->handler != 0xdeafU &&
+            call->handler != 0xfcb5U)) {
         return -1;
     }
     ENGINE_PLAYER_DEFLECTION *player = &state->player;
@@ -1458,6 +1610,22 @@ int engine_player_begin_action(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
         return step_player_action(pool, object, state);
     }
     if (call->handler == 0xf6ccU) {
+        player->handler = call->handler;
+        return 0;
+    }
+    if (call->handler == 0xfcb5U) {
+        RENDER_NODE *source = state->swing_source;
+        ANIMATION_PROGRAM *swing = state->swing_animation;
+        if (!source || !source->active || !swing || !(state->flags & 0x200) ||
+            animation_initialize(&swing->visual, animation_enemy_data, ANIMATION_ENEMY_SIZE,
+                ANIMATION_ENEMY_BASE, 0x142f0) != 0 ||
+            animation_initialize(&body->animation.visual, animation_movement_data,
+                ANIMATION_MOVEMENT_SIZE, ANIMATION_MOVEMENT_BASE, call->script) != 0)
+            return -1;
+        swing->visual_ready = 1;
+        body->animation.visual_ready = 1;
+        body->animation.script.position = 0x6108U;
+        state->flags = (unsigned short)((state->flags & ~0x200U) | 0x400U);
         player->handler = call->handler;
         return 0;
     }

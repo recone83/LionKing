@@ -8,6 +8,11 @@ static unsigned int word(const unsigned char *p)
     return p[0] | (unsigned int)p[1] << 8;
 }
 
+static uint32_t dword(const unsigned char *p)
+{
+    return word(p) | (uint32_t)word(p + 2) << 16;
+}
+
 static short signed_word(unsigned int value)
 {
     value &= 65535U;
@@ -33,6 +38,11 @@ static int script(ENGINE_LIZARD *lizard, unsigned int entry)
 
 static int remove_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard, int defeated)
 {
+    if (enemies->player->swing_source == lizard->body.node) {
+        enemies->player->swing_source = 0;
+        enemies->player->swing_animation = 0;
+        enemies->player->flags &= (unsigned short)~0x600U;
+    }
     if (render_release_node(enemies->renders, lizard->body.node) != 0 ||
         engine_release_object(enemies->objects, lizard->object) != 0) return -1;
     lizard->body.node = 0;
@@ -262,6 +272,57 @@ static int walking(ENGINE_LIZARD *lizard)
     if (script(lizard, beetle ? 0x13ee4 :
         lizard->marker_type == 10 ? 0x13fef : 0x13ae0) != 0) return -1;
     return animate(lizard);
+}
+
+static int level2_decoration(unsigned int marker_type, unsigned int *sprite,
+    unsigned char *pass_flags)
+{
+    if (!sprite || !pass_flags) return 0;
+    *pass_flags = 0;
+    if (marker_type == 27) {
+        *sprite = 0xcc8c;
+        return 1;
+    }
+    if (marker_type == 28) {
+        *sprite = 0xcd68;
+        return 1;
+    }
+    if (marker_type == 44) {
+        *sprite = 0xc2dc;
+        *pass_flags = 8;
+        return 1;
+    }
+    if (marker_type == 29 || marker_type == 73 || marker_type == 51) {
+        *sprite = marker_type == 51 ? 0xc2c8 : 0xc250;
+        *pass_flags = marker_type == 29 ? 0 : 8;
+        return 1;
+    }
+    if (marker_type == 5 || marker_type == 7 || marker_type == 23 ||
+        marker_type == 24 || marker_type == 26) {
+        *sprite = 0xc5ac;
+        *pass_flags = (unsigned char)((marker_type == 5 || marker_type == 23 ||
+            marker_type == 26) ? 8 : 0);
+        return 1;
+    }
+    if (marker_type == 6 || marker_type == 8 || marker_type == 25 ||
+        marker_type == 62 || marker_type == 64) {
+        *sprite = 0xc6ec;
+        return 1;
+    }
+    return 0;
+}
+
+static unsigned int level2_monkey_idle(unsigned int type)
+{
+    switch (type) {
+    case 5: case 7: return 0x1470e;
+    case 23: case 24: case 26: case 67: case 69: return 0x14727;
+    case 6: return 0x147f0;
+    case 65: case 68: return 0x14809;
+    case 8: return 0x148c8;
+    case 25: case 62: case 64: return 0x148fa;
+    default: return 0;
+    }
 }
 
 static int turn(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard, int pause)
@@ -607,8 +668,449 @@ static int update_beetle(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *enemy)
     return animate(enemy);
 }
 
+static int update_level2_bird(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *bird)
+{
+    if (bird->handler == 0x1b99c) {
+        if (animate(bird) != 0) return -1;
+        if (bird->timer < 6) {
+            ++bird->timer;
+        } else if (engine_motion_x(&bird->body.motion, &bird->body.owner) != 0 ||
+            engine_motion_y(&bird->body.motion, &bird->body.owner) != 0) return -1;
+        return 0;
+    }
+    if (bird->handler != 0x1b824) return -1;
+    short hit;
+    if (render_objects_hit(bird->body.node,
+        enemies->player->player.body.node, &hit) != 0) return -1;
+    if (hit) {
+        bird->handler = 0x1b99c;
+        bird->timer = 0;
+        bird->body.node->pass_flags &= 0xf7;
+        bird->body.motion.velocity_x = UINT32_C(0x30000);
+        bird->body.motion.velocity_y = UINT32_C(0xfffdc000);
+        if (script(bird, 0x14232) != 0 ||
+            update_level2_bird(enemies, bird) != 0 || !enemies->sound ||
+            enemies->sound(enemies->player->player.context, 0, 5) != 0) return -1;
+        return 0;
+    }
+    if (bird->timer) {
+        if (animate(bird) != 0) return -1;
+        --bird->timer;
+    }
+    if (!bird->timer) {
+        unsigned int choice = random_byte(enemies) & 3U;
+        unsigned int entry = choice == 0 ? 0x141b0 :
+            choice == 1 ? 0x141d3 : choice == 2 ? 0x141fb : 0x14219;
+        if (choice == 3) {
+            bird->facing = (unsigned char)!bird->facing;
+            bird->body.node->pass_flags = (unsigned char)(
+                (bird->body.node->pass_flags & 0xf7) | (bird->facing ? 8 : 0));
+            bird->body.owner.x = signed_word((unsigned short)bird->marker.x + bird->facing);
+        }
+        if (script(bird, entry) != 0) return -1;
+        bird->timer = 19;
+    }
+    return 0;
+}
+
+static int monkey_marker(unsigned int type)
+{
+    return (type >= 5 && type <= 8) || (type >= 23 && type <= 26) ||
+        (type >= 62 && type <= 69);
+}
+
+static int upper_target(const ENGINE_MAP_COLLISION *map, RENDER_OWNER marker,
+    RENDER_OWNER *target, int require_target)
+{
+    unsigned int column = (unsigned short)marker.x / 16;
+    unsigned int rows = (unsigned short)marker.y / 16;
+    int found = 0;
+    *target = (RENDER_OWNER){marker.x, -16};
+    for (unsigned int row = 0; row < rows; ++row) {
+        unsigned int type;
+        RENDER_OWNER position;
+        if (engine_map_marker(map, column, row, &type, &position) != 0) return -1;
+        if (monkey_marker(type)) {
+            target->y = position.y;
+            found = 1;
+        }
+    }
+    return found || !require_target ? 0 : -1;
+}
+
+static int down_monkey_target(const ENGINE_MAP_COLLISION *map, RENDER_OWNER marker,
+    RENDER_OWNER *target)
+{
+    unsigned int column = (unsigned short)marker.x / 16;
+    *target = (RENDER_OWNER){marker.x, -16};
+    for (unsigned int row = (unsigned short)marker.y / 16 + 1;
+        row < map->height / 2; ++row) {
+        unsigned int type;
+        RENDER_OWNER position;
+        if (engine_map_marker(map, column, row, &type, &position) != 0) return -1;
+        if (monkey_marker(type)) {
+            *target = position;
+            break;
+        }
+    }
+    return 0;
+}
+
+static int horizontal_monkey(unsigned int type)
+{
+    return type == 5 || type == 7 || type == 23 || type == 24 ||
+        type == 26 || type == 67 || type == 69;
+}
+
+static int horizontal_monkey_target(const ENGINE_MAP_COLLISION *map, RENDER_OWNER marker,
+    int left, RENDER_OWNER *target)
+{
+    int column = (unsigned short)marker.x / 16;
+    unsigned int row = (unsigned short)marker.y / 16;
+    int limit = (int)(map->width / 2);
+    *target = (RENDER_OWNER){signed_word(left ? -16 : limit * 16), marker.y};
+    for (column += left ? -1 : 1; column >= 0 && column < limit;
+        column += left ? -1 : 1) {
+        unsigned int type;
+        RENDER_OWNER position;
+        if (engine_map_marker(map, (unsigned int)column, row, &type, &position) != 0)
+            return -1;
+        if (monkey_marker(type)) {
+            *target = position;
+            break;
+        }
+    }
+    return 0;
+}
+
+static int update_level2_rhino(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *rhino)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    ENGINE_MOTION *motion = &player->player.body.motion;
+    if (rhino->handler == 0x1667a) {
+        short hit;
+        if (render_objects_hit(rhino->body.node, player->player.body.node, &hit) != 0)
+            return -1;
+        if (hit && !(player->flags & 2) && motion->velocity_y &&
+            motion->velocity_y < UINT32_C(0x80000000)) {
+            rhino->handler = 0x166cc;
+            rhino->timer = 12;
+            motion->velocity_x = motion->velocity_y = 0;
+            return script(rhino, 0x1428e);
+        }
+        return animate(rhino);
+    }
+    if (rhino->handler != 0x166cc || rhino->timer < 0) return -1;
+    if (!rhino->timer) {
+        rhino->handler = 0x1667a;
+        return 0;
+    }
+    if (rhino->timer == 8 && !(player->player.flags_high & 4)) {
+        int distance = player->player.body.owner.y - rhino->target.y;
+        if (distance < 0 || (unsigned int)(distance / 4) >= ANIMATION_RHINO_VELOCITY_COUNT)
+            return -1;
+        player->anchor_x = rhino->target.x;
+        player->anchor_y = rhino->target.y;
+        player->flags = (unsigned short)(player->player.flags_high | 1U);
+        motion->velocity_y = 0U - dword(animation_rhino_velocities + (distance / 4) * 4);
+        motion->velocity_x = 0;
+        if (animate(rhino) != 0) return -1;
+        --rhino->timer;
+        return enemies->sound ?
+            enemies->sound(player->player.context, 0, 0) : -1;
+    }
+    if (animate(rhino) != 0) return -1;
+    --rhino->timer;
+    return 0;
+}
+
+static int monkey_attachment(const ENGINE_LIZARD *monkey, RENDER_OWNER *position)
+{
+    const RENDER_NODE *node = monkey->body.node;
+    if (!node || !node->parts || node->parts_size < 14) return -1;
+    int x = signed_word(word(node->parts + 10));
+    int y = signed_word(word(node->parts + 12));
+    position->x = signed_word(monkey->body.owner.x + ((node->pass_flags & 8) ? -x : x));
+    position->y = signed_word(monkey->body.owner.y + y);
+    return 0;
+}
+
+static int update_level2_tail(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *tail)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    if (tail->handler == 0x168e9U) {
+        if (!(player->flags & 0x400U) || player->swing_source != tail->body.node) {
+            tail->handler = 0x1680fU;
+            tail->timer = 40;
+            return script(tail, 0x142e2U);
+        }
+        RENDER_OWNER point;
+        if (monkey_attachment(tail, &point) != 0) return -1;
+        player->player.body.owner = point;
+        return animate(tail);
+    }
+    if (tail->handler != 0x1680fU) return -1;
+    if (tail->timer) --tail->timer;
+    if ((player->flags & 0x400U) && player->swing_source == tail->body.node) {
+        tail->handler = 0x168e9U;
+        tail->body.node->pass_flags = (unsigned char)((tail->body.node->pass_flags & ~8U) |
+            (player->player.body.node->pass_flags & 8U));
+        return 0;
+    }
+    RENDER_NODE *node = player->player.body.node;
+    if (!node || !node->parts || node->parts_size < 14) return -1;
+    int x = signed_word(word(node->parts + 10));
+    short px = signed_word(player->player.body.owner.x + ((node->pass_flags & 8) ? -x : x));
+    short py = signed_word(player->player.body.owner.y + signed_word(word(node->parts + 12)));
+    short hit;
+    if (render_point_hit(tail->body.node, px, py, &hit) != 0) return -1;
+    if (hit && !tail->timer && !(player->flags & 0x400U)) {
+        player->flags |= 0x200U;
+        player->swing_source = tail->body.node;
+        player->swing_animation = &tail->body.animation;
+        return 0;
+    }
+    return animate(tail);
+}
+
+static int giraffe_marker(unsigned int type)
+{
+    return type == 29 || type == 73 || type == 51;
+}
+
+static int update_level2_log(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *log)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    ENGINE_FALLING_OBJECT *body = &player->player.body;
+    short old_y = log->body.owner.y;
+    unsigned int depth = log->body.animation.state;
+    if (log->handler == 0x1af4b && log->entered) {
+        unsigned int entry = depth <= 2 ? 0x14155 : depth <= 6 ? 0x14147 :
+            depth <= 9 ? 0x14139 : depth <= 13 ? 0x1412b : 0x1411d;
+        log->handler = 0x1b004;
+        if (script(log, entry) != 0) return -1;
+    }
+    if (log->handler == 0x1b004 && depth == 18 && !log->entered) {
+        log->handler = 0x1af4b;
+        log->timer = 0;
+        if (script(log, 0x14077) != 0) return -1;
+    }
+    log->body.owner.y = log->marker.y;
+    if (animate(log) != 0) return -1;
+    depth = log->body.animation.state;
+    log->body.owner.y = signed_word(log->marker.y + depth);
+    if (log->handler == 0x1b004 && depth > 15) log->timer = 100;
+    if (log->timer) {
+        --log->timer;
+        log->entered = 0;
+        return 0;
+    }
+    int was_on_log = log->entered;
+    log->entered = 0;
+    int velocity = signed_word(body->motion.velocity_y >> 16);
+    if (body->motion.velocity_y >= UINT32_C(0x80000000) ||
+        (!was_on_log && !body->motion.velocity_y)) return 0;
+    RENDER_BOUNDS bounds;
+    if (render_object_bounds(log->body.node, &bounds) != 0) return -1;
+    int dy = body->owner.y - old_y;
+    if (body->owner.x < bounds.left || body->owner.x > bounds.right ||
+        dy < bounds.top - log->body.owner.y ||
+        dy - velocity > bounds.bottom - log->body.owner.y) return 0;
+    log->entered = 1;
+    player->player.flags_high |= 0x80;
+    body->owner.y = log->body.owner.y;
+    return 0;
+}
+
+static int update_level2_giraffe(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *head)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    unsigned short slide = head->marker_type == 29 ? 0x10U : 0x20U;
+    if (head->marker_type == 51) {
+        if (head->entered) player->flags |= slide;
+    } else if (head->handler == 0x16b91U) {
+        if (head->entered) {
+            head->handler = head->marker_type == 29 ? 0x16a2dU : 0x16adfU;
+            head->timer = 60;
+            if (script(head, 0x143f8U) != 0) return -1;
+        } else if (animate(head) != 0) return -1;
+    } else if (head->handler == 0x16a2dU || head->handler == 0x16adfU) {
+        if (head->timer <= 30) {
+            player->flags &= (unsigned short)~slide;
+            if (head->timer && head->entered) player->flags |= slide;
+        }
+        if (animate(head) != 0) return -1;
+        if (head->timer) --head->timer;
+        else head->handler = 0x16b91U;
+    } else return -1;
+
+    RENDER_BOUNDS bounds;
+    ENGINE_FALLING_OBJECT *body = &player->player.body;
+    if (render_object_bounds(head->body.node, &bounds) != 0) return -1;
+    int velocity = signed_word(body->motion.velocity_y >> 16);
+    int dy = body->owner.y - head->body.owner.y;
+    int previous_contact = head->entered;
+    head->entered = 0;
+    if (velocity < 0 || (head->marker_type == 29 &&
+        !body->motion.velocity_y && !previous_contact)) return 0;
+    if (body->owner.x < bounds.left || body->owner.x > bounds.right ||
+        dy < bounds.top - head->body.owner.y ||
+        dy - velocity > bounds.bottom - head->body.owner.y) return 0;
+    head->entered = 1;
+    player->player.flags_high |= 0x80;
+    body->owner.y = head->body.owner.y;
+    return 0;
+}
+
+static int monkey_setup(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *monkey)
+{
+    unsigned int type = monkey->monkey_variant;
+    int up = type == 6 || type == 65 || type == 68;
+    if ((up && upper_target(enemies->map, monkey->marker, &monkey->target, 0) != 0) ||
+        (horizontal_monkey(type) && horizontal_monkey_target(enemies->map,
+            monkey->marker, type != 7 && type != 24 && type != 69, &monkey->target) != 0) ||
+        ((type == 8 || type == 25 || type == 62 || type == 64) &&
+            down_monkey_target(enemies->map, monkey->marker, &monkey->target) != 0))
+        return -1;
+    monkey->body.node->pass_flags = (unsigned char)((monkey->body.node->pass_flags & 0xf7) |
+        ((type == 5 || type == 23 || type == 26 || type == 67 ||
+            type == 8 || type == 25 || type == 62 || type == 64) ? 8 : 0));
+    monkey->handler = 0x17116;
+    monkey->timer = 0;
+    unsigned int entry = level2_monkey_idle(type);
+    if (!entry || script(monkey, entry) != 0) return -1;
+    return animate(monkey);
+}
+
+static unsigned int monkey_alternate(unsigned int type)
+{
+    switch (type) {
+    case 23: return 69;
+    case 69: return 23;
+    case 25: return 68;
+    case 68: return 25;
+    case 26: return 65;
+    case 65: return 26;
+    case 62: return 24;
+    case 24: return 62;
+    case 64: return 67;
+    case 67: return 64;
+    default: return type;
+    }
+}
+
+static int update_level2_monkey(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *monkey)
+{
+    ENGINE_PLAYER_AIR *player = enemies->player;
+    ENGINE_MOTION *motion = &player->player.body.motion;
+    unsigned int type = monkey->monkey_variant;
+    int horizontal = horizontal_monkey(type);
+    int up = type == 6 || type == 65 || type == 68;
+    unsigned int handler = horizontal ? 0x17218 : up ? 0x1745c : 0x1765f;
+    short release = horizontal ? 38 : up ? 52 : 33;
+    if (monkey->handler == 0x1783e) {
+        if (monkey->timer) {
+            --monkey->timer;
+            return animate(monkey);
+        }
+        if (!enemies->sound || enemies->sound(player->player.context, 1, 20) != 0)
+            return -1;
+        return monkey_setup(enemies, monkey);
+    }
+    if (monkey->handler == 0x17116) {
+        if (player->roar_pulse) {
+            int dx = signed_word(player->player.body.owner.x - monkey->body.owner.x);
+            int dy = signed_word(player->player.body.owner.y - monkey->body.owner.y);
+            unsigned int alternate = monkey_alternate(type);
+            if (dx > -80 && dx < 80 && dy > -80 && dy < 80 && alternate != type) {
+                if (script(monkey, 0x146d0) != 0) return -1;
+                monkey->monkey_variant = (unsigned char)alternate;
+                monkey->handler = 0x1783e;
+                monkey->timer = 18;
+            }
+            return 0;
+        }
+        short hit = 0;
+        if ((player->flags & 2) && player->anchor_x == monkey->marker.x &&
+            player->anchor_y == monkey->marker.y && motion->velocity_y &&
+            motion->velocity_y < UINT32_C(0x80000000)) {
+            if (render_objects_hit(monkey->body.node, player->player.body.node, &hit) != 0)
+                return -1;
+        }
+        if (!hit) return animate(monkey);
+        if (monkey_attachment(monkey, &monkey->attachment) != 0 ||
+            script(monkey, horizontal ? (type == 5 || type == 7 ?
+                0x14740 : 0x1477c) : up ? (type == 6 ? 0x14822 : 0x14859) :
+                type == 8 ? 0x1492c : 0x14972) != 0)
+            return -1;
+        player->flags = (unsigned short)((player->flags & ~2U) | 4U);
+        player->tether_target = monkey->attachment;
+        monkey->handler = handler;
+        monkey->timer = horizontal ? 80 : 64;
+        return 0;
+    }
+    if (monkey->handler != handler || monkey->timer < 0) return -1;
+    if (horizontal && monkey->timer == 56 &&
+        (!enemies->sound || enemies->sound(player->player.context, 1, 21) != 0)) return -1;
+    if (monkey->timer > release) {
+        RENDER_OWNER attachment;
+        if (monkey_attachment(monkey, &attachment) != 0) return -1;
+        player->player.body.owner.x = signed_word(player->player.body.owner.x +
+            attachment.x - monkey->attachment.x);
+        player->player.body.owner.y = signed_word(player->player.body.owner.y +
+            attachment.y - monkey->attachment.y);
+        player->tether_target = monkey->attachment = attachment;
+    } else if (monkey->timer == release) {
+        uint32_t velocity = 0x20000;
+        if (horizontal) {
+            int distance = signed_word(monkey->target.x - player->player.body.owner.x);
+            if (distance < 0) distance = -distance;
+            unsigned int index = (unsigned int)(distance + 32) / 4;
+            if (index >= ANIMATION_MONKEY_VELOCITY_COUNT) return -1;
+            velocity = 0U - dword(animation_monkey_velocities + index * 4);
+        } else if (up) {
+            int distance = player->player.body.owner.y - monkey->target.y;
+            if (distance < 0 || (unsigned int)(distance / 4) >= ANIMATION_RHINO_VELOCITY_COUNT)
+                return -1;
+            velocity = 0U - dword(animation_rhino_velocities + (distance / 4) * 4);
+        }
+        player->player.body.animation.counter = 0;
+        motion->velocity_x = horizontal ?
+            (type == 7 || type == 24 || type == 69 ?
+                UINT32_C(0x90000) : UINT32_C(0xfff70000)) : 0;
+        motion->velocity_y = velocity;
+        player->anchor_x = monkey->target.x;
+        player->anchor_y = monkey->target.y;
+        player->flags = (unsigned short)((player->flags | 2U) & ~4U);
+        if (animate(monkey) != 0) return -1;
+        --monkey->timer;
+        return horizontal ? 0 :
+            enemies->sound ? enemies->sound(player->player.context, 1, 21) : -1;
+    } else if (!monkey->timer) {
+        monkey->handler = 0x17116;
+        if (script(monkey, level2_monkey_idle(type)) != 0) return -1;
+        return animate(monkey);
+    }
+    if (animate(monkey) != 0) return -1;
+    --monkey->timer;
+    return 0;
+}
+
 static int update_lizard(ENGINE_ENEMIES *enemies, ENGINE_LIZARD *lizard)
 {
+    if (lizard->marker_type == 27) return update_level2_rhino(enemies, lizard);
+    if (lizard->marker_type == 28) return update_level2_tail(enemies, lizard);
+    if (lizard->marker_type == 44) return update_level2_log(enemies, lizard);
+    if (giraffe_marker(lizard->marker_type)) return update_level2_giraffe(enemies, lizard);
+    if (horizontal_monkey(lizard->marker_type) || lizard->marker_type == 6 ||
+        lizard->marker_type == 8 || lizard->marker_type == 25 ||
+        lizard->marker_type == 62 || lizard->marker_type == 64)
+        return update_level2_monkey(enemies, lizard);
+    unsigned int decoration;
+    unsigned char pass_flags;
+    if (level2_decoration(lizard->marker_type, &decoration, &pass_flags))
+        return animate(lizard);
+    if (lizard->marker_type == 107) return update_level2_bird(enemies, lizard);
     if (lizard->marker_type == 43) return update_hyena(enemies, lizard);
     if (lizard->marker_type == 11) return update_beetle(enemies, lizard);
     if (lizard->marker_type == 10) return update_porcupine(enemies, lizard);
@@ -764,14 +1266,17 @@ static int leaves_tick(ENGINE_ENEMIES *enemies)
 }
 
 int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objects,
-    RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player)
+    RENDER_POOL *renders, const ENGINE_MAP_COLLISION *map, ENGINE_PLAYER_AIR *player,
+    unsigned int level)
 {
     if (!enemies || !objects || !renders || !map || !map->map || !player ||
-        !player->player.body.node || !player->player.body.node->active) return -1;
+        !player->player.body.node || !player->player.body.node->active ||
+        (level != 1 && level != 2)) return -1;
     volatile unsigned char *bytes = (volatile unsigned char *)enemies;
     for (unsigned int i = 0; i < sizeof(*enemies); ++i) bytes[i] = 0;
     enemies->objects = objects; enemies->renders = renders;
     enemies->map = map; enemies->player = player;
+    enemies->level = level;
     enemies->difficulty = ENGINE_DIFFICULTY_NORMAL;
     enemies->random = 0x010101;
     for (unsigned int row = 0; row < map->height / 2; ++row) {
@@ -779,16 +1284,32 @@ int engine_enemies_initialize(ENGINE_ENEMIES *enemies, ENGINE_OBJECT_POOL *objec
             unsigned int type;
             RENDER_OWNER marker;
             if (engine_map_marker(map, col, row, &type, &marker) != 0) return -1;
-            if (type != 14 && type != 10 && type != 11 && type != 9 && type != 43) continue;
+            unsigned int decoration;
+            unsigned char pass_flags;
+            int decorative = level == 2 && level2_decoration(type, &decoration, &pass_flags);
+            if (!decorative && type != 14 && type != 10 && type != 11 &&
+                type != 9 && type != 43 &&
+                !(level == 2 && (type == 107 || type == 52 || type == 53))) continue;
             if (enemies->count == ENGINE_LIZARD_CAPACITY) return -1;
+            if ((type == 52 || type == 53) &&
+                enemies->ostrich_count == ENGINE_OSTRICH_CAPACITY) return -1;
             ENGINE_LIZARD *enemy = &enemies->lizards[enemies->count++];
             enemy->marker_type = (unsigned char)type;
             if (type == 14) ++enemies->lizard_count;
             else if (type == 10) ++enemies->porcupine_count;
             else if (type == 11) ++enemies->beetle_count;
             else if (type == 9) ++enemies->leaf_marker_count;
-            else ++enemies->hyena_count;
+            else if (type == 43) ++enemies->hyena_count;
+            else if (type == 107) ++enemies->bird_count;
+            else if (type == 27) ++enemies->rhino_count;
+            else if (type == 28) ++enemies->tail_count;
+            else if (giraffe_marker(type)) ++enemies->giraffe_count;
+            else if (type == 44) ++enemies->log_count;
+            else if (type == 52 || type == 53)
+                enemy->ostrich_index = (unsigned char)enemies->ostrich_count++;
+            else ++enemies->monkey_count;
             enemy->marker = marker;
+            enemy->monkey_variant = (unsigned char)type;
         }
     }
     return 0;
@@ -819,8 +1340,37 @@ int engine_enemies_restart(ENGINE_ENEMIES *enemies)
     enemies->hyenas_defeated = 0;
     for (unsigned int i = 0; i < enemies->count; ++i) {
         ENGINE_LIZARD *enemy = &enemies->lizards[i];
+        if ((enemy->marker_type == 52 || enemy->marker_type == 53) &&
+            enemies->ostriches[enemy->ostrich_index].body &&
+            engine_ostrich_visual_release(&enemies->ostriches[enemy->ostrich_index]) != 0)
+            return -1;
+        if (enemy->object && ((enemy->handler == 0x17218 && enemy->timer >= 38) ||
+            (enemy->handler == 0x1745c && enemy->timer >= 52) ||
+            (enemy->handler == 0x1765f && enemy->timer >= 33)))
+            enemies->player->flags &= (unsigned short)~4U;
         if (enemy->object && remove_lizard(enemies, enemy, 0) != 0) return -1;
         enemy->destroyed = 0;
+        enemy->entered = 0;
+        enemy->monkey_variant = enemy->marker_type;
+    }
+    for (unsigned int i = 0; i < 32; ++i)
+        if (enemies->leaves[i].object && leaf_release(enemies, &enemies->leaves[i]) != 0)
+            return -1;
+    return 0;
+}
+
+int engine_enemies_suspend_for_ride(ENGINE_ENEMIES *enemies,
+    const ENGINE_LIZARD *selected)
+{
+    if (!enemies || !enemies->objects || !enemies->renders || !selected) return -1;
+    for (unsigned int i = 0; i < enemies->count; ++i) {
+        ENGINE_LIZARD *enemy = &enemies->lizards[i];
+        if (enemy == selected) continue;
+        if ((enemy->marker_type == 52 || enemy->marker_type == 53) &&
+            enemies->ostriches[enemy->ostrich_index].body &&
+            engine_ostrich_visual_release(&enemies->ostriches[enemy->ostrich_index]) != 0)
+            return -1;
+        if (enemy->object && remove_lizard(enemies, enemy, 0) != 0) return -1;
         enemy->entered = 0;
     }
     for (unsigned int i = 0; i < 32; ++i)
@@ -835,6 +1385,7 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
         !enemies->player || enemies->difficulty < ENGINE_DIFFICULTY_EASY ||
         enemies->difficulty > ENGINE_DIFFICULTY_HARD) return -1;
     enemies->player->player.flags_high &= 0xdb;
+    if (enemies->level == 2) enemies->player->player.flags_high &= 0x7f;
     if (leaves_tick(enemies) != 0) return -1;
     for (unsigned int i = 0; i < enemies->count; ++i) {
         ENGINE_LIZARD *lizard = &enemies->lizards[i];
@@ -855,10 +1406,32 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
             continue;
         }
         if (lizard->destroyed) continue;
+        if (lizard->marker_type == 52 || lizard->marker_type == 53) {
+            ENGINE_OSTRICH_VISUAL *ostrich = &enemies->ostriches[lizard->ostrich_index];
+            if (!engine_map_activation_window(lizard->marker, camera)) {
+                if (ostrich->body) {
+                    if (engine_ostrich_visual_release(ostrich) != 0) return -1;
+                    ++enemies->culled;
+                }
+            } else if (!ostrich->body) {
+                if (engine_ostrich_visual_create(ostrich, enemies->objects, enemies->renders,
+                    lizard->marker, 0) != 0) return -1;
+                if (engine_ostrich_visual_tick(ostrich) != 0) {
+                    if (engine_ostrich_visual_release(ostrich) != 0) return -1;
+                    return -1;
+                }
+                ++enemies->spawned;
+            }
+            /* The original waiting handler leaves the initial body frame unchanged. */
+            continue;
+        }
         if (!lizard->object) {
             if (!engine_map_activation_window(lizard->marker, camera)) continue;
             lizard->body.owner = lizard->marker;
-            lizard->body.motion = (ENGINE_MOTION){0, 0,
+            unsigned int decoration;
+            unsigned char pass_flags;
+            int decorative = level2_decoration(lizard->marker_type, &decoration, &pass_flags);
+            lizard->body.motion = (ENGINE_MOTION){0, 0, decorative ? 0 :
                 lizard->marker_type == 11 ? 0x10000 :
                 lizard->marker_type == 10 ? 0xa000 : 0x8000, 0};
             lizard->body.render_pool = enemies->renders;
@@ -866,16 +1439,52 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
             lizard->facing = lizard->kind = 0;
             lizard->cell_x = 0;
             lizard->body.node = render_acquire_node(enemies->renders, &lizard->body.owner,
-                0, 0, animation_enemy_data + 0xa8b0 - ANIMATION_ENEMY_BASE, 20);
+                0, lizard->marker_type == 27 ? -1 : 0, animation_enemy_data +
+                    (lizard->marker_type == 107 ? 0xc3f4 :
+                    decorative ? decoration : 0xa8b0) - ANIMATION_ENEMY_BASE, 20);
             if (!lizard->body.node) return -1;
             lizard->body.node->flags |= 0x40;
+            lizard->body.node->pass_flags = (unsigned char)(
+                (lizard->body.node->pass_flags & 0xf7) | pass_flags);
             lizard->object = engine_acquire_object(enemies->objects, 0);
             if (!lizard->object) {
                 if (render_release_node(enemies->renders, lizard->body.node) != 0) return -1;
                 lizard->body.node = 0;
                 return -1;
             }
-            if (lizard->marker_type == 43) {
+            if (lizard->marker_type == 27) {
+                if (upper_target(enemies->map, lizard->marker, &lizard->target, 1) != 0 ||
+                    script(lizard, 0x14280) != 0) return -1;
+                lizard->handler = 0x1667a;
+                lizard->timer = 0;
+            } else if (lizard->marker_type == 28) {
+                if (script(lizard, 0x142e2) != 0 || animate(lizard) != 0) return -1;
+                lizard->handler = 0x1680f;
+                lizard->timer = 10;
+            } else if (giraffe_marker(lizard->marker_type)) {
+                lizard->body.owner.x = signed_word(lizard->body.owner.x +
+                    (lizard->marker_type == 29 ? 11 : lizard->marker_type == 73 ? 6 : 5));
+                if (lizard->marker_type == 73) lizard->body.owner.y =
+                    signed_word(lizard->body.owner.y - 6);
+                lizard->entered = 0;
+                lizard->timer = -1;
+                lizard->handler = lizard->marker_type == 51 ? 0x16a01U : 0x16b91U;
+                if (lizard->marker_type != 51 &&
+                    (script(lizard, 0x143b8U) != 0 || animate(lizard) != 0)) return -1;
+            } else if (lizard->marker_type == 44) {
+                lizard->entered = 0;
+                lizard->timer = 0;
+                lizard->handler = 0x1af4b;
+                if (script(lizard, 0x14077) != 0 || animate(lizard) != 0) return -1;
+                lizard->body.owner.y = signed_word(lizard->marker.y +
+                    lizard->body.animation.state);
+            } else if (decorative) {
+                if (monkey_setup(enemies, lizard) != 0) return -1;
+            } else if (lizard->marker_type == 107) {
+                lizard->handler = 0x1b824;
+                lizard->timer = 19;
+                if (script(lizard, 0x141b0) != 0) return -1;
+            } else if (lizard->marker_type == 43) {
                 lizard->health = (short)(enemies->difficulty + 1);
                 lizard->attacks_left = 2;
                 lizard->facing = 1;
@@ -885,12 +1494,24 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
             } else if (walking(lizard) != 0) return -1;
             ++enemies->spawned;
         } else if ((lizard->handler == 0x1127e || lizard->handler == 0x11a51 ||
+            lizard->marker_type == 107 ||
+            (lizard->marker_type == 27 && lizard->handler == 0x1667a) ||
+            (lizard->marker_type == 28 && (!(enemies->player->flags & 0x400U) ||
+                enemies->player->swing_source != lizard->body.node)) ||
+            giraffe_marker(lizard->marker_type) ||
+            lizard->marker_type == 44 ||
+            (horizontal_monkey(lizard->marker_type) && lizard->handler == 0x17116) ||
+            (lizard->marker_type == 6 && lizard->handler == 0x17116) ||
+            ((lizard->marker_type == 8 || lizard->marker_type == 25 ||
+                lizard->marker_type == 62 || lizard->marker_type == 64) &&
+                lizard->handler == 0x17116) ||
             lizard->marker_type == 10 || lizard->marker_type == 11) &&
             !engine_map_activation_window(lizard->body.owner, camera)) {
             if (remove_lizard(enemies, lizard,
                 (lizard->marker_type == 10 && lizard->handler == 0x11c81) ||
                 (lizard->marker_type == 11 && lizard->handler == 0x12064 &&
-                    lizard->terminal)) != 0) return -1;
+                    lizard->terminal) ||
+                (lizard->marker_type == 107 && lizard->handler == 0x1b99c)) != 0) return -1;
         } else if (update_lizard(enemies, lizard) != 0) {
             return -1;
         }

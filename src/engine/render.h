@@ -70,7 +70,23 @@ typedef struct {
 
 int render_follow_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
     unsigned char facing_left, unsigned char player_flags_high,
-    unsigned short width_tiles, unsigned short height_tiles);
+    unsigned short width_tiles, unsigned short height_tiles, int frozen);
+
+int render_follow_ostrich_camera(RENDER_FOLLOW_CAMERA *camera, RENDER_OWNER target,
+    unsigned char facing_left, unsigned char player_flags_high,
+    unsigned short width_tiles, unsigned short height_tiles, int ending);
+
+typedef struct {
+    short base_x;
+    short previous_x;
+    unsigned short distance;
+    unsigned short wrapped_distance;
+} RENDER_OSTRICH_SCROLL;
+
+int render_ostrich_scroll_initialize(RENDER_OSTRICH_SCROLL *scroll,
+    short base_x, short camera_x);
+int render_ostrich_scroll_step(RENDER_OSTRICH_SCROLL *scroll,
+    RENDER_FOLLOW_CAMERA *camera, short *shift);
 
 typedef struct {
     const unsigned char *data;

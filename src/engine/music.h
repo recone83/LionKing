@@ -27,6 +27,8 @@ typedef struct {
     int volume_slide_memory;
     int vibrato;
     int tone_portamento;
+    int last_sample, transition_offset;
+    unsigned int transition_remaining;
 } MUSIC_VOICE;
 
 typedef struct {
@@ -48,6 +50,8 @@ typedef struct {
     int breaking;
     unsigned int order_count;
     int interpolate_samples;
+    int smooth_transitions;
+    int scaled_pitch_slides;
     unsigned int sample_reference_period;
 } MUSIC_PLAYER;
 

@@ -15,7 +15,10 @@ my $bytes = substr($data, 0x6531, 0x8048 - 0x6531);
 print "/* Generated from checksum-verified original DS data; do not edit. */\n";
 print "#include \"engine/animation_data.h\"\n";
 for my $block (['intro_frames', 0x30a0, 120],
-    ['pregame_data', 0x5435, 0x12f30 - 0x5435]) {
+    ['pregame_data', 0x5435, 0x12f30 - 0x5435],
+    ['ostrich_definitions', 0x19bec, 0x19c4b - 0x19bec],
+    ['ostrich_first_route', 0x19c4b, 40],
+    ['ostrich_second_route', 0x19c83, 72]) {
     my ($name, $offset, $size) = @$block;
     print "const unsigned char animation_${name}[$size] = {\n";
     my @bytes = unpack 'C*', substr($data, $offset, $size);
@@ -39,7 +42,8 @@ while (@level2_banks) {
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";
-for my $list (['common_sound', 0x12f30, 92], ['level1_sound', 0x12f8c, 36]) {
+for my $list (['common_sound', 0x12f30, 92], ['level1_sound', 0x12f8c, 36],
+    ['level2_sound', 0x12fb0, 36]) {
     my ($name, $offset, $size) = @$list;
     print "const unsigned char animation_${name}_list[$size] = {\n";
     my @bytes = unpack 'C*', substr($data, $offset, $size);
@@ -57,9 +61,23 @@ while (@common_banks) {
 }
 print "};\n";
 print "const unsigned char animation_enemy_data[ANIMATION_ENEMY_SIZE] = {\n";
-my @enemies = unpack 'C*', substr($data, 0xa1fc, 0x1405d - 0xa1fc);
+my @enemies = unpack 'C*', substr($data, 0xa1fc, 0x19c27 - 0xa1fc);
 while (@enemies) {
     my @row = splice @enemies, 0, 16;
+    print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+}
+print "};\n";
+print "const unsigned char animation_monkey_velocities[ANIMATION_MONKEY_VELOCITY_COUNT * 4U] = {\n";
+my @monkey_velocities = unpack 'C*', substr($data, 0x14da0, 512 * 4);
+while (@monkey_velocities) {
+    my @row = splice @monkey_velocities, 0, 16;
+    print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
+}
+print "};\n";
+print "const unsigned char animation_rhino_velocities[ANIMATION_RHINO_VELOCITY_COUNT * 4U] = {\n";
+my @rhino_velocities = unpack 'C*', substr($data, 0x149b8, 128 * 4);
+while (@rhino_velocities) {
+    my @row = splice @rhino_velocities, 0, 16;
     print '    ', join(', ', map { sprintf '0x%02x', $_ } @row), ",\n";
 }
 print "};\n";

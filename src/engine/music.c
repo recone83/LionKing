@@ -154,6 +154,15 @@ static unsigned int music_note_period(unsigned int note)
     return period ? period : 1;
 }
 
+static unsigned int music_slide_amount(const MUSIC_PLAYER *player,
+    const MUSIC_VOICE *voice, unsigned int amount, unsigned int legacy_scale)
+{
+    if (!player->scaled_pitch_slides) return amount * legacy_scale;
+    unsigned int rate = voice->instrument ? player->samples[voice->instrument - 1].rate : 8363;
+    /* AMF's slide units are based on 8363 Hz and periods twice this representation. */
+    return (unsigned int)(((unsigned long long)amount * rate * 2 + 4181) / 8363);
+}
+
 static void music_trigger(MUSIC_PLAYER *player, MUSIC_VOICE *voice,
     unsigned int note, unsigned int instrument, unsigned int volume)
 {
@@ -199,11 +208,17 @@ static void music_tick(MUSIC_PLAYER *player)
                 music_trigger(player, voice, event->note, event->instrument, event->volume);
             }
             if (event->effect == 0x84) {
-                unsigned int amount = event->parameter & 0x7f;
+                unsigned int amount = event->parameter & 0x80 ?
+                    (unsigned int)(-signed_byte(event->parameter)) & 0x7f :
+                    event->parameter;
+                amount = music_slide_amount(player, voice, amount, 4);
                 voice->period_slide = event->parameter & 0x80 ?
                     -(int)amount : (int)amount;
             } else if (event->effect == 0x92) {
-                unsigned int amount = event->parameter & 0x7f;
+                unsigned int amount = event->parameter & 0x80 ?
+                    (unsigned int)(-signed_byte(event->parameter)) & 15 :
+                    event->parameter & 15;
+                amount = music_slide_amount(player, voice, amount, 4);
                 int slide = event->parameter & 0x80 ? -(int)amount : (int)amount;
                 int period = (int)voice->period + slide;
                 voice->period = (unsigned int)(period < 1 ? 1 : period);
@@ -243,12 +258,13 @@ static void music_tick(MUSIC_PLAYER *player)
             voice->period = (unsigned int)(period < 1 ? 1 : period);
         }
         if (player->tick && voice->tone_portamento && voice->target_period) {
+            unsigned int speed = music_slide_amount(player, voice, voice->portamento_speed, 1);
             if (voice->period < voice->target_period) {
-                unsigned int next = voice->period + voice->portamento_speed;
+                unsigned int next = voice->period + speed;
                 voice->period = next > voice->target_period ? voice->target_period : next;
             } else if (voice->period > voice->target_period) {
                 voice->period = voice->period - voice->target_period >
-                    voice->portamento_speed ? voice->period - voice->portamento_speed :
+                    speed ? voice->period - speed :
                     voice->target_period;
             }
             if (voice->period == voice->target_period) voice->tone_portamento = 0;
@@ -302,35 +318,64 @@ int music_samples(MUSIC_PLAYER *player, short *stereo, unsigned int frames)
         !player->order_count || player->order_count > MUSIC_ORDERS ||
         player->order >= player->order_count || player->row >= 64) return -1;
     for (unsigned int frame = 0; frame < frames; ++frame) {
-        if (!player->tick_remaining) music_tick(player);
+        unsigned int changed = 0;
+        if (!player->tick_remaining) {
+            MUSIC_VOICE previous[4];
+            for (unsigned int ch = 0; ch < 4; ++ch) previous[ch] = player->voices[ch];
+            music_tick(player);
+            if (player->smooth_transitions) {
+                for (unsigned int ch = 0; ch < 4; ++ch) {
+                    const MUSIC_VOICE *before = &previous[ch], *after = &player->voices[ch];
+                    if (before->instrument != after->instrument ||
+                        before->volume != after->volume || before->phase != after->phase)
+                        changed |= 1U << ch;
+                }
+            }
+        }
         int left = 0, right = 0;
         for (unsigned int ch = 0; ch < 4; ++ch) {
             MUSIC_VOICE *voice = &player->voices[ch];
-            if (!voice->instrument || !voice->period) continue;
-            const MUSIC_SAMPLE *sample = &player->samples[voice->instrument - 1];
-            unsigned int position = voice->phase >> 16;
-            unsigned int end = sample->loop_end ? sample->loop_end : sample->length;
-            if (position >= end) {
-                if (sample->loop_end > sample->loop_start) {
-                    position = sample->loop_start + (position - sample->loop_start) %
-                        (sample->loop_end - sample->loop_start);
-                    voice->phase = (position << 16) | (voice->phase & 65535);
-                } else {
-                    voice->period = 0; continue;
+            int value = 0;
+            if (voice->instrument && voice->period) {
+                const MUSIC_SAMPLE *sample = &player->samples[voice->instrument - 1];
+                unsigned int position = voice->phase >> 16;
+                unsigned int end = sample->loop_end ? sample->loop_end : sample->length;
+                if (position >= end) {
+                    if (sample->loop_end > sample->loop_start) {
+                        position = sample->loop_start + (position - sample->loop_start) %
+                            (sample->loop_end - sample->loop_start);
+                        voice->phase = (position << 16) | (voice->phase & 65535);
+                    } else {
+                        voice->period = 0;
+                        if (player->smooth_transitions) changed |= 1U << ch;
+                    }
+                }
+                if (voice->period) {
+                    value = (int)sample->data[position] - 128;
+                    if (player->interpolate_samples) {
+                        unsigned int next = position + 1;
+                        if (next >= end)
+                            next = sample->loop_end > sample->loop_start ? sample->loop_start : position;
+                        int difference = (int)sample->data[next] - (int)sample->data[position];
+                        value = (value * 65536 + difference * (int)(voice->phase & 65535)) *
+                            (int)voice->volume * 2 / 65536;
+                    } else value *= (int)voice->volume * 2;
+                    voice->phase += voice->step;
                 }
             }
-            int value = (int)sample->data[position] - 128;
-            if (player->interpolate_samples) {
-                unsigned int next = position + 1;
-                if (next >= end)
-                    next = sample->loop_end > sample->loop_start ? sample->loop_start : position;
-                int difference = (int)sample->data[next] - (int)sample->data[position];
-                value = (value * 65536 + difference * (int)(voice->phase & 65535)) *
-                    (int)voice->volume * 2 / 65536;
-            } else value *= (int)voice->volume * 2;
+            if (player->smooth_transitions) {
+                if (changed & (1U << ch)) {
+                    voice->transition_offset = voice->last_sample - value;
+                    voice->transition_remaining = 64;
+                }
+                if (voice->transition_remaining) {
+                    value += voice->transition_offset * (int)voice->transition_remaining / 64;
+                    --voice->transition_remaining;
+                }
+                voice->last_sample = value;
+            }
             int pan = (int)player->pan[ch];
             left += value * (256 - pan) / 256; right += value * pan / 256;
-            voice->phase += voice->step;
         }
         for (unsigned int channel = 0; channel < 2; ++channel) {
             MUSIC_EFFECT *effect = &player->effects[channel];

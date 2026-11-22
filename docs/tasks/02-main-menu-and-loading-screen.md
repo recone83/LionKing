@@ -109,7 +109,9 @@ cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
     src/engine/animation.c src/engine/physics.c src/engine/behaviors.c \
     src/engine/music.c src/engine/bonus.c src/engine/bonus_toss.c \
     src/engine/bonus_toss_item.c src/engine/bonus_toss_stage.c \
-    src/engine/enemies.c src/engine/pickups.c \
+    src/engine/enemies.c src/engine/pickups.c src/engine/ostrich_visual.c \
+    src/engine/ostrich_route.c src/engine/ostrich_obstacle.c \
+    src/engine/ostrich_sequence.c src/engine/ostrich_ride.c \
     src/engine/lifecycle.c src/engine/hud.c build/animation_data.c \
     -o build/check_frontend_san
 build/check_frontend_san
@@ -134,8 +136,12 @@ also roaring when assigned to another action.
 [check_victory.c](../../tools/check_victory.c) tests the actual adapter's victory
 transition separately. Build with the same host source list above, replacing
 `tools/check_frontend.c` with `tools/check_victory.c`, adding
-`-Wl,--wrap=engine_enemies_tick -Wl,--wrap=engine_pickups_tick
--Wl,--wrap=run_bonus_toss_game -Wl,--wrap=start_level_two`, and choosing
+`-Wl,--wrap=resources_load_entry -Wl,--wrap=engine_enemies_tick
+-Wl,--wrap=engine_pickups_tick -Wl,--wrap=run_bonus_toss_game
+-Wl,--wrap=start_level_two -Wl,--wrap=frontend_loading_for_level
+-Wl,--wrap=frontend_level_palette -Wl,--wrap=render_follow_camera
+-Wl,--wrap=engine_ostrich_ride_camera -Wl,--wrap=engine_ostrich_ride_release
+-Wl,--wrap=render_map_tile_pass_ostrich -Wl,--wrap=render_map_background_scrolled`, and choosing
 `build/check_victory_san` as output.
 The wrapper runs the real enemy update but injects a nonzero boss-death counter
 at tick 60; this tests controller wiring, not a keyboard-driven boss victory.
@@ -145,6 +151,13 @@ enemy test. Run:
 ```bash
 build/check_victory_san
 build/check_victory_san --menu
+build/check_victory_san --menu-level2
+build/check_victory_san --level2-fall
+build/check_victory_san --level2-log
+build/check_victory_san --level2-ride-full-first
+build/check_victory_san --level2-ride-full-second
+build/check_victory_san --level2-ride-hint-escape
+build/check_victory_san --level2-ride-jump-input
 build/check_victory_san --skip
 build/check_victory_san --muted
 build/check_victory_san --missing

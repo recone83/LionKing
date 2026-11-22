@@ -2,8 +2,9 @@
 set -euo pipefail
 cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
 
-if [ "$#" -gt 2 ] || { [ "$#" -eq 2 ] && [ -n "$2" ] && [ "$2" != "--bug-toss" ]; }; then
-    echo "Usage: bash build-image.sh [new-image.img [--bug-toss]]" >&2
+if [ "$#" -gt 2 ] || { [ "$#" -eq 2 ] && [ -n "$2" ] &&
+    [ "$2" != "--bug-toss" ] && [ "$2" != "--level2" ]; }; then
+    echo "Usage: bash build-image.sh [new-image.img [--bug-toss|--level2]]" >&2
     exit 2
 fi
 Image=${1:-dos64.img}

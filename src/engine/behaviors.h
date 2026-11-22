@@ -104,6 +104,8 @@ typedef int (*ENGINE_PLAYER_SOUND)(void *context, unsigned short sample);
 typedef int (*ENGINE_PLAYER_SUPPORT)(void *context, short *supported);
 typedef int (*ENGINE_PLAYER_CONTACT)(void *context, short *touching);
 typedef int (*ENGINE_PLAYER_LEDGE_HEIGHT)(void *context, short x, short y, short *height);
+typedef int (*ENGINE_PLAYER_CHANNEL_SOUND)(void *context, unsigned short channel,
+    unsigned short sample);
 
 typedef struct {
     ENGINE_PLAYER_DEFLECTION player;
@@ -127,6 +129,8 @@ typedef struct {
     short health;
     const RENDER_OWNER *damage_source;
     RENDER_OWNER tether_target;
+    RENDER_NODE *swing_source;
+    ANIMATION_PROGRAM *swing_animation;
     const RENDER_OWNER *contact_source;
     ENGINE_PLAYER_CONTACT contact;
     ENGINE_PLAYER_LEDGE_HEIGHT ledge_height;
@@ -138,11 +142,17 @@ typedef struct {
     ENGINE_PLAYER_AIR_TRANSITION transition;
     ENGINE_PLAYER_SOUND sound;
     ANIMATION_EVENT animation_event;
+    int *ostrich_active;
+    const ENGINE_MOTION *ostrich_motion;
+    ENGINE_PLAYER_CHANNEL_SOUND ostrich_sound;
 } ENGINE_PLAYER_AIR;
 
 extern const ENGINE_OBJECT_BEHAVIOR engine_player_air_behavior;
 int engine_player_begin_air(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
     ENGINE_PLAYER_AIR *state, const ENGINE_PLAYER_CALL *call);
+extern const ENGINE_OBJECT_BEHAVIOR engine_player_ostrich_behavior;
+int engine_player_begin_ostrich(ENGINE_OBJECT_POOL *pool, ENGINE_OBJECT *object,
+    ENGINE_PLAYER_AIR *state);
 int engine_player_land(ENGINE_PLAYER_AIR *state, unsigned int handler,
     short duration);
 extern const ENGINE_OBJECT_BEHAVIOR engine_player_jump_behavior;

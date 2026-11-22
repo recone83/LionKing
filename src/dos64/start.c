@@ -27,7 +27,7 @@ ENGINE_DIFFICULTY game_difficulty = ENGINE_DIFFICULTY_NORMAL;
 ENGINE_ENEMIES map_enemies;
 ENGINE_PICKUPS map_pickups;
 unsigned int game_over_size;
-unsigned int effect_sizes[19];
+unsigned int effect_sizes[GAME_EFFECT_SLOTS];
 RESOURCE_DICTIONARY dictionary;
 RENDER_POOL render_pool;
 VGA_FADE fade;
@@ -41,7 +41,8 @@ DOS64_API resource_api;
 int loading_progress(unsigned int completed)
 {
     return menu_active ? frontend_loading_for_level(completed,
-        43 + ASSETS_YOUNG_BANK_COUNT, loading_level) : 0;
+        25 + ASSETS_YOUNG_BANK_COUNT + (loading_level == 2 ?
+            LEVEL2_ENEMY_BANK_COUNT : LEVEL1_ENEMY_BANK_COUNT), loading_level) : 0;
 }
 
 int start_level_two(const DOS64_API *api, unsigned char *lives,
