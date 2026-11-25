@@ -260,6 +260,16 @@ static void toss_result_tick(void *context)
     }
 }
 
+static int toss_timon_ground(void *context, short x, short y,
+    short *supported, short *delta_y)
+{
+    ENGINE_MAP_GROUND ground;
+    if (engine_map_ground(context, x, y, &ground) != 0) return -1;
+    *supported = ground.supported;
+    *delta_y = ground.delta_y;
+    return 0;
+}
+
 static int toss_result_screen(const DOS64_API *api, unsigned int caught)
 {
     unsigned int map_size, collect_size, numbers_size;
@@ -332,10 +342,17 @@ int run_bonus_toss_game(const DOS64_API *api, unsigned char *lives, unsigned int
 {
     static RENDER_POOL renders;
     static RENDER_SPRITE_BANK banks[0x59];
+    ENGINE_MAP_COLLISION collision;
+    unsigned int contour_size;
     if (!api || !lives || !continues || !max_roar ||
         (!bonus_assets && allocate_bonus_assets(api) != 0) ||
         bonus_assets_load(bonus_assets, &resource_api, "LIONKING.EPF",
             packed, sizeof(game_buffers->packed), &dictionary) != 0 ||
+        resources_load_entry(&resource_api, "LIONKING.EPF", "CONTOUR.CON",
+            packed, sizeof(game_buffers->packed), map_contours, sizeof(game_buffers->map_contours),
+            &dictionary, &contour_size) != 0 ||
+        engine_map_collision_initialize_layer(&collision, bonus_assets->map,
+            bonus_assets->map_size, 4, map_contours, contour_size) != 0 ||
         vga_load_palette(bonus_assets->map, bonus_assets->map_size, palette) != 0) {
         lk_platform_log("Lion King: cannot load original BUG TOSS stage resources.\n");
         return 1;
@@ -363,7 +380,8 @@ int run_bonus_toss_game(const DOS64_API *api, unsigned char *lives, unsigned int
     TOSS_GAME_LOOP loop = {0};
     loop.api = api;
     if (bonus_toss_stage_initialize(&loop.stage, &renders, 0x010101,
-        lives, continues, max_roar, toss_game_sound, (void *)api) != 0) {
+        lives, continues, max_roar, toss_game_sound, (void *)api,
+        toss_timon_ground, &collision) != 0) {
         music_output_stop(&music_output);
         lk_platform_log("Lion King: cannot initialize original BUG TOSS stage.\n");
         return 1;

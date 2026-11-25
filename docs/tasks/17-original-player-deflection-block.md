@@ -11,7 +11,7 @@ two selectors, two visual-script ranges and probe off/on. Escape exits.
 The original selectors, motion and animation run automatically, then pause at
 the boundary to the still-unported ordinary player state.
 
-Recovered from `src/recovered/block_0c000.c` and verified against the EXE:
+Recovered from `tmp/recovered/block_0c000.c` and verified against the EXE:
 
 - `0x1e36e` / `0x1e3bf`: signed contact ranges `[4,16]` and `[32,48]`
   select the ordinary handler; other values delegate to the script selector.
@@ -32,9 +32,9 @@ implementations. The preview stops at those boundaries. Original addresses
 in `ENGINE_PLAYER_CALL` are data only, never invoked as native pointers.
 The emitter scene (`--emitters`) and `--idle` / `--manual` modes remain available.
 
-`tools/check_player_reactions.c` checks 11010048 calls, including every signed
+`tmp/tools/check_player_reactions.c` checks 11010048 calls, including every signed
 contact word, wrapped pointer indices and young/adult forms.
-`tools/check_player_deflection.c` runs the whole segment through the object
+`tmp/tools/check_player_deflection.c` runs the whole segment through the object
 dispatcher: 1632 original-script updates, exact descriptors, velocity and
 fractional coordinates, directional asymmetry, probe/stop/damage gates and
 missing-dependency errors. Build these tests with the generated animation data

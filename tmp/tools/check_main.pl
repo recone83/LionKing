@@ -4,7 +4,7 @@ use FindBin;
 use File::Spec;
 use File::Temp qw(tempdir);
 
-chdir File::Spec->catdir($FindBin::Bin, '..') or die "Cannot enter workspace: $!";
+chdir File::Spec->catdir($FindBin::Bin, '..', '..') or die "Cannot enter workspace: $!";
 open my $binary, '<:raw', 'bin/obj1_code.bin' or die "Cannot read code object: $!";
 local $/;
 my $code = <$binary>;
@@ -32,7 +32,7 @@ for my $literal (
 my $dir = tempdir(CLEANUP => 1);
 my $harness = File::Spec->catfile($dir, 'check_main.c');
 my $executable = File::Spec->catfile($dir, 'check_main');
-my $main = File::Spec->rel2abs('src/engine/main.c');
+my $main = File::Spec->rel2abs('tmp/engine/main.c');
 open my $file, '>', $harness or die "Cannot write $harness: $!";
 print {$file} <<"C" or die "Cannot write $harness: $!";
 #include <assert.h>

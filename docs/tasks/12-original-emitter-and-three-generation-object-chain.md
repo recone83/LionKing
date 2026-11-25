@@ -34,17 +34,17 @@ parents and children later in the same traversal, preserving the existing
 immediate-initializer effects.
 
 ```bash
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_near_view.c src/engine/render.c src/engine/sprites.c -o build/check_near_view
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_near_view.c src/engine/render.c src/engine/sprites.c -o build/check_near_view
 build/check_near_view
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_emitter.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_emitter.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_emitter
 build/check_emitter
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_spawn_emitter.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_spawn_emitter.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_spawn_emitter
 build/check_spawn_emitter

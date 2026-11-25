@@ -32,7 +32,7 @@ position are synthetic dependencies. The original map queries `0x14c72`,
 `0x170ae`, `0x174b2`, special-state handlers and ground states remain explicit
 callback boundaries, never silently fabricated gameplay.
 
-`tools/check_player_air.c` verifies both full airborne paths and 2752512
+`tmp/tools/check_player_air.c` verifies both full airborne paths and 2752512
 landing cases: all signed duration words, young/adult forms, signed velocity
 thresholds, gate precedence, exact edge operands, probes, anchors and errors.
 It also verifies 1966080 capped/uncapped player-gravity combinations.

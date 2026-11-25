@@ -12,8 +12,8 @@ Zero-length windows intentionally do nothing; invalid windows fail before writes
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_tiles.c src/engine/tile_blitters.c src/engine/tiles.c -o build/check_tiles
+    -Iinclude -Isrc \
+    tmp/tools/check_tiles.c src/engine/tile_blitters.c src/engine/tiles.c -o build/check_tiles
 build/check_tiles
 ```
 

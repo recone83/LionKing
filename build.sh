@@ -14,8 +14,8 @@ elif [ "$#" -ne 0 ]; then
     exit 2
 fi
 
-if [ ! -f src/dos64/start.c ]; then
-    echo "Build unavailable: src/dos64/start.c is not implemented yet." >&2
+if [ ! -f src/start.c ]; then
+    echo "Build unavailable: src/start.c is not implemented yet." >&2
     echo "The DOS64 start(const DOS64_API *) adapter and recovered game code must be made compilable first." >&2
     exit 1
 fi
@@ -42,9 +42,9 @@ trap 'exit 143' TERM
 
 perl tools/extract_animation.pl bin/obj2_data.bin > "$Temporary/animation_data.c"
 "$Compiler" -m64 -O2 -Wall -Wextra -Werror -ffreestanding -nostdlib -nostartfiles \
-    -fno-stack-protector -mno-red-zone -Iinclude -Isrc -DLK_DOS64_NATIVE \
+    -fno-stack-protector -mno-red-zone -Iinclude -Isrc \
     -Wl,-e,dos64_entry -Wl,--subsystem,windows -Wl,--dynamicbase \
-    src/dos64/start.c src/dos64/preview_idle.c src/dos64/preview_player.c \
+    src/start.c src/dos64/preview_idle.c src/dos64/preview_player.c \
     src/dos64/preview_background.c src/dos64/preview_bonus.c src/dos64/preview_emitter.c \
     src/dos64/platform.c src/dos64/frontend.c src/engine/resources.c \
     src/engine/resource_decoder.c \

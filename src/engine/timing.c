@@ -1,6 +1,3 @@
-/* Extracted pseudocode; not yet compilable. */
-
-#ifdef LK_DOS64_NATIVE
 #include "timing.h"
 
 void engine_clock_reset(ENGINE_CLOCK *clock, unsigned long long now_ns)
@@ -49,6 +46,3 @@ int engine_dispatch_ticks(ENGINE_CLOCK *clock, unsigned long long now_ns,
     }
     return (int)updates;
 }
-#else
-#include "timing_legacy.inc"
-#endif

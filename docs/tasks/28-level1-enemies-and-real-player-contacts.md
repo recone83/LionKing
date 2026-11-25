@@ -37,7 +37,7 @@ The two indexed scene renders are still needed to preserve occlusion; this
 change moves blending to the runtime, not to a guaranteed GPU path. Render
 timers advance only once. Collision and movement are unchanged; full opacity
 returns when immunity expires, and the death animation is not left blinking.
-[check_opacity.c](../../tools/check_opacity.c) checks all 65536 palette pairs at
+[check_opacity.c](../../tmp/tools/check_opacity.c) checks all 65536 palette pairs at
 77/255 opacity, real LEVEL1/Simba layers, both sprite draw passes, unchanged
 HUD, single timer advancement and immunity expiry.
 
@@ -54,12 +54,12 @@ previous 100 health/roar choices. Random enemy choices use the
 original three-byte generator with a fixed preview seed. The original
 startup seed has not yet been traced.
 
-`tools/check_enemies.c` checks real-map positions/support, visible changing
+`tmp/tools/check_enemies.c` checks real-map positions/support, visible changing
 enemy pixels, both turn directions, damage/immunity, the strict stomp
 threshold, both mirrored attack windows and their excluded boundary ticks,
 stun timing, obstacle braking/resume, culling, death and
 unchanged map bytes. It passes Address/UndefinedBehavior sanitizer checks.
-`tools/check_scene.c --map` runs the actual DOS64 adapter with movement,
+`tmp/tools/check_scene.c --map` runs the actual DOS64 adapter with movement,
 roar, jumping and audio mocks: nine spawns, 19 contacts, two
 damage transitions, one landing and 886410 PCM frames in its 20-second
 fixture, with clean Escape/audio/log shutdown. The unchanged default demo
@@ -67,7 +67,7 @@ still matches 128064000 ARGB pixels. This input fixture now verifies that
 its initially uncharged roar does not stun enemies; the exact strong-roar
 thresholds remain covered by the enemy tests. Host scene builds also need
 `src/engine/enemies.c`, `src/engine/pickups.c` and `src/engine/lifecycle.c`.
-`tools/check_scene.c --map-stomp` exercises a real descending contact:
+`tmp/tools/check_scene.c --map-stomp` exercises a real descending contact:
 one lizard defeat, Simba's rebound, all subsequent death frames, continued
 movement/roar/jumping and music, then clean Escape. The enemy test also renders
 each death tick: DS stream `0x13887` references `DUST` slot 65, not
@@ -85,8 +85,8 @@ original 210/64 vertical anchors. Map bounds still clamp the viewport.
 The preview initializes the camera beside its chosen spawn rather than
 scrolling down from the original zero-camera startup.
 
-`tools/check_viewport.c` covers these limits, facing reversals, posture
-anchors and map bounds. `tools/check_scene.c --map-animation` runs repeated
+`tmp/tools/check_viewport.c` covers these limits, facing reversals, posture
+anchors and map bounds. `tmp/tools/check_scene.c --map-animation` runs repeated
 idle/roar/short-crouch transitions while checking that the distant background
 remains pixel-identical for all 2000 successive frame comparisons. The
 original sprite poses, per-frame anchors and movement commands are retained;
@@ -139,13 +139,13 @@ not their relative X positions. Patrol jumps require a clear side probe.
 The original 512-pixel cull applies to patrol, pause and moving jumps,
 not the waiting gate or terminal hit/death animation.
 
-`tools/check_enemies.c` exercises the natural boss cycle with real terrain,
+`tmp/tools/check_enemies.c` exercises the natural boss cycle with real terrain,
 sprites, sound requests, unsafe/threshold stomps, both hits, terminal
 cleanup and restart. It asserts all eight naturally reached boss states,
 both hit directions and a single completion only after final death;
 host builds of this test also link `src/engine/lifecycle.c`.
-`tools/check_pickups.c` checks the completion result
-and visible GAMEOVER artwork. `tools/check_scene.c --map-gameover` drives
+`tmp/tools/check_pickups.c` checks the completion result
+and visible GAMEOVER artwork. `tmp/tools/check_scene.c --map-gameover` drives
 the actual adapter with keyboard input and real enemy contacts through
 three deaths, two restarts, zero lives and the 200-tick GAMEOVER display.
 The ordinary map, stomp, stationary-camera and lifecycle selectors remain

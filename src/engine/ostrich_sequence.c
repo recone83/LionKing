@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "ostrich_sequence.h"
 
 int engine_ostrich_sequence_initialize(ENGINE_OSTRICH_SEQUENCE *sequence,
@@ -98,4 +97,3 @@ int engine_ostrich_sequence_release(ENGINE_OSTRICH_SEQUENCE *sequence)
     *sequence = (ENGINE_OSTRICH_SEQUENCE){0};
     return 0;
 }
-#endif

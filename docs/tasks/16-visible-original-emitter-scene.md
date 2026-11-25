@@ -19,11 +19,11 @@ Camera mapping is enabled only during rendering, leaving behavior flags
 unchanged. Escape exits; `--idle` retains the previous automatic Simba preview
 and `--manual` retains the bank/frame browser.
 
-`tools/check_scene.c --emitters` runs the actual emitter entry for 20 simulated seconds
+`tmp/tools/check_scene.c --emitters` runs the actual emitter entry for 20 simulated seconds
 and checks 128064000 exact ARGB pixels, repeated activation and Escape.
 It requires more than 1500 frames with visible object pixels and at least
 100000 object pixels overall. Compile it with the same source list as
-`tools/check_viewer.c` above, substituting the test source and output name.
+`tmp/tools/check_viewer.c` above, substituting the test source and output name.
 Real DOS64/QEMU captures also changed over time and Escape returned exit code 0.
 
 The scene now also exercises the original impact camera shake: the migrated
@@ -40,12 +40,12 @@ fixture is diagnostic, not a claim that the boss attack has been migrated.
 
 The scene test requires at least 20 visibly shaken frames and 100000 changed
 ARGB pixels against an unshaken map, in addition to exact output comparisons.
-`tools/check_viewport.c` checks 1966080 coordinate/dimension/shake combinations,
+`tmp/tools/check_viewport.c` checks 1966080 coordinate/dimension/shake combinations,
 including negative and wrapped limits and shake `0xffff`:
 
 ```bash
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_viewport.c src/engine/render.c src/engine/sprites.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_viewport.c src/engine/render.c src/engine/sprites.c \
     -o build/check_viewport
 build/check_viewport
 ```

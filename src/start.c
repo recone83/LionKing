@@ -1,10 +1,10 @@
-#include "start_runtime.h"
-#include "preview_idle.h"
-#include "preview_player.h"
-#include "preview_background.h"
-#include "preview_bonus.h"
-#include "preview_emitter.h"
-#include "frontend.h"
+#include "dos64/start_runtime.h"
+#include "dos64/preview_idle.h"
+#include "dos64/preview_player.h"
+#include "dos64/preview_background.h"
+#include "dos64/preview_bonus.h"
+#include "dos64/preview_emitter.h"
+#include "dos64/frontend.h"
 
 GAME_BUFFERS *game_buffers;
 unsigned char *pixels, *hurt_layer, *packed, *map, *map_contours;

@@ -32,17 +32,17 @@ overwriting the active child at update 65546. Full level-owned state allocation
 and spawn selection remain unported; the preview is unchanged.
 
 ```bash
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_acceleration.c src/engine/physics.c -o build/check_acceleration
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_acceleration.c src/engine/physics.c -o build/check_acceleration
 build/check_acceleration
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_timed.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_timed.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_timed
 build/check_timed
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_spawn_timed.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_spawn_timed.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_spawn_timed
 build/check_spawn_timed

@@ -29,15 +29,15 @@ slots, preventing partial creation or resetting the activation flag on
 resource exhaustion.
 
 ```bash
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_braking.c src/engine/physics.c -o build/check_braking
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_braking.c src/engine/physics.c -o build/check_braking
 build/check_braking
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_directional_motion.c src/engine/physics.c -o build/check_directional_motion
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_directional_motion.c src/engine/physics.c -o build/check_directional_motion
 build/check_directional_motion
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_emitter_group.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_emitter_group.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_emitter_group
 build/check_emitter_group

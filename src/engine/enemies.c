@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "random.h"
 #include "enemies.h"
 #include "animation_data.h"
@@ -1518,4 +1517,3 @@ int engine_enemies_tick(ENGINE_ENEMIES *enemies, RENDER_OWNER camera)
     }
     return 0;
 }
-#endif

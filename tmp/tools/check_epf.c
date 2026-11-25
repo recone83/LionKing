@@ -2,10 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../src/engine/resources.h"
-#include "../src/engine/resource_decoder.h"
-#include "../src/engine/sprites.h"
-#include "../src/libs/vga.h"
+#include "../../src/engine/resources.h"
+#include "../../src/engine/resource_decoder.h"
+#include "../../src/engine/sprites.h"
+#include "../../src/libs/vga.h"
 #include "engine/tiles.h"
 
 static int diagnostics;

@@ -1,6 +1,3 @@
-/* Extracted pseudocode; not yet compilable. */
-
-#ifdef LK_DOS64_NATIVE
 #include "tiles.h"
 #include "tile_blitters.h"
 #include "dos64/platform.h"
@@ -25,9 +22,18 @@ int engine_map_collision_initialize(ENGINE_MAP_COLLISION *collision,
     const unsigned char *map, unsigned int size,
     const unsigned char *contours, unsigned int contour_size)
 {
+    return engine_map_collision_initialize_layer(collision, map, size, 0, contours, contour_size);
+}
+
+int engine_map_collision_initialize_layer(ENGINE_MAP_COLLISION *collision,
+    const unsigned char *map, unsigned int size, unsigned int layer,
+    const unsigned char *contours, unsigned int contour_size)
+{
     if (!collision || !map || size < 0x80 || !contours || contour_size != 4096) return -1;
-    unsigned int width = map_u16(map + 8), height = map_u16(map + 12);
-    unsigned int table = map_u32(map + 16);
+    if (layer >= 6) return -1;
+    const unsigned char *entry = map + 8 + layer * 12;
+    unsigned int width = map_u16(entry), height = map_u16(entry + 4);
+    unsigned int table = map_u32(entry + 8);
     unsigned long long plane = width * (unsigned long long)height * 2;
     if (!width || !height || (width & 1) || (height & 1) || width > 4095 || height > 2047 ||
         !table || table + plane * 4 > size) return -1;
@@ -459,6 +465,3 @@ int render_map_tile_pass(const unsigned char *map, unsigned int size,
     return render_map_tile_pass_ostrich(map, size, layer, camera_x, camera_y,
         flagged, 0, pixels);
 }
-#else
-#include "tiles_legacy.inc"
-#endif

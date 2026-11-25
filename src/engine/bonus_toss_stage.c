@@ -1,6 +1,7 @@
 #include "bonus_toss_stage.h"
 #include "animation_data.h"
 #include "random.h"
+#include <limits.h>
 
 int bonus_toss_result_initialize(BONUS_TOSS_RESULT_CLOCK *clock, unsigned int caught)
 {
@@ -49,14 +50,15 @@ static int timon_turn(BONUS_TOSS_STAGE *stage, int boundary)
     return 0;
 }
 
-static int timon_start_move(BONUS_TOSS_STAGE *stage)
+static int timon_start_move(BONUS_TOSS_STAGE *stage, unsigned char delay)
 {
     stage->move_ticks = (unsigned short)(stage->selector.speed +
         (engine_random_byte(&stage->random) & 7));
     stage->move_ticks += (unsigned short)(engine_random_byte(&stage->random) & 16);
-    stage->move_delay = 13;
+    stage->move_delay = delay;
     if ((engine_random_byte(&stage->random) & 3) == 0 && timon_turn(stage, 0) != 0)
         return -1;
+    stage->timon_vertical_speed = 0;
     return 0;
 }
 
@@ -71,12 +73,16 @@ static void release_items(BONUS_TOSS_STAGE *stage)
 
 int bonus_toss_stage_initialize(BONUS_TOSS_STAGE *stage, RENDER_POOL *renders,
     uint32_t seed, unsigned char *lives, unsigned int *continues, unsigned short *max_roar,
-    BONUS_TOSS_SOUND play_burp, void *sound_context)
+    BONUS_TOSS_SOUND play_burp, void *sound_context,
+    BONUS_TOSS_GROUND ground, void *ground_context)
 {
     if (!stage || !renders || !seed || !lives || *lives > 9 || !continues ||
-        *continues > 9 || !max_roar || *max_roar < 16 || *max_roar > 48 || !play_burp) return -1;
+        *continues > 9 || !max_roar || *max_roar < 16 || *max_roar > 48 ||
+        !play_burp || !ground) return -1;
     *stage = (BONUS_TOSS_STAGE){0};
     stage->renders = renders;
+    stage->ground = ground;
+    stage->ground_context = ground_context;
     stage->random = seed;
     stage->lives = lives;
     stage->continues = continues;
@@ -93,7 +99,7 @@ int bonus_toss_stage_initialize(BONUS_TOSS_STAGE *stage, RENDER_POOL *renders,
     stage->timon_node = render_acquire_node(renders, &stage->timon, 0, 0,
         animation_movement_data + 0xb75c - ANIMATION_MOVEMENT_BASE, 20);
     if (!stage->timon_node || timon_animation(stage, 0x4b7b) != 0 ||
-        timon_start_move(stage) != 0) {
+        timon_start_move(stage, 13) != 0) {
         if (stage->timon_node) render_release_node(renders, stage->timon_node);
         render_release_node(renders, stage->player.node);
         return -1;
@@ -139,7 +145,7 @@ static int timon_tick(BONUS_TOSS_STAGE *stage)
         if (!stage->player.stage_signal) stage->spawn_counter = 0;
         if (!stage->special_ticks) {
             stage->special_active = 0;
-            if (timon_animation(stage, 0x4b97) != 0 || timon_start_move(stage) != 0)
+            if (timon_animation(stage, 0x4b97) != 0 || timon_start_move(stage, 13) != 0)
                 return -1;
             return 0;
         }
@@ -163,10 +169,26 @@ static int timon_tick(BONUS_TOSS_STAGE *stage)
         if (timon_turn(stage, 1) != 0) return -1;
     }
     if (stage->move_ticks) {
-        if (animation_program_step(&stage->timon_animation, stage->timon_node,
-            &stage->timon, 0, 0) != 0) return -1;
         if (stage->move_delay) --stage->move_delay;
         else stage->timon.x += stage->direction_left ? -5 : 5;
+        if (animation_program_step(&stage->timon_animation, stage->timon_node,
+            &stage->timon, 0, 0) != 0) return -1;
+        short supported, delta;
+        if (stage->ground(stage->ground_context, stage->timon.x, stage->timon.y,
+                &supported, &delta) != 0) return -1;
+        int y = stage->timon.y;
+        if (supported) {
+            y += delta;
+            stage->timon_vertical_speed = 0;
+        } else {
+            stage->timon_vertical_speed += 0x4e00;
+            if (stage->timon_vertical_speed > 0x70000) stage->timon_vertical_speed = 0x70000;
+            unsigned int fraction = stage->timon_vertical_fraction + stage->timon_vertical_speed;
+            y += (int)(fraction >> 16);
+            stage->timon_vertical_fraction = fraction & 0xffff;
+        }
+        if (y < SHRT_MIN || y > SHRT_MAX) return -1;
+        stage->timon.y = (short)y;
         ++stage->spawn_counter;
     }
     short interval;
@@ -176,7 +198,7 @@ static int timon_tick(BONUS_TOSS_STAGE *stage)
         if (spawn_item(stage, 0) != 0) return -1;
     }
     if (stage->move_ticks) --stage->move_ticks;
-    else if (timon_start_move(stage) != 0) return -1;
+    else if (timon_start_move(stage, 0) != 0) return -1;
     return 0;
 }
 

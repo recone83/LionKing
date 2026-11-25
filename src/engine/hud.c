@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "hud.h"
 #include "sprites.h"
 
@@ -22,4 +21,3 @@ int engine_hud_draw(const unsigned char *bars, unsigned int size,
         return -1;
     return 0;
 }
-#endif

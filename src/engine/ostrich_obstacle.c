@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "ostrich_obstacle.h"
 #include "animation_data.h"
 
@@ -103,4 +102,3 @@ int engine_ostrich_hazard_release(ENGINE_OSTRICH_HAZARD *hazard)
     }
     return 0;
 }
-#endif

@@ -21,6 +21,9 @@ typedef struct {
 int bonus_toss_result_initialize(BONUS_TOSS_RESULT_CLOCK *clock, unsigned int caught);
 int bonus_toss_result_tick(BONUS_TOSS_RESULT_CLOCK *clock);
 
+typedef int (*BONUS_TOSS_GROUND)(void *context, short x, short y,
+    short *supported, short *delta_y);
+
 typedef struct {
     BONUS_TOSS_PLAYER player;
     RENDER_OWNER timon;
@@ -29,7 +32,10 @@ typedef struct {
     BONUS_TOSS_ITEM items[BONUS_TOSS_ITEM_CAPACITY];
     BONUS_TOSS_SELECTOR selector;
     RENDER_POOL *renders;
+    BONUS_TOSS_GROUND ground;
+    void *ground_context;
     uint32_t random;
+    unsigned int timon_vertical_speed, timon_vertical_fraction;
     unsigned char *lives;
     unsigned int *continues;
     unsigned short *max_roar;
@@ -50,7 +56,8 @@ typedef struct {
 
 int bonus_toss_stage_initialize(BONUS_TOSS_STAGE *stage, RENDER_POOL *renders,
     uint32_t seed, unsigned char *lives, unsigned int *continues, unsigned short *max_roar,
-    BONUS_TOSS_SOUND play_burp, void *sound_context);
+    BONUS_TOSS_SOUND play_burp, void *sound_context,
+    BONUS_TOSS_GROUND ground, void *ground_context);
 int bonus_toss_stage_tick(BONUS_TOSS_STAGE *stage, int left, int right, int action);
 int bonus_toss_stage_release(BONUS_TOSS_STAGE *stage);
 

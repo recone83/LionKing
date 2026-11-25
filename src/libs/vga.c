@@ -1,7 +1,5 @@
-/* Extracted pseudocode from pseiudo.c; not a compilable translation unit. */
 /* Video BIOS, VGA DAC and video-memory routines. */
 
-#ifdef LK_DOS64_NATIVE
 #include "vga.h"
 
 int vga_present_frame(VGA_FRAME *frame)
@@ -129,6 +127,3 @@ int vga_fade_tick(VGA_FADE *fade)
     }
     return 1;
 }
-#else
-#include "vga_legacy.inc"
-#endif

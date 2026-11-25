@@ -39,12 +39,10 @@ The options screen contains the original five setting categories.
 - Start plays the separate original Timon intro before loading LEVEL1 at
   its original start position, on every new game.
   The sequence is **logos → baby-Simba intro → menu → Start Game → Timon intro → LEVEL1 + level name**.
-  The loading display
-  uses the original `LEVELS.MCH` frame 0 ("The Pridelands"), not the
-  previous custom text/progress bar. It remains visible between resource
-  groups; after initialization the title overlays the first 100 gameplay
-  ticks. Input, movement, enemies and audio run underneath it; there is no
-  separate 100-tick black-screen hold.
+  The loading display remains blank between resource groups. After initialization,
+  the original `LEVELS.MCH` frame 0 ("The Pridelands") overlays the map for
+  the first 100 gameplay ticks. Input, movement, enemies and audio run
+  underneath it; there is no separate 100-tick black-screen hold.
 - Original `TITLE.AMF` begins on the Disney/Virgin splash and continues
   through East Point, the baby-Simba intro and the menu without restarting.
   It stops before the Timon scene, whose speech has a separate PCM stream.
@@ -85,22 +83,22 @@ their existing behavior. Missing or invalid title/level resources fail
 explicitly rather than falling back to a fake successful loading screen.
 
 The actual-entry sanitizer test
-[check_frontend.c](../../tools/check_frontend.c) exercises original title assets,
+[check_frontend.c](../../tmp/tools/check_frontend.c) exercises original title assets,
 menu wrapping, independent music/effects mute, key remapping and cancellation,
-142 original level-title presentations across two starts,
+blank loading presentations and original level-title overlays across two starts,
 startup-intro-before-menu ordering, distinct Timon intro on both starts,
 the 100-tick level-name overlay during moving gameplay,
 Escape return, three real-contact deaths/two
 restarts/GAME OVER return, audio reopening/cleanup, exit and missing-resource
 failure. Build it with the native source list from [build.sh](../../build.sh),
-substituting the host compiler and `tools/check_frontend.c` for SDK startup:
+substituting the host compiler and `tmp/tools/check_frontend.c` for SDK startup:
 
 ```bash
 mkdir -p build
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
 cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -fno-omit-frame-pointer -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    -Itools tools/check_frontend.c src/dos64/start.c src/dos64/preview_idle.c \
+    -fno-omit-frame-pointer -Iinclude -Isrc \
+    -Itmp/tools tmp/tools/check_frontend.c src/start.c src/dos64/preview_idle.c \
     src/dos64/preview_player.c src/dos64/preview_background.c src/dos64/preview_bonus.c \
     src/dos64/preview_emitter.c src/dos64/platform.c src/dos64/frontend.c \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
@@ -133,9 +131,9 @@ The rebinding tests cover all eight prompts, duplicate rejection and
 cancellation, remapped movement and roar, and prevent right Control from
 also roaring when assigned to another action.
 
-[check_victory.c](../../tools/check_victory.c) tests the actual adapter's victory
+[check_victory.c](../../tmp/tools/check_victory.c) tests the actual adapter's victory
 transition separately. Build with the same host source list above, replacing
-`tools/check_frontend.c` with `tools/check_victory.c`, adding
+`tmp/tools/check_frontend.c` with `tmp/tools/check_victory.c`, adding
 `-Wl,--wrap=resources_load_entry -Wl,--wrap=engine_enemies_tick
 -Wl,--wrap=engine_pickups_tick -Wl,--wrap=run_bonus_toss_game
 -Wl,--wrap=start_level_two -Wl,--wrap=frontend_loading_for_level
@@ -225,7 +223,7 @@ can limit FPS independently of rendering cost.
 
 ```bash
 cc -O2 -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -Iinclude -Isrc tools/check_fps.c src/dos64/platform.c -o build/check_fps
+    -Iinclude -Isrc tmp/tools/check_fps.c src/dos64/platform.c -o build/check_fps
 build/check_fps
 ```
 

@@ -25,15 +25,15 @@ Game-event side effects still remain diagnostic in the preview.
 
 ```bash
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_program.c build/animation_data.c src/engine/animation.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_program.c build/animation_data.c src/engine/animation.c \
     src/engine/render.c src/engine/sprites.c -o build/check_program
 build/check_program
 ```
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_animation.c src/engine/animation.c src/engine/render.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_animation.c src/engine/animation.c src/engine/render.c \
     src/engine/sprites.c -o build/check_animation
 build/check_animation
 ```
@@ -48,8 +48,8 @@ original code addresses. It is not yet connected to gameplay behaviors;
 the idle preview is intentionally unchanged rather than given invented motion.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_motion.c src/engine/animation.c src/engine/render.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_motion.c src/engine/animation.c src/engine/render.c \
     src/engine/sprites.c -o build/check_motion
 build/check_motion
 ```
@@ -70,8 +70,8 @@ The original dump remains required at build time, not at DOS64 runtime.
 
 ```bash
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_idle.c build/animation_data.c src/engine/animation.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_idle.c build/animation_data.c src/engine/animation.c \
     src/engine/render.c src/engine/sprites.c -o build/check_idle
 build/check_idle
 ```
@@ -84,8 +84,8 @@ list directly to the untouched data dump. Invalid lists report failure;
 the legacy full level bundle/sample loader remains unported.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_assets.c src/engine/assets.c src/engine/resources.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_assets.c src/engine/assets.c src/engine/resources.c \
     src/engine/resource_decoder.c -o build/check_assets
 build/check_assets
 ```
@@ -105,8 +105,8 @@ accumulator. Both paths retain the same fractional PIT phase calculation,
 using separate clock instances when serviced independently.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_fade.c src/libs/vga.c -o build/check_fade
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_fade.c src/libs/vga.c -o build/check_fade
 build/check_fade
 ```
 
@@ -167,12 +167,12 @@ short buffers or a failed presentation sink without resetting camera state.
 The sample renders into the appropriate shifted buffer window.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_vga_present.c src/libs/vga.c -o build/check_vga_present
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_vga_present.c src/libs/vga.c -o build/check_vga_present
 build/check_vga_present
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_viewer.c build/animation_data.c src/dos64/start.c src/dos64/platform.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_viewer.c build/animation_data.c src/start.c src/dos64/platform.c \
     src/dos64/frontend.c \
     src/engine/resources.c src/engine/resource_decoder.c src/engine/sprites.c \
     src/engine/tiles.c src/engine/tile_blitters.c src/engine/timing.c \

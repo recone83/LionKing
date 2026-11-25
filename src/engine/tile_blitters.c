@@ -1,6 +1,3 @@
-/* Extracted pseudocode; not yet compilable. */
-
-#ifdef LK_DOS64_NATIVE
 #include "tile_blitters.h"
 #include "dos64/platform.h"
 
@@ -49,6 +46,3 @@ int render_blit_tile(const unsigned char *tile, unsigned short flags, int x, int
     }
     return 0;
 }
-#else
-#include "tile_blitters_legacy.inc"
-#endif

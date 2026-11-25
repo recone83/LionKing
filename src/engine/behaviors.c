@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "behaviors.h"
 #include "animation_data.h"
 
@@ -2299,6 +2298,3 @@ int engine_spawn_shake(ENGINE_OBJECT_POOL *pool, RENDER_POOL *renders,
     }
     return status;
 }
-#else
-/* Original behavior 0x288a1 and visibility helpers remain in recovered blocks. */
-#endif

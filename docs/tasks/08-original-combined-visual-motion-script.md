@@ -19,8 +19,8 @@ The script contains no callback events; none are skipped.
 
 ```bash
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_movement_program.c build/animation_data.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_movement_program.c build/animation_data.c \
     src/engine/animation.c src/engine/render.c src/engine/sprites.c \
     -o build/check_movement_program
 build/check_movement_program

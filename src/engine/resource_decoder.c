@@ -1,6 +1,3 @@
-/* Extracted pseudocode; not yet compilable. */
-
-#ifdef LK_DOS64_NATIVE
 #include "resource_decoder.h"
 
 /* Reconstruction of 0x1248f-0x12736: MSB-first, width-dependent control codes. */
@@ -75,6 +72,3 @@ int resources_decode_dictionary_stream(const unsigned char *source, unsigned int
         previous = code;
     }
 }
-#else
-#include "resource_decoder_legacy.inc"
-#endif

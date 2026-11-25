@@ -14,8 +14,8 @@ artifact is replaced by explicit held/pressed state and a checked status.
 Replay failures must be reported by its caller. The viewer is not gameplay.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_input.c src/engine/input.c -o build/check_input
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_input.c src/engine/input.c -o build/check_input
 build/check_input
 ```
 
@@ -31,8 +31,8 @@ fake stages to pretend it is the full game renderer. Test callbacks exist only
 in the host test. Unported original renderer helpers remain in `render_legacy.inc`.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_render.c src/engine/render.c src/engine/sprites.c -o build/check_render
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_render.c src/engine/render.c src/engine/sprites.c -o build/check_render
 build/check_render
 ```
 
@@ -45,8 +45,8 @@ Native pointers deliberately replace the original packed 32-bit pointer layout.
 Pool exhaustion and invalid release are explicit failures, not substitute nodes.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_render_nodes.c src/engine/render.c src/engine/sprites.c -o build/check_render_nodes
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_render_nodes.c src/engine/render.c src/engine/sprites.c -o build/check_render_nodes
 build/check_render_nodes
 ```
 
@@ -66,8 +66,8 @@ multipart descriptors or bind them to gameplay objects; this is not claimed as
 a working character animation controller.
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_render_pass.c src/engine/render.c src/engine/sprites.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_render_pass.c src/engine/render.c src/engine/sprites.c \
     -o build/check_render_pass
 build/check_render_pass
 ```

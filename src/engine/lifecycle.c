@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "lifecycle.h"
 #include "animation_data.h"
 
@@ -145,4 +144,3 @@ int engine_level_life_tick(ENGINE_LEVEL_LIFE *life, RENDER_OWNER camera)
     ++life->restarts;
     return ENGINE_LIFE_RESTART;
 }
-#endif

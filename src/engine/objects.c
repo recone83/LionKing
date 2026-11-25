@@ -1,5 +1,4 @@
 /* Native reconstruction of the original pool, not a general allocator. */
-#ifdef LK_DOS64_NATIVE
 #include "objects.h"
 
 void engine_initialize_objects(ENGINE_OBJECT_POOL *pool)
@@ -115,6 +114,3 @@ int engine_update_objects(ENGINE_OBJECT_POOL *pool, const DOS64_INPUT *keys)
     }
     return 0;
 }
-#else
-#include "objects_legacy.inc"
-#endif

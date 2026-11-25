@@ -2,10 +2,9 @@
 
 A port of the DOS game *The Lion King* for [DOS64 / BMetal](https://bmetal.recone.org)
 and Windows. The project includes a native engine, graphics, keyboard input,
-music and sound, using the original game data. LEVEL1 is playable; the project
-does not yet claim full game compatibility.
-After LEVEL1, the game displays a notice that LEVEL2 is not yet available
-and returns to the menu after confirmation.
+music and sound, using the original game data. LEVEL1 and LEVEL2 are playable,
+including the transition between them. Later levels are not yet implemented,
+so the project does not yet claim full game compatibility.
 
 ## Requirements
 
@@ -77,6 +76,9 @@ menu.
 
 ## Documentation
 
-- [Development task archive](docs/tasks/README.md) — historical work and tests,
+- `tmp/` is version-controlled and contains development checks, reverse-engineering
+  reference material and pseudocode; it is not disposable build output. The
+  asset extractor required by the build remains in `tools/`.
+- [Development task archive](./docs/tasks/README.md) — historical work and tests,
   split by task.
-- [Executable analysis](FINDINGS.md) and [DOS64 SDK reference](SDK.md).
+- [Executable analysis](./FINDINGS.md) and [DOS64 SDK reference](./SDK.md).

@@ -30,17 +30,17 @@ in the same pool is rejected. This only supports the verified original
 definition, not all spawn records or their unported initialization callbacks.
 
 ```bash
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_rectangle.c src/engine/render.c src/engine/sprites.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_rectangle.c src/engine/render.c src/engine/sprites.c \
     -o build/check_rectangle
 build/check_rectangle
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_overlap.c src/engine/render.c src/engine/sprites.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_overlap.c src/engine/render.c src/engine/sprites.c \
     -o build/check_overlap
 build/check_overlap
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_spawn.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_spawn.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_spawn
 build/check_spawn

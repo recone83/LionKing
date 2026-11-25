@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "pickups.h"
 #include "animation_data.h"
 
@@ -265,4 +264,3 @@ int engine_pickups_restart(ENGINE_PICKUPS *pickups)
     pickups->player->roar_charge = pickups->player->roar_pulse = 0;
     return 0;
 }
-#endif

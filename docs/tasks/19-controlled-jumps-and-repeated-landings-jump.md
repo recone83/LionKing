@@ -36,7 +36,7 @@ are fixtures. Ground running, actual map collision and special states remain
 unported. Long idle events are explicitly logged without their gameplay
 side effects. Manual jumps are not automatically restarted or repositioned.
 
-`tools/check_player_jump.c` verifies 393210 nonzero delay cases, 393216
+`tmp/tools/check_player_jump.c` verifies 393210 nonzero delay cases, 393216
 recovery countdown cases, 4608 boost combinations and 218 independently
 traced ascent ticks, including adult/young forms, fractions, word wrapping,
 probe ordering, gates, same-handler continuation and dependency errors.

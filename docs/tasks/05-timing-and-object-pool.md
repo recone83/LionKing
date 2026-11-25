@@ -14,8 +14,8 @@ The PIT frequency is the nominal model, not a measured guarantee of the original
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_timing.c src/engine/timing.c -o build/check_timing
+    -Iinclude -Isrc \
+    tmp/tools/check_timing.c src/engine/timing.c -o build/check_timing
 build/check_timing
 ```
 
@@ -34,7 +34,7 @@ The viewer does not yet use this pool; this step does not change its image.
 
 ```bash
 cc -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_objects.c src/engine/objects.c src/engine/input.c -o build/check_objects
+    -Iinclude -Isrc \
+    tmp/tools/check_objects.c src/engine/objects.c src/engine/input.c -o build/check_objects
 build/check_objects
 ```

@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "render.h"
 #include "sprites.h"
 
@@ -451,6 +450,3 @@ int render_game_scene(RENDER_SCENE *scene)
     }
     return scene->present(scene);
 }
-#else
-#include "render_legacy.inc"
-#endif

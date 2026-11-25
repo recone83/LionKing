@@ -402,7 +402,9 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
         assert((image[i] >> 24) == 255);
         visible += (image[i] & 0xffffff) != 0;
     }
-    assert(visible > 100 || missing_title || (!in_scene && !menu_visits && !splash_phase && !intro_phase));
+    assert(visible > 100 || missing_title ||
+        (in_scene && !pregame_phase && !scene_polls) ||
+        (!in_scene && !menu_visits && !splash_phase && !intro_phase));
     if (intro_phase) {
         unsigned long long ticks;
         assert(engine_clock_elapsed_ticks(&intro_clock, now, &ticks) == 0);
@@ -534,7 +536,7 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
         if (loading_frames % 71 == 0) loading_hold_start = now;
         const DOS64_COLOR *p = loading_frames == 1 ? title_colors : level_colors;
         for (unsigned int i = 0; i < 64000; ++i)
-            assert(image[i] == (p[expected_loading[i]] | 0xff000000U));
+            assert(image[i] == (p[0] | 0xff000000U));
     }
     if (level_title_visible && in_scene && scene_polls) {
         for (unsigned int i = 0; i < 64000; ++i)

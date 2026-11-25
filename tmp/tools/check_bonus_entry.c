@@ -6,6 +6,7 @@
 #include "dos64/platform.h"
 #include "engine/bonus.h"
 #include "engine/bonus_toss.h"
+#include "engine/bonus_toss_stage.h"
 #include "engine/animation_data.h"
 #include "engine/music.h"
 #include "engine/sprites.h"
@@ -44,6 +45,93 @@ static int expected_burp(void *context)
 {
     (void)context;
     return 0;
+}
+
+static int expected_ground(void *context, short x, short y, short *supported, short *delta_y)
+{
+    ENGINE_MAP_GROUND ground;
+    if (engine_map_ground(context, x, y, &ground) != 0) return -1;
+    *supported = ground.supported;
+    *delta_y = ground.delta_y;
+    return 0;
+}
+
+static void check_timon_trunk(DOS64_API *api)
+{
+    static unsigned char contours[4096];
+    static const short heights[] = {74, 69, 63, 58, 53, 48, 51, 53, 56, 58, 61, 64, 67};
+    unsigned int contour_size;
+    ENGINE_MAP_COLLISION collision;
+    assert(resources_load_entry(api, "LIONKING.EPF", "CONTOUR.CON", packed,
+        sizeof(packed), contours, sizeof(contours), &dictionary, &contour_size) == 0);
+    assert(engine_map_collision_initialize_layer(&collision, assets.map, assets.map_size,
+        6, contours, contour_size) == -1);
+    assert(engine_map_collision_initialize_layer(&collision, assets.map, assets.map_size,
+        4, contours, contour_size - 1) == -1);
+    assert(engine_map_collision_initialize_layer(&collision, assets.map, 128,
+        4, contours, contour_size) == -1);
+    assert(engine_map_collision_initialize_layer(&collision, assets.map, assets.map_size,
+        4, contours, contour_size) == 0);
+
+    RENDER_POOL pool;
+    BONUS_TOSS_STAGE stage;
+    unsigned char lives = 3;
+    unsigned int continues = 1;
+    unsigned short roar = 16;
+    assert(bonus_toss_stage_initialize(&stage, &pool, 0x010101, &lives, &continues,
+        &roar, expected_burp, 0, expected_ground, &collision) == 0);
+    for (unsigned int i = 0; i < sizeof(heights) / sizeof(heights[0]); ++i) {
+        stage.timon.x = (short)(64 + i * 16);
+        stage.timon.y = (short)(heights[i] - 1);
+        stage.direction_left = stage.timon.x == 256;
+        stage.move_ticks = 2;
+        stage.move_delay = 1;
+        stage.spawn_counter = -120;
+        assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+        assert(stage.timon.y == heights[i]);
+    }
+
+    stage.timon = (RENDER_OWNER){160, 51};
+    stage.direction_left = 0;
+    for (unsigned int i = 0; i < 19; ++i) {
+        short previous_y = stage.timon.y;
+        stage.move_ticks = 2;
+        stage.move_delay = 0;
+        stage.spawn_counter = -120;
+        assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+        assert(stage.timon.x == 165 + (int)i * 5 && stage.timon.y >= previous_y &&
+            stage.timon.y <= previous_y + 2);
+    }
+    assert(stage.timon.x == 255 && stage.timon.y == 66);
+    stage.move_ticks = 2;
+    stage.move_delay = 0;
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0 && stage.timon.x == 260);
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.timon.x == 256 && stage.timon.y == 67 && stage.direction_left);
+    for (unsigned int i = 0; i < 38; ++i) {
+        stage.move_ticks = 2;
+        stage.move_delay = 0;
+        stage.spawn_counter = -120;
+        assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+        assert(stage.timon.x == 251 - (int)i * 5);
+    }
+    assert(stage.timon.x == 66 && stage.timon.y >= 72 && stage.timon.y <= 74);
+
+    stage.timon = (RENDER_OWNER){128, 52};
+    stage.direction_left = 0;
+    stage.move_ticks = 2;
+    stage.move_delay = 1;
+    stage.spawn_counter = 100;
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.timon.y == 53 && stage.spawned == 1 && stage.items[0].owner.x == 128 &&
+        stage.items[0].owner.y >= 53 && stage.items[0].owner.y <= 54);
+    assert(bonus_toss_item_release(&stage.items[0], &pool) == 0);
+    stage.special_active = 1;
+    stage.special_ticks = 30;
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.spawned == 2 && stage.items[0].owner.x == 128 &&
+        stage.items[0].owner.y >= 69 && stage.items[0].owner.y <= 70);
+    assert(bonus_toss_stage_release(&stage) == 0);
 }
 
 static void __attribute__((ms_abi)) write_text(const char *text)
@@ -357,6 +445,7 @@ int main(int argc, char **argv)
             sizeof(packed), &dictionary) == 0);
         assert(vga_load_palette(assets.map, assets.map_size, colors) == 0);
         if (game) {
+            check_timon_trunk(&api);
             assert(render_map_tile_pass(assets.map, assets.map_size, 5, 0, 0, 0, expected) == 0);
             assert(render_map_tile_pass(assets.map, assets.map_size, 5, 0, 0, 1, expected) == 0);
             assert(render_map_tile_pass(assets.map, assets.map_size, 4, 0, 8, 0, expected) == 0);

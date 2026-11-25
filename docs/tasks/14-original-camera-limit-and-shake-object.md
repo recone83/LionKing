@@ -30,18 +30,18 @@ and full level camera application remain unported, not silently substituted.
 The diagnostic preview remains unchanged.
 
 ```bash
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_camera_limit.c src/engine/render.c src/engine/sprites.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_camera_limit.c src/engine/render.c src/engine/sprites.c \
     -o build/check_camera_limit
 build/check_camera_limit
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_shake.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_shake.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_shake
 build/check_shake
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_spawn_shake.c build/animation_data.c src/engine/behaviors.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_spawn_shake.c build/animation_data.c src/engine/behaviors.c \
     src/engine/physics.c src/engine/animation.c src/engine/objects.c \
     src/engine/input.c src/engine/render.c src/engine/sprites.c -o build/check_spawn_shake
 build/check_spawn_shake
@@ -52,10 +52,9 @@ immediate constructor effects, tracked-object removal, state reuse and failures.
 
 Migrated modules use ordinary `.h` interfaces and separately compiled `.c`
 implementations, with `include/` and `src/` as include roots.
-Original pseudocode bodies are kept in adjacent `*_legacy.inc` files,
-conditionally included only without `LK_DOS64_NATIVE`. They do not enter the
-native build. The preservation validator expands these reference includes
-and keeps them separate when writing modules. The old pseudocode aggregator
+Original pseudocode bodies are kept separately in `tmp/` as `*_legacy.inc`
+files. They do not enter the native build. The preservation validator reads
+and updates these reference files independently. The pseudocode aggregator
 still textually includes unported modules for reference; it is not built.
 
 Compilation requires MinGW-w64 (`gcc-mingw-w64-x86-64` on Debian/Ubuntu).

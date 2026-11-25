@@ -36,8 +36,8 @@ Focused validation:
 ```
 mkdir -p build
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
-cc -O2 -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-  tools/check_music.c src/engine/music.c src/engine/assets.c src/engine/animation.c \
+cc -O2 -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+  tmp/tools/check_music.c src/engine/music.c src/engine/assets.c src/engine/animation.c \
   src/engine/resources.c src/engine/resource_decoder.c build/animation_data.c \
   -o build/check_music
 build/check_music
@@ -50,5 +50,5 @@ and stopping. Independent libopenmpt inspection reports a duration of
 82nd one-second test block. Address/undefined-behavior sanitizer checks
 pass. A native DOS64 HDA capture contains over three million nonzero
 samples while map movement/jumping continues; Escape exits with zero.
-Host checks that link `src/dos64/start.c` now also need
+Host checks that link `src/start.c` now also need
 `src/engine/music.c`; the normal build already includes it.

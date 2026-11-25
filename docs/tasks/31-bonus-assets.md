@@ -21,7 +21,7 @@ the API 16 heap only when the viewer or bonus stage starts. Missing heap
 support and allocation failures are reported. The loader itself continues to
 use caller-owned storage; the buffer sizes are still fixed.
 
-The host-side `tools/check_bonus_assets.c` diagnostic compares the loader's
+The host-side `tmp/tools/check_bonus_assets.c` diagnostic compares the loader's
 output with independent EPF reads, exercises errors and retries, verifies the
 bonus map palette and all stage layers, renders every frame of the sprite
 banks, checks that both effects produce PCM, and checks both music tracks
@@ -51,8 +51,8 @@ archive at `data/LIONKING.EPF`:
 ```bash
 cc -O2 -g -std=c99 -Wall -Wextra -Werror \
     -fsanitize=address,undefined -fno-omit-frame-pointer \
-    -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_bonus_assets.c src/engine/bonus.c src/engine/resources.c src/engine/resource_decoder.c \
+    -Iinclude -Isrc \
+    tmp/tools/check_bonus_assets.c src/engine/bonus.c src/engine/resources.c src/engine/resource_decoder.c \
     src/engine/sprites.c src/libs/vga.c src/engine/tiles.c \
     src/engine/tile_blitters.c src/engine/music.c -o build/check_bonus_assets
 build/check_bonus_assets
@@ -64,10 +64,10 @@ The executable also accepts `--bonus-check`: it loads the stage resources and
 checks the map palette/layer, sprite frames, both music tracks and both effects.
 It reports success or errors in `LIONKING.LOG`, then exits; it does not start a
 bonus game. The host test
-`tools/check_bonus_entry.c` covers this entry point and missing/corrupt archive
+`tmp/tools/check_bonus_entry.c` covers this entry point and missing/corrupt archive
 failures. Compile it using the source list in the
-[frontend test instructions](02-main-menu-and-loading-screen.md), replacing
-`tools/check_frontend.c` with `tools/check_bonus_entry.c`, adding `-Itools`,
+[frontend test instructions](./02-main-menu-and-loading-screen.md), replacing
+`tmp/tools/check_frontend.c` with `tmp/tools/check_bonus_entry.c`, adding `-Itmp/tools`,
 and run it normally, with `--missing`, and with `--corrupt`.
 
 To play BUG TOSS directly, run `bash build.sh --bug-toss` from the project
@@ -87,8 +87,14 @@ and the separate special-throw timer starting at 500. The latter starts a
 45-tick animation and throws a reward at Y+16 when its counter reaches 30.
 The normal interval uses a separate count of catches since the last speed
 change; at 20 catches the speed changes and the spawn counter resets.
-Timon waits 13 ticks when entering a movement phase and 14 ticks on a turn
-before advancing horizontally, while his throw counter continues advancing.
+The rare type-3 override also uses this interval counter, not the separate
+total caught count (`0x24bbe`).
+Timon waits 13 ticks at startup and after a special throw, and 14 ticks on a
+turn, before advancing horizontally. Ordinary movement phases restart without
+the 13-tick delay; his throw counter continues advancing during those waits.
+During movement, his height follows the `BONUS.MAP` layer 4 ground contours
+from `CONTOUR.CON`, matching the original ground probe at `0xa6ff`; unsupported
+positions use its fixed-point gravity. Dropped items inherit his adjusted height.
 At each new movement phase the original chooses a random turn with probability
 1/4; this can produce closely spaced reversals. The turn script advances once
 when the turn starts, before the next regular animation update. At a boundary
@@ -120,13 +126,24 @@ a roar reward adds eight and its updated maximum is carried into LEVEL2,
 as are lives and continues. The remaining in-level end-state path at
 `0x243f9`/`0x24460` is not fully simulated; the port transitions directly
 to the separate result screen. See the
-[LEVEL1-to-LEVEL2 transition](30-level-transition.md) notes for remaining
+[LEVEL1-to-LEVEL2 transition](./30-level-transition.md) notes for remaining
 Level 2 limitations.
 
 The host `check_bonus_entry --game` test compares the background composition
-and checks that Pumbaa and Timon are visible, while `--game-complete` also
+and checks that Pumbaa and Timon are visible. It also checks measured trunk
+heights from the real map, movement in both directions, a turn, and normal and
+special drop heights; `--game-complete` also
 checks that falling items appear and compares the first result frame. The
 item test checks result-clock thresholds, counts and duration separately.
+
+The original fall routine at `0x24dcf` accelerates before integrating 16.16
+position and caps downward speed at seven pixels per logic tick. Its kind 0
+bug starts at `0xb000` with acceleration `0x1e00`; kinds 1 and 2 use
+`0x3800`/`0x1c00` and `0x1000`/`0x600`, respectively. The port uses the
+same values and nominal logic clock. Starting at the initial velocity,
+covering 160 pixels takes 47, 52 and 114 updates respectively; collision can
+end the visible fall earlier. The item test checks fixed-point positions
+and these travel times for all three bug kinds.
 
 ## Interactive asset view
 
@@ -169,7 +186,8 @@ gates, simultaneous inputs and nine-tick turnaround delay. It runs the
 original animation programs at DS `0x4c86`, `0x4c94`, `0x4ca2`, and `0x4cb0`
 against Pumbaa's original sprite bank. The action at `0x242d7` uses the
 original `0x4c6a` animation, `BURP` sound, 56-tick countdown and random shake
-window. It sets the stage signal to 0 while running, then 2 for one update
+window. The last shake value remains until the action ends, as in `0x2432d`.
+It sets the stage signal to 0 while running, then 2 for one update
 before returning it to 1. The viewer uses the existing game clock and sound
 setting, but there are no objects to respond to that signal in the viewer or
 inspection mode. The gameplay stage now drives the items with that stage signal.
@@ -191,15 +209,15 @@ animation data:
 mkdir -p build
 perl tools/extract_animation.pl bin/obj2_data.bin > build/animation_data.c
 cc -O2 -g -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -fno-omit-frame-pointer -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_bonus_toss.c src/engine/bonus_toss.c src/engine/animation.c \
+    -fno-omit-frame-pointer -Iinclude -Isrc \
+    tmp/tools/check_bonus_toss.c src/engine/bonus_toss.c src/engine/animation.c \
     src/engine/render.c src/engine/sprites.c build/animation_data.c \
     -o build/check_bonus_toss
 build/check_bonus_toss
 
 cc -O2 -g -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -fno-omit-frame-pointer -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_bonus_toss_item.c src/engine/bonus_toss_item.c \
+    -fno-omit-frame-pointer -Iinclude -Isrc \
+    tmp/tools/check_bonus_toss_item.c src/engine/bonus_toss_item.c \
     src/engine/bonus_toss_stage.c src/engine/bonus_toss.c \
     src/engine/animation.c src/engine/render.c \
     src/engine/physics.c src/engine/sprites.c build/animation_data.c \

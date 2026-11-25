@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "ostrich_route.h"
 #include "animation_data.h"
 
@@ -59,4 +58,3 @@ int engine_ostrich_route_tick(ENGINE_OSTRICH_ROUTE *route, short distance,
     route->offset += 4;
     return ENGINE_OSTRICH_EVENT_READY;
 }
-#endif

@@ -37,7 +37,7 @@ the repeated LEVEL5 row-21 threshold. Level-specific extra horizontal
 offsets from unported world effects are not yet supplied. These previews
 do not migrate enemies, platforms, hazards or palette effects.
 
-`tools/check_map_collision.c` additionally verifies row-profile thresholds,
+`tmp/tools/check_map_collision.c` additionally verifies row-profile thresholds,
 tile flipping/wrapping, exact BLK frame copies and cadence, and unchanged
 bytes outside the animated destinations. At a fixed starting camera,
 21 ticks produced five substitutions and 7675 visible pixel changes

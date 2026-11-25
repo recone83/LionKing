@@ -3,7 +3,7 @@
 #include <string.h>
 #include "mock_layers.h"
 /* Exercise the private scene-layer compositor without exporting a test-only API. */
-#include "../src/dos64/start.c"
+#include "../../src/start.c"
 
 static DOS64_API test_api;
 static unsigned char expected_full[64000], expected_background[64000], actual_background[64000];

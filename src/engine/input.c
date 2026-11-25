@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "input.h"
 
 void input_initialize(ENGINE_INPUT *input)
@@ -49,6 +48,3 @@ int input_poll_controls(ENGINE_INPUT *input, const DOS64_INPUT *keys)
     input->held = held;
     return 0;
 }
-#else
-#include "input_legacy.inc"
-#endif

@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "animation.h"
 
 static unsigned int word(const unsigned char *p)
@@ -254,6 +253,3 @@ int animation_program_step(ANIMATION_PROGRAM *program, RENDER_NODE *node,
     }
     return -1;
 }
-#else
-/* The exported FUN_000062c0 remains in recovered/block_04000.c. */
-#endif

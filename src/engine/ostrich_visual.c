@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "ostrich_visual.h"
 #include "animation_data.h"
 
@@ -124,4 +123,3 @@ int engine_ostrich_visual_release(ENGINE_OSTRICH_VISUAL *visual)
     }
     return 0;
 }
-#endif

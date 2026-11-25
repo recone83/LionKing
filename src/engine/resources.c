@@ -1,6 +1,3 @@
-/* Extracted pseudocode; not yet compilable. */
-
-#ifdef LK_DOS64_NATIVE
 #include "resources.h"
 
 static unsigned int read32(const unsigned char *p)
@@ -173,6 +170,3 @@ finish:
     *loaded = size;
     return 0;
 }
-#else
-#include "resources_legacy.inc"
-#endif

@@ -95,13 +95,13 @@ acceptance frame boundaries, speech timing, muted audio, the second zero-life
 event, and audio cleanup. `--map-gameover` exercises
 the countdown after three deaths in the normal map path.
 
-`tools/check_pickups.c` uses real map markers and EPF banks to test healing,
+`tmp/tools/check_pickups.c` uses real map markers and EPF banks to test healing,
 collection persistence, both complete upgrade flights/glows, every
 checkpoint animation frame, sound/query error propagation, three lives
 and all 221 ticks of each death. It also covers upgrade collection at Y21,
 where the original half-height slope divisor would be zero; the native
 flight safely converges along the HUD instead.
-`tools/check_scene.c --map-lifecycle` runs 60 seconds of genuine movement
+`tmp/tools/check_scene.c --map-lifecycle` runs 60 seconds of genuine movement
 and enemy contacts through the actual adapter, without synthetic hits:
 one death, one restored run, two remaining lives, six damage transitions
 and 2650410 submitted PCM frames. All scene regression modes, the unchanged

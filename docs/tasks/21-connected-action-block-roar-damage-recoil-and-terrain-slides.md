@@ -40,6 +40,6 @@ not part of the default young-Simba sequence.
 
 Earlier preview modes are retained: `--jump`, `--flight`, `--deflection`,
 `--emitters`, `--idle`, `--manual`. The focused ground harness is
-`tools/check_player_ground.c`; `build/check_scene` exercises the connected
+`tmp/tools/check_player_ground.c`; `build/check_scene` exercises the connected
 default entry and `--ground-steering` its manual controls.
-`tools/check_player_actions.c` covers the action and terrain block.
+`tmp/tools/check_player_actions.c` covers the action and terrain block.

@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "assets.h"
 
 /* DS:0x744c, loaded by 0x1117c for levels below 6. */
@@ -103,6 +102,3 @@ int assets_load_named_bank(const DOS64_API *api, const char *archive,
     *loaded = size;
     return 0;
 }
-#else
-#include "assets_legacy.inc"
-#endif

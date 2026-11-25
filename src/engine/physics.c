@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "physics.h"
 
 uint32_t engine_add_velocity(uint32_t velocity, uint32_t increment,
@@ -130,6 +129,3 @@ int engine_motion_left(ENGINE_MOTION *motion, RENDER_OWNER *owner)
     integrate(&owner->x, &motion->fraction_x, motion->velocity_x);
     return 0;
 }
-#else
-/* Original helpers remain in recovered/block_08000.c. */
-#endif

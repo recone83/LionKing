@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "ostrich_ride.h"
 #include "animation_data.h"
 
@@ -246,4 +245,3 @@ int engine_ostrich_ride_release(ENGINE_OSTRICH_RIDE *ride, ENGINE_PLAYER_AIR *pl
     *ride = (ENGINE_OSTRICH_RIDE){0};
     return 0;
 }
-#endif

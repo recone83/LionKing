@@ -31,7 +31,7 @@ x86_64-w64-mingw32-gcc -m64 -O2 -Wall -Wextra -Werror \
 Set `MINGW_GCC` to use a different compiler executable. Applications implement
 `int start(const DOS64_API *Api)`. Keep the
 `dos64_entry` entry point and startup object; DOS64 does not support legacy PE
-startup. See [SDK.md](SDK.md) for the API and runtime details.
+startup. See [SDK.md](./SDK.md) for the API and runtime details.
 
 On Windows, keep `bin/bmetal.dll` beside the generated executable. DOS64
 provides the runtime imports through its kernel, so the DLL is not needed there.

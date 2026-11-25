@@ -5,8 +5,8 @@
 The native resource test uses the real supplied archive:
 
 ```bash
-cc -std=c99 -Wall -Wextra -Werror -DLK_DOS64_NATIVE -Iinclude -Isrc \
-    tools/check_epf.c src/engine/resources.c src/engine/resource_decoder.c \
+cc -std=c99 -Wall -Wextra -Werror -Iinclude -Isrc \
+    tmp/tools/check_epf.c src/engine/resources.c src/engine/resource_decoder.c \
     src/engine/sprites.c src/libs/vga.c src/engine/tiles.c src/engine/tile_blitters.c \
     -o build/check_epf
 build/check_epf

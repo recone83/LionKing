@@ -52,6 +52,15 @@ int main(void)
     assert(bonus_toss_player_tick(&player, 0, 0, 0) == 0 && !player.moving);
 
     reset();
+    for (int i = 1; i <= 25; ++i) {
+        assert(bonus_toss_player_tick(&player, 0, 1, 0) == 0);
+        assert(player.owner.x == 100 + 6 * i);
+    }
+    assert(player.owner.x == 250);
+    assert(bonus_toss_player_tick(&player, 0, 1, 0) == 0 && player.owner.x == 256);
+    assert(bonus_toss_player_tick(&player, 0, 1, 0) == 0 && player.owner.x == 256);
+
+    reset();
     for (int i = 0; i < 6; ++i) assert(bonus_toss_player_tick(&player, 1, 0, 0) == 0);
     assert(player.owner.x == 64);
     assert(bonus_toss_player_tick(&player, 1, 1, 1) == 0 && player.owner.x == 64 && !player.moving);
@@ -75,9 +84,10 @@ int main(void)
     assert(sounds == 1 && player.action_used && player.action_active &&
         player.turn_ticks == 56 && player.stage_signal == 0);
     uint32_t expected_random = random_state;
+    unsigned int expected_shake = 0;
     for (int remaining = 56; remaining > 0; --remaining) {
-        unsigned int expected_shake = remaining > 14 && remaining < 46 ?
-            engine_random_byte(&expected_random) & 1 : 0;
+        if (remaining > 14 && remaining < 46)
+            expected_shake = engine_random_byte(&expected_random) & 1;
         assert(bonus_toss_player_tick(&player, 1, 0, 1) == 0);
         assert(player.owner.x == 100 && player.turn_ticks == remaining - 1);
         assert(player.stage_signal == 0 && player.shake == expected_shake &&
@@ -87,10 +97,23 @@ int main(void)
     }
     assert(bonus_toss_player_tick(&player, 0, 0, 1) == 0 && player.stage_signal == 2);
     assert(bonus_toss_player_tick(&player, 0, 0, 1) == 0 &&
-        player.stage_signal == 1 && !player.action_active && sounds == 1);
+        player.stage_signal == 1 && !player.action_active && !player.shake && sounds == 1);
     assert(bonus_toss_player_tick(&player, 0, 0, 1) == 0 && sounds == 1 &&
         player.node->parts == animation_movement_data + 0xb324 - ANIMATION_MOVEMENT_BASE);
     assert(bonus_toss_player_tick(&player, 0, 1, 0) == 0 && player.owner.x == 106);
+
+    reset();
+    assert(bonus_toss_player_tick(&player, 0, 0, 1) == 0);
+    player.turn_ticks = 14;
+    player.shake = 1;
+    for (int i = 0; i < 14; ++i) {
+        assert(bonus_toss_player_tick(&player, 0, 0, 0) == 0);
+        assert(player.shake == 1);
+    }
+    assert(bonus_toss_player_tick(&player, 0, 0, 0) == 0 &&
+        player.stage_signal == 2 && player.shake == 1);
+    assert(bonus_toss_player_tick(&player, 0, 0, 0) == 0 &&
+        player.stage_signal == 1 && player.shake == 0);
 
     reset();
     assert(bonus_toss_player_tick(&player, 1, 0, 0) == 0);

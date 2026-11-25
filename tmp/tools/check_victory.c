@@ -86,7 +86,7 @@ static unsigned int level2_sounds, level1_sounds, sample_error_logged;
 static unsigned int level2_completions;
 static int menu_mode, in_menu;
 static int menu_level2, level2_loading_frame;
-static unsigned int loading2_count, loading2_previous, level2_palette_calls;
+static unsigned int loading2_count, loading2_previous, level2_palette_calls, level2_title_frames;
 static unsigned int menu_visits, menu_returns;
 static unsigned char packed[85438], map[580488], art[65536], speech[65536], notice_font[8192];
 static unsigned char hint_sprite[65536], hint_pixels[64000], hint_expected[64000];
@@ -744,8 +744,14 @@ static void __attribute__((ms_abi)) draw(const DOS64_COLOR *image, unsigned int 
         x == 0 && y == 40 && dw == 640 && dh == 400);
     if (level2_loading_frame) {
         for (unsigned int i = 0; i < 64000; ++i)
-            assert(image[i] == (level2_palette[expected_level2_title[i]] | 0xff000000U));
+            assert(image[i] == (level2_palette[0] | 0xff000000U));
         return;
+    }
+    if (menu_level2 && level2_test && game_ticks && game_ticks <= 2 && !reward_phase) {
+        for (unsigned int i = 0; i < 64000; ++i)
+            if (expected_level2_title[i])
+                assert(image[i] == (level2_palette[expected_level2_title[i]] | 0xff000000U));
+        ++level2_title_frames;
     }
     if (notice_phase) {
         for (unsigned int i = 0; i < 64000; ++i)
@@ -931,8 +937,8 @@ int main(int argc, char **argv)
             level2_completions == 1 && level2_starts == 1 && finished == 1 &&
             menu_visits == 2 && menu_returns == 1 &&
             loading2_count == 74 && loading2_previous == 74 && level2_palette_calls == 1 &&
-            level2_audio_frames > 0 && audio_opens == 6 && audio_stops == 6);
-        puts("PASS: real menu transition loads LEVEL2 with the correct title, palette and monotonic progress");
+            level2_title_frames && level2_audio_frames > 0 && audio_opens == 6 && audio_stops == 6);
+        puts("PASS: real menu transition displays blank LEVEL2 loading and title over the map");
         return 0;
     }
     if (level2_test) {

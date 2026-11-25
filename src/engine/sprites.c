@@ -1,6 +1,3 @@
-/* Extracted pseudocode; not yet compilable. */
-
-#ifdef LK_DOS64_NATIVE
 #include "sprites.h"
 #include "dos64/platform.h"
 
@@ -75,6 +72,3 @@ int render_draw_sprite_remapped(const unsigned char *asset, unsigned int size,
     if (!colors) return -1;
     return draw_sprite(asset, size, frame, x, y, LK_WIDTH, pixels, colors);
 }
-#else
-#include "sprites_legacy.inc"
-#endif

@@ -2,7 +2,7 @@
 
 Glowny [pseiudo.c](../pseiudo.c) jest teraz agregatorem dołączeń i komentarzy.
 Wszystkie 753 definicje eksportu mają jednego właściciela: 228 w
-[libs/](../libs/), 47 w [engine/](../engine/) i 478 tutaj.
+[libs/](../../src/libs), 47 w [engine/](../../src/engine) i 478 tutaj.
 Wspólne deklaracje zachowano w [globals.inc](./globals.inc).
 Dodatkowy [game_main](../engine/main.c) został odtworzony z asemblera, nie z
 eksportu; jest liczony osobno i nie zmienia powyższych 753 definicji.
@@ -34,9 +34,9 @@ Oryginalne nazwy, linie i znormalizowane adresy są w
 [FUNCTIONS.tsv](../libs/FUNCTIONS.tsv). Nie poprawiono ciał, błędnych stałych,
 sygnatur ani globali. Te pliki nie są samodzielnymi jednostkami kompilacji.
 Znaczące komentarze pozostają też w niezmienionym
-[pseiudo.c.backup](../../pseiudo.c.backup).
+[pseiudo.c.backup](../pseiudo.c.backup).
 
-Walidacja z katalogu projektu: `perl tools/split_pseudocode.pl --check`.
+Walidacja z katalogu projektu: `perl tmp/tools/split_pseudocode.pl --check`.
 Sprawdza zachowanie wszystkich definicji i deklaracji, nie działanie gry.
 `--complete` odtwarza pełny podział; zwykłe uruchomienie stosuje manifest.
 Parser uwzględnia również wielowierszowe sygnatury; poprzedni licznik 750

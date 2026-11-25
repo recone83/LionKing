@@ -33,7 +33,7 @@ and swing-object states remain unported. An encountered unported edge
 branch reports an error rather than inventing a substitute.
 Diagnostics and exit measurements remain in `LIONKING.LOG`.
 
-`tools/check_map_collision.c` verifies the real terrain at X160/X400/X880,
+`tmp/tools/check_map_collision.c` verifies the real terrain at X160/X400/X880,
 connected running across six height changes, jumping and map landing,
 plus synthetic contour/tag boundary checks. Compile it with the player
 test source list plus `resources.c` and `resource_decoder.c`.

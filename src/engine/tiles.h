@@ -30,6 +30,9 @@ typedef struct {
 int engine_map_collision_initialize(ENGINE_MAP_COLLISION *collision,
     const unsigned char *map, unsigned int size,
     const unsigned char *contours, unsigned int contour_size);
+int engine_map_collision_initialize_layer(ENGINE_MAP_COLLISION *collision,
+    const unsigned char *map, unsigned int size, unsigned int layer,
+    const unsigned char *contours, unsigned int contour_size);
 int engine_map_ground(const ENGINE_MAP_COLLISION *collision, short x, short y,
     ENGINE_MAP_GROUND *ground);
 int engine_map_ground_ostrich(const ENGINE_MAP_COLLISION *collision, short x, short y,

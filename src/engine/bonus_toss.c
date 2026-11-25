@@ -57,7 +57,6 @@ int bonus_toss_player_tick(BONUS_TOSS_PLAYER *player, int left, int right, int a
     if (player->action_active) {
         if (animation_program_step(&player->animation, player->node, &player->owner, 0, 0) != 0)
             return -1;
-        player->shake = 0;
         if (player->turn_ticks > 14 && player->turn_ticks < 46)
             player->shake = (unsigned char)(engine_random_byte(player->random) & 1);
         if (player->turn_ticks) {

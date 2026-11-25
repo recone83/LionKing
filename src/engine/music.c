@@ -1,4 +1,3 @@
-#ifdef LK_DOS64_NATIVE
 #include "music.h"
 
 static unsigned int read16(const unsigned char *p)
@@ -441,5 +440,4 @@ void music_output_stop(MUSIC_OUTPUT *output)
     if (output && output->opened) {
         output->api->Audio.Stop(); output->opened = 0;
     }
-    #endif
 }

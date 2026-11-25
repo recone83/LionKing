@@ -4,42 +4,42 @@ use FindBin;
 use File::Spec;
 use File::Path qw(make_path);
 
-chdir File::Spec->catdir($FindBin::Bin, '..', 'src') or die "Cannot enter source directory: $!";
+chdir File::Spec->catdir($FindBin::Bin, '..', '..', 'src') or die "Cannot enter source directory: $!";
 my $check_only = @ARGV == 1 && $ARGV[0] eq '--check';
 my $complete = @ARGV == 1 && $ARGV[0] eq '--complete';
-die "Usage: perl tools/split_pseudocode.pl [--check|--complete]\n"
+die "Usage: perl tmp/tools/split_pseudocode.pl [--check|--complete]\n"
     if @ARGV && !$check_only && !$complete;
+
+sub physical_path {
+    my ($path) = @_;
+    if ($path =~ m{^(engine|libs)/([a-z_]+)\.c$}) {
+        my $legacy = "../tmp/$1/${2}_legacy.inc";
+        return $legacy if -f $legacy;
+    }
+    return "../tmp/$path" if $path =~ m{^recovered/};
+    return "../tmp/$path" if $path =~ m{^libs/} && $path ne 'libs/vga.c';
+    return "../tmp/$path" if $path =~ m{^engine/(?:audio_config\.c|audio_control\.c|main\.c|[a-z_]+_legacy\.inc)$};
+    return $path;
+}
+
+sub include_path {
+    my ($path) = @_;
+    my $physical = physical_path($path);
+    return $physical =~ s{^\.\./tmp/}{}r if $physical =~ m{^\.\./tmp/};
+    return "../src/$physical";
+}
 
 sub read_text {
     my ($path) = @_;
-    open my $file, '<:raw', $path or die "Cannot read $path: $!";
+    open my $file, '<:raw', physical_path($path) or die "Cannot read $path: $!";
     local $/;
     my $text = <$file>;
-    if ($path =~ /\.c$/) {
-        my ($directory) = $path =~ m{^(.*)/};
-        $text =~ s{^#include "([a-z_]+_legacy\.inc)"\n}
-            {read_text("$directory/$1")}gme;
-    }
     return $text;
 }
 
 sub write_text {
     my ($path, $text) = @_;
-    if ($path =~ /\.c$/ && -e $path) {
-        open my $current, '<:raw', $path or die "Cannot read $path: $!";
-        local $/;
-        my $existing = <$current>;
-        if ($existing =~ /^#include "([a-z_]+_legacy\.inc)"$/m) {
-            my $name = $1;
-            my ($directory) = $path =~ m{^(.*)/};
-            my $legacy;
-            $text =~ s{(^#else\n)(.*)(^#endif\s*\z)}
-                {$legacy = $2; $1 . "#include \"$name\"\n" . $3}mse
-                or die "Cannot preserve legacy branch in $path\n";
-            write_text("$directory/$name", $legacy);
-        }
-    }
-    open my $file, '>:raw', $path or die "Cannot write $path: $!";
+    open my $file, '>:raw', physical_path($path) or die "Cannot write $path: $!";
     print {$file} $text or die "Cannot write $path: $!";
     close $file or die "Cannot close $path: $!";
 }
@@ -71,8 +71,6 @@ sub original_names {
 
 sub definitions {
     my ($text) = @_;
-    $text =~ s{^#ifdef LK_DOS64_NATIVE\n.*?^#else\n}
-        {my $masked = $&; $masked =~ s/[^\n]/ /g; $masked}gmse;
     my %result;
     while ($text =~ /^((?:[A-Za-z_][A-Za-z0-9_ \t*]*\n)?[^\n;{}]*\b((?:thunk_)?FUN_[0-9a-f]{8}|[a-z][a-z0-9_]+)\([^;{}]*?\)\n(?:\s*\n)*\{.*?^\})/msg) {
         my ($body, $symbol) = ($1, $2);
@@ -90,13 +88,17 @@ sub definitions {
     return \%result;
 }
 
-my $backup = read_text('../pseiudo.c.backup');
+my $backup = read_text('../tmp/pseiudo.c.backup');
 my $source = definitions($backup);
 die "Expected 753 backup definitions, got " . scalar(keys %$source) . "\n"
     unless keys(%$source) == 753;
 
-my @paths = ('pseiudo.c', sort(glob('libs/*.c')), sort(glob('engine/*.c')),
-    sort(glob('recovered/*.c')), sort(glob('recovered/*.inc')));
+my $aggregator_path = '../tmp/pseiudo.c';
+my @paths = ($aggregator_path, sort(glob('libs/*.c')), sort(glob('engine/*.c')),
+    map { s{^\.\./tmp/}{}r } sort(glob('../tmp/libs/*.c')),
+    map { s{^\.\./tmp/}{}r } sort(glob('../tmp/engine/*.c')),
+    map { s{^\.\./tmp/}{}r } sort(glob('../tmp/recovered/*.c')),
+    map { s{^\.\./tmp/}{}r } sort(glob('../tmp/recovered/*.inc')));
 my %texts = map { $_ => read_text($_) } @paths;
 my $first_source_start = (sort { $a <=> $b } map { $_->{start} } values %$source)[0];
 my $source_globals = substr($backup, 0, $first_source_start);
@@ -149,7 +151,7 @@ sub validate {
             die "Global declarations differ from backup\n"
                 unless trim_end(original_names($files->{'recovered/globals.inc'}))
                     eq trim_end($source_globals);
-            my $aggregator = $files->{'pseiudo.c'};
+            my $aggregator = $files->{$aggregator_path};
             $aggregator =~ s{/\*.*?\*/|//[^\n]*}{}gs;
             $aggregator =~ s/^#include "[^"]+"\n//mg;
             if ($aggregator =~ /(\S[^\n]*)/) {
@@ -165,9 +167,10 @@ sub validate {
             }
         }
         for my $path (keys %$files) {
-            next if $path eq 'pseiudo.c';
+            next if $path eq $aggregator_path;
+            my $include = include_path($path);
             die "Module not included: $path\n"
-                unless $files->{'pseiudo.c'} =~ /^#include "\Q$path\E"$/m;
+                unless $files->{$aggregator_path} =~ /^#include "\Q$include\E"$/m;
         }
     }
     return (\%owners, \%counts);
@@ -175,7 +178,7 @@ sub validate {
 
 validate(\%texts, 0);
 if ($complete) {
-    my $remaining = definitions($texts{'pseiudo.c'});
+    my $remaining = definitions($texts{$aggregator_path});
     for my $old (sort { $source->{$a}{line} <=> $source->{$b}{line} } keys %$remaining) {
         die "Existing routing for remaining definition $old\n" if exists $forward{$old};
         my ($offset) = $old =~ /([0-9a-f]{8})$/;
@@ -219,19 +222,20 @@ unless ($check_only) {
             {defined $1 ? $1 : ($forward{$2} // $2)}gse;
     }
     for my $path (sort keys %texts) {
-        next if $path eq 'pseiudo.c';
-        next if $texts{'pseiudo.c'} =~ /^#include "\Q$path\E"$/m;
-        $texts{'pseiudo.c'} =~ s/(#include "libs\/libc_conio\.c"\n)/$1#include "$path"\n/
+        next if $path eq $aggregator_path;
+        my $include = include_path($path);
+        next if $texts{$aggregator_path} =~ /^#include "\Q$include\E"$/m;
+        $texts{$aggregator_path} =~ s/(#include "libs\/libc_conio\.c"\n)/$1#include "$include"\n/
             or die "Cannot find module include anchor\n";
     }
     if ($complete && !exists $texts{'recovered/globals.inc'}) {
-        my $include_start = index($texts{'pseiudo.c'}, '#include ');
+        my $include_start = index($texts{$aggregator_path}, '#include ');
         die "Cannot locate global declaration boundary\n" if $include_start < 0;
         $texts{'recovered/globals.inc'} =
-            substr($texts{'pseiudo.c'}, 0, $include_start, '');
-        $texts{'pseiudo.c'} =
-            "#include \"recovered/globals.inc\"\n" . $texts{'pseiudo.c'};
-        $texts{'pseiudo.c'} =~ s/\n{3,}/\n\n/g;
+            substr($texts{$aggregator_path}, 0, $include_start, '');
+        $texts{$aggregator_path} =
+            "#include \"recovered/globals.inc\"\n" . $texts{$aggregator_path};
+        $texts{$aggregator_path} =~ s/\n{3,}/\n\n/g;
     }
 }
 
@@ -240,7 +244,7 @@ my $inventory = "source_line\tsymbol\tgroup\tsource_address\tnormalized_address\
 for my $old (sort { $source->{$a}{line} <=> $source->{$b}{line} }
     grep { exists $source->{$_} } keys %$owners) {
     my $path = $owners->{$old};
-    next if $path eq 'pseiudo.c';
+    next if $path eq $aggregator_path;
     my ($group) = $path =~ m{/([^/]+)\.c$};
     my ($offset) = $old =~ /([0-9a-f]{8})$/;
     $inventory .= join("\t", $source->{$old}{line}, $old, $group,
@@ -253,9 +257,9 @@ if ($check_only) {
         unless read_text('libs/FUNCTIONS.tsv') eq $inventory;
 } else {
     make_path('engine');
-    make_path('recovered') if $complete;
+    make_path('../tmp/recovered') if $complete;
     for my $path (sort keys %texts) {
-        write_text($path, $texts{$path}) unless -e $path && read_text($path) eq $texts{$path};
+        write_text($path, $texts{$path}) unless -e physical_path($path) && read_text($path) eq $texts{$path};
     }
     write_text('libs/FUNCTIONS.tsv', $inventory);
     if ($complete) {
@@ -265,5 +269,5 @@ if ($check_only) {
     }
 }
 print "PASS: 753 definitions, no loss/overlap, unchanged signatures/bodies after reverse renaming.\n";
-print "Reconstructed game_main tracked separately; validate with tools/check_main.pl.\n";
+print "Reconstructed game_main tracked separately; validate with tmp/tools/check_main.pl.\n";
 print "$_: $counts->{$_} definitions\n" for sort keys %$counts;

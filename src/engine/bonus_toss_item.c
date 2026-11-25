@@ -62,9 +62,9 @@ int bonus_toss_select_item(BONUS_TOSS_SELECTOR *selector, int force_reward,
         kind = engine_random_byte(selector->random) & 1;
         if ((engine_random_byte(selector->random) & 7) == 0) kind = 2;
     }
-    if (selector->progress >= 99) kind = 3;
+    if (selector->interval_progress >= 99) kind = 3;
     selection->kind = (unsigned char)kind;
-    if (kind >= 3 && selector->progress < 99) {
+    if (kind >= 3 && selector->interval_progress < 99) {
         selection->reset_timer = 1;
         selection->timer = -50;
     }

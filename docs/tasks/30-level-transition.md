@@ -147,7 +147,7 @@ positions at least 320 pixels beyond its base are sampled 320 pixels earlier.
 This keeps the ostrich and rider supported across the repeating map section.
 Both foreground passes wrap at the original 512-pixel boundary; the parallax
 background uses the accumulated 16-bit scroll offset, retained after dismount
-and reset on level restart. `tools/check_level2.c` checks both real route
+and reset on level restart. `tmp/tools/check_level2.c` checks both real route
 sections pixel-for-pixel at all camera phases and verifies background wrapping;
 an additional map copy with foreground flags set exercises both draw passes.
 The full ride tests also check these render arguments through the gameplay loop.
@@ -159,7 +159,7 @@ on death, dismount or exit. The full ride test checks their timing and
 rendered pixels; `--level2-ride-hint-escape` checks cleanup while both are
 visible. A visual comparison against the original in QEMU remains outstanding.
 
-`tools/check_level2.c` validates the decoded map and contour data, stage-2
+`tmp/tools/check_level2.c` validates the decoded map and contour data, stage-2
 background rendering, starting position and completion boundary, the title
 frame, the exact rendered pixels and ground support of a real tree nest,
 all 21 original sprite banks, and
@@ -167,19 +167,19 @@ eight seconds of non-silent `LION2.AMF` output. It also checks the real
 ostrich marker locations, constructor descriptors, full obstacle schedules,
 spawn positions and route termination, including simulated scrolling and
 multiple wraps; this is not an ostrich gameplay test.
-`tools/check_level2_ostrich.c` exercises actual ostrich sprite banks and
+`tmp/tools/check_level2_ostrich.c` exercises actual ostrich sprite banks and
 animation frames, pose changes, all obstacle events from both routes,
 collision priority and resource-exhaustion cleanup. It also simulates both
 complete schedules through the obstacle controller with multiple camera wraps,
 and verifies rollback and retry of a two-obstacle event. These are component
 tests, not a playable ride or a full gameplay-loop test.
-`tools/check_player_ostrich.c` checks the rider states, jump velocity threshold,
+`tmp/tools/check_player_ostrich.c` checks the rider states, jump velocity threshold,
 duck animation changes, immunity, collision reactions and both dismount paths.
 `check_victory --level2-ride-jump-input` exercises held, early and correctly
 timed presses through the actual input and gameplay loop.
-`tools/check_level2_bird.c` additionally checks the idle bodies at both real
+`tmp/tools/check_level2_bird.c` additionally checks the idle bodies at both real
 markers, including rendering, culling, respawn and restart.
-`tools/check_victory.c` checks
+`tmp/tools/check_victory.c` checks
 that LEVEL1 completion transfers the remaining lives and continues, and that
 the bonus round runs before Level 2 when selected, while Escape during BUG
 TOSS returns to the main menu without starting Level 2. Its `--level2` case
@@ -203,12 +203,12 @@ check that all 9 and 18 obstacles respectively are passed without a hit,
 including the combined obstacles, camera wraps and dismount. The tests position
 Simba near each marker and do not replace manual play or visual comparison.
 The `--menu-level2` case runs the real menu-to-Level-2 transition, checks the
-loading-title pixels against the original art and Level 2 palette, and verifies
+blank loading frames and title-overlay pixels against the original art and Level 2 palette, and verifies
 that loading progress increases through all 21 level-specific banks.
 The `--level2` and `--level2-sound-failure` cases check the sound slot mapping
 and missing-sample error; the host test must be linked with
 `-Wl,--wrap=resources_load_entry` in addition to its other wrappers.
-`tools/check_level2_bird.c` checks real marker counts and sprite rendering,
+`tmp/tools/check_level2_bird.c` checks real marker counts and sprite rendering,
 bird idle choices, contact and flight timing, culling, restart and sound errors;
 it also checks each of the 34 real monkey markers, their idle banks and
 64-update frame sequences, mirroring, culling and restart, plus the two
@@ -219,17 +219,17 @@ velocity bytes and timing, player-state handoff, sound and bounds failures.
 Roar tests cover both directions of all five real variant changes, distance
 boundaries, timed motion, actual player-roar updates, subsequent throws,
 sound failure and respawn.
-`tools/check_level2_bird.c` additionally exercises tail capture, both facing
+`tmp/tools/check_level2_bird.c` additionally exercises tail capture, both facing
 directions and release modes, re-grab delay, and all 14 giraffe markers.
-`tools/check_level2_water.c` exercises actual LEVEL2 water collision through
+`tmp/tools/check_level2_water.c` exercises actual LEVEL2 water collision through
 the player update, splash sound, lost life and restart signal. It also checks
 falls beneath the giraffe-area slopes in both directions. The original
 `0x4e22` bottom boundary (map bottom plus 40 pixels, except level 4) triggers
 the lost-life restart when a fall misses the water markers; it does not invent
 a splash where the map has none. `check_victory --level2-fall` verifies this
 restart and life loss through the real gameplay loop.
-`tools/check_level2_life.c` checks the original constructor-table equivalence,
+`tmp/tools/check_level2_life.c` checks the original constructor-table equivalence,
 real marker and sprite, collection, culling, life cap and sound failure.
-`tools/check_level2_rhino.c` checks all five original marker targets, rendering,
+`tmp/tools/check_level2_rhino.c` checks all five original marker targets, rendering,
 collision gates, animation, delayed launch, original velocity data, the
 guided-air handoff, culling and error paths.

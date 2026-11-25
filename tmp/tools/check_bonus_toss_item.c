@@ -18,12 +18,93 @@ static int burp(void *context)
     return 0;
 }
 
+static int flat_ground(void *context, short x, short y, short *supported, short *delta_y)
+{
+    (void)context;
+    (void)x;
+    (void)y;
+    *supported = -1;
+    *delta_y = 0;
+    return 0;
+}
+
+static int test_ground(void *context, short x, short y, short *supported, short *delta_y)
+{
+    (void)x;
+    (void)y;
+    int mode = *(int *)context;
+    if (mode < 0) return -1;
+    *supported = (short)mode;
+    *delta_y = mode ? 2 : 0;
+    return 0;
+}
+
+static void check_timon_gravity(void)
+{
+    RENDER_POOL stage_pool;
+    BONUS_TOSS_STAGE stage;
+    unsigned char lives = 3;
+    unsigned int continues = 1;
+    unsigned short roar = 16;
+    int mode = 0;
+    assert(bonus_toss_stage_initialize(&stage, &stage_pool, 0x010101, &lives, &continues,
+        &roar, burp, 0, 0, 0) == -1);
+    assert(bonus_toss_stage_initialize(&stage, &stage_pool, 0x010101, &lives, &continues,
+        &roar, burp, 0, test_ground, &mode) == 0);
+    for (unsigned int i = 0; i < 3; ++i) {
+        stage.move_ticks = 2;
+        stage.move_delay = 1;
+        assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+        assert(stage.timon.y == (i == 2 ? 49 : 48));
+    }
+    assert(stage.timon_vertical_speed == 0xea00);
+    mode = -1;
+    stage.move_ticks = 2;
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == -1);
+    mode = 1;
+    stage.move_ticks = 2;
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.timon.y == 51 && stage.timon_vertical_speed == 0);
+    assert(bonus_toss_stage_release(&stage) == 0);
+}
+
 static void reset(void)
 {
     render_initialize_nodes(&pool);
     random_state = 0x010101;
     assert(bonus_toss_player_initialize(&player, &pool, &random_state, burp, 0) == 0);
     assert(bonus_toss_player_tick(&player, 0, 0, 0) == 0);
+}
+
+static void check_original_fall_trajectories(void)
+{
+    static const struct {
+        unsigned char kind;
+        unsigned short positions[4];
+        unsigned short fractions[4];
+        unsigned int ticks_to_160;
+    } cases[] = {
+        {0, {13, 38, 75, 123}, {0x5200, 0x5c00, 0x1e00, 0x9800}, 47},
+        {1, {8, 27, 57, 98}, {0x3400, 0x5800, 0x6c00, 0x7000}, 52},
+        {2, {1, 6, 12, 21}, {0xea00, 0x2c00, 0xc600, 0xb800}, 114}
+    };
+    for (unsigned int i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        reset();
+        assert(bonus_toss_item_initialize(&item, &pool, (RENDER_OWNER){200, 0},
+            cases[i].kind, &random_state) == 0);
+        for (unsigned int tick = 1; tick <= cases[i].ticks_to_160; ++tick) {
+            assert(bonus_toss_item_tick(&item, &pool, player.node, 1, 0, &result) == 0);
+            assert(result == BONUS_TOSS_ITEM_FALLING);
+            if (tick <= 40 && tick % 10 == 0) {
+                unsigned int sample = tick / 10 - 1;
+                assert(item.owner.y == cases[i].positions[sample]);
+                assert(item.motion.fraction_y == cases[i].fractions[sample]);
+            }
+            if (tick < cases[i].ticks_to_160) assert(item.owner.y < 160);
+        }
+        assert(item.owner.y >= 160);
+        assert(bonus_toss_item_release(&item, &pool) == 0);
+    }
 }
 
 static void check_selector(void)
@@ -65,7 +146,12 @@ static void check_selector(void)
     selector.progress = 99;
     random_state = 0x010101;
     assert(bonus_toss_select_item(&selector, 1, &selection) == 0);
+    assert(selection.kind == 2 && !selection.reset_timer);
+    selector.interval_progress = 99;
+    random_state = 0x010101;
+    assert(bonus_toss_select_item(&selector, 1, &selection) == 0);
     assert(selection.kind == 3 && !selection.reset_timer);
+    selector.interval_progress = 0;
 
     unsigned int hazards = 0, rewards = 0, fallback = 0;
     for (uint32_t seed = 1; seed < 65536; ++seed) {
@@ -160,7 +246,7 @@ static void check_stage(void)
     unsigned short max_roar = 16;
     uint32_t seed = 0x010101;
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     assert(stage.timon.x == 160 && stage.timon.y == 48 &&
         stage.spawn_counter == -120 && stage.selector.speed == 15);
     assert(stage.move_delay >= 13);
@@ -174,7 +260,7 @@ static void check_stage(void)
     assert(bonus_toss_stage_release(&stage) == 0);
 
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     stage.timon.x = 256;
     stage.direction_left = 0;
     stage.move_ticks = 1;
@@ -205,7 +291,7 @@ static void check_stage(void)
 
     max_roar = 32;
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     assert(stage.selector.reward_count == 32);
     assert(bonus_toss_item_initialize(&stage.items[0], &stage_pool,
         (RENDER_OWNER){100, 214}, 5, &stage.random) == 0);
@@ -215,7 +301,7 @@ static void check_stage(void)
     max_roar = 16;
 
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     stage.selector.interval_progress = 20;
     stage.spawn_counter = 100;
     assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
@@ -224,7 +310,7 @@ static void check_stage(void)
     assert(bonus_toss_stage_release(&stage) == 0);
 
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     assert(bonus_toss_item_initialize(&stage.items[0], &stage_pool,
         (RENDER_OWNER){200, 208}, 2, &stage.random) == 0);
     assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0 &&
@@ -235,7 +321,7 @@ static void check_stage(void)
     assert(bonus_toss_stage_release(&stage) == 0);
 
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     assert(bonus_toss_item_initialize(&stage.items[0], &stage_pool,
         (RENDER_OWNER){200, 209}, 7, &stage.random) == 0);
     assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0 &&
@@ -246,7 +332,7 @@ static void check_stage(void)
     continues = 1;
     seed = 0x010101;
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, seed,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     const unsigned char rewards[] = {3, 4, 5};
     for (unsigned int i = 0; i < sizeof(rewards); ++i) {
         assert(bonus_toss_item_initialize(&stage.items[0], &stage_pool,
@@ -263,7 +349,7 @@ static void check_stage(void)
     lives = 3;
     continues = 1;
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, 0x010101,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     assert(bonus_toss_item_initialize(&stage.items[0], &stage_pool,
         (RENDER_OWNER){100, 214}, 7, &stage.random) == 0);
     assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0 &&
@@ -271,7 +357,7 @@ static void check_stage(void)
     assert(bonus_toss_stage_release(&stage) == 0);
 
     assert(bonus_toss_stage_initialize(&stage, &stage_pool, 0x010101,
-        &lives, &continues, &max_roar, burp, 0) == 0);
+        &lives, &continues, &max_roar, burp, 0, flat_ground, 0) == 0);
     stage.selector.progress = 109;
     assert(bonus_toss_item_initialize(&stage.items[0], &stage_pool,
         (RENDER_OWNER){100, 214}, 0, &stage.random) == 0);
@@ -288,7 +374,7 @@ static void check_timon_turns(void)
     unsigned int continues = 1;
     unsigned short roar = 16;
     assert(bonus_toss_stage_initialize(&stage, &pool, 0x010101,
-        &lives, &continues, &roar, burp, 0) == 0);
+        &lives, &continues, &roar, burp, 0, flat_ground, 0) == 0);
 
     uint32_t seed = 1;
     for (;; ++seed) {
@@ -341,6 +427,41 @@ static void check_timon_turns(void)
     assert(bonus_toss_stage_release(&stage) == 0);
 }
 
+static void check_timon_phase_and_spawn_timing(void)
+{
+    RENDER_POOL stage_pool;
+    BONUS_TOSS_STAGE stage;
+    unsigned char lives = 3;
+    unsigned int continues = 1;
+    unsigned short roar = 16;
+    assert(bonus_toss_stage_initialize(&stage, &stage_pool, 0x010101,
+        &lives, &continues, &roar, burp, 0, flat_ground, 0) == 0);
+
+    uint32_t seed = 1;
+    for (;; ++seed) {
+        uint32_t state = seed;
+        engine_random_byte(&state);
+        engine_random_byte(&state);
+        if ((engine_random_byte(&state) & 3) != 0) break;
+    }
+    stage.random = seed;
+    stage.timon.x = 160;
+    stage.direction_left = 0;
+    stage.move_ticks = 0;
+    stage.move_delay = 0;
+    stage.spawn_counter = 34;
+    stage.timon_vertical_speed = 0x20000;
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.timon.x == 160 && stage.move_delay == 0 &&
+        stage.spawn_counter == 34 && stage.timon_vertical_speed == 0);
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.timon.x == 165 && stage.spawn_counter == 35 && stage.spawned == 0);
+    assert(bonus_toss_stage_tick(&stage, 0, 0, 0) == 0);
+    assert(stage.timon.x == 170 && stage.spawn_counter == 0 && stage.spawned == 1);
+    assert(stage.items[0].owner.x == 170);
+    assert(bonus_toss_stage_release(&stage) == 0);
+}
+
 static void check_result_clock(void)
 {
     static const unsigned int counts[] = {0, 1, 20, 21, 99, 110};
@@ -365,9 +486,12 @@ static void check_result_clock(void)
 
 int main(void)
 {
+    check_timon_gravity();
+    check_original_fall_trajectories();
     check_selector();
     check_stage();
     check_timon_turns();
+    check_timon_phase_and_spawn_timing();
     check_result_clock();
     static const unsigned int definitions[] = {
         0xb130, 0xb144, 0xb158, 0xb89c, 0xb284, 0xb0cc,
